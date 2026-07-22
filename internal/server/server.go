@@ -67,7 +67,7 @@ func Run(cfg config.Config, version string) error {
 	})
 
 	// Статика фронтенда + SPA-fallback на index.html.
-	mux.Handle("/", spaHandler("web/dist"))
+	mux.Handle("/", spaHandler(webDistDir()))
 
 	handler := auth.Middleware(database)(mux)
 
@@ -77,6 +77,14 @@ func Run(cfg config.Config, version string) error {
 		return http.ListenAndServeTLS(addr, cfg.CertFile, cfg.KeyFile, handler)
 	}
 	return http.ListenAndServe(addr, handler)
+}
+
+// webDistDir — собранный фронтенд: рядом с бинарником (dev) или в /usr/share/todorio (prod).
+func webDistDir() string {
+	if _, err := os.Stat("web/dist"); err == nil {
+		return "web/dist"
+	}
+	return "/usr/share/todorio/web/dist"
 }
 
 // spaHandler отдаёт файлы из dist, а для клиентских маршрутов (/space/5 и т.п.) — index.html.

@@ -21,7 +21,7 @@ Todorio — приватный self-hosted менеджер задач для л
 ## Установка
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/DanMotive/Todorio/v1.0.0/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/DanMotive/Todorio/main/scripts/install.sh | sudo bash
 sudo todorio setup
 ```
 
