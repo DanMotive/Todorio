@@ -103,14 +103,29 @@ func IssueLetsEncryptIPCert(dir, ip, ipv6 string, httpPort int) (certFile, keyFi
 		baseArgs = append(baseArgs, "-d", ipv6, "--listen-v6")
 	}
 
+	// alreadyIssued recognizes acme.sh's idempotent "nothing to do" response: it already
+	// holds an unexpired certificate for this domain and is skipping reissuance rather
+	// than failing. That's not an error — the existing certificate is still installed below.
+	alreadyIssued := func(out string) bool {
+		return strings.Contains(out, "Skipping") && strings.Contains(out, "Next renewal time")
+	}
+
 	shortlivedArgs := append(append([]string{}, baseArgs...), "--profile", "shortlived")
 	output, runErr := runAcme(acme, shortlivedArgs)
 	shortlived = runErr == nil
+	if runErr != nil && alreadyIssued(output) {
+		runErr = nil
+		shortlived = false
+	}
 	if runErr != nil {
 		if strings.Contains(output, "Unknown parameter") && strings.Contains(output, "--profile") {
 			fmt.Println(term.Yellow("WARN"), "This acme.sh install does not support the shortlived profile yet — retrying with a standard ~90-day certificate.")
-			_, runErr = runAcme(acme, baseArgs)
+			output, runErr = runAcme(acme, baseArgs)
 			shortlived = false
+			if runErr != nil && alreadyIssued(output) {
+				fmt.Println(term.Cyan("INFO"), "A still-valid certificate for this IP already exists — reusing it instead of reissuing.")
+				runErr = nil
+			}
 		}
 		if runErr != nil {
 			return "", "", false, fmt.Errorf("acme.sh --issue failed: %w", runErr)
