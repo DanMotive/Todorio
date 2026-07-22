@@ -8,6 +8,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
@@ -33,6 +34,41 @@ func defaultCertHosts() string {
 		}
 	}
 	return strings.Join(hosts, ",")
+}
+
+// InstallCustomCert copies a user-provided certificate and private key into dir
+// (as cert.pem / key.pem) so they can be referenced like any other Todorio
+// certificate. Use this when you already have a certificate from your own CA
+// or another ACME client, instead of generating a new one.
+func InstallCustomCert(dir, certPath, keyPath string) (certFile, keyFile string, err error) {
+	certPath = strings.TrimSpace(certPath)
+	keyPath = strings.TrimSpace(keyPath)
+	if certPath == "" || keyPath == "" {
+		return "", "", fmt.Errorf("both a certificate file and a key file are required")
+	}
+	certBytes, err := os.ReadFile(certPath)
+	if err != nil {
+		return "", "", fmt.Errorf("reading certificate file: %w", err)
+	}
+	keyBytes, err := os.ReadFile(keyPath)
+	if err != nil {
+		return "", "", fmt.Errorf("reading key file: %w", err)
+	}
+	if _, err := tls.X509KeyPair(certBytes, keyBytes); err != nil {
+		return "", "", fmt.Errorf("certificate and key do not match or are invalid: %w", err)
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", "", err
+	}
+	certFile = filepath.Join(dir, "cert.pem")
+	keyFile = filepath.Join(dir, "key.pem")
+	if err := os.WriteFile(certFile, certBytes, 0o644); err != nil {
+		return "", "", err
+	}
+	if err := os.WriteFile(keyFile, keyBytes, 0o600); err != nil {
+		return "", "", err
+	}
+	return certFile, keyFile, nil
 }
 
 // GenerateSelfSigned creates a certificate for the given hosts (IPs and/or DNS names)

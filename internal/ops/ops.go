@@ -19,16 +19,21 @@ import (
 	"strings"
 	"time"
 
+	"net/url"
+
+	"github.com/DanMotive/Todorio/internal/auth"
 	"github.com/DanMotive/Todorio/internal/config"
 	"github.com/DanMotive/Todorio/internal/db"
+	"github.com/DanMotive/Todorio/internal/setup"
+	"github.com/DanMotive/Todorio/internal/term"
 )
 
 const backupsDir = "/var/lib/todorio/backups"
 const repo = "DanMotive/Todorio"
 
-func ok(msg string)   { fmt.Println("  ✔", msg) }
-func bad(msg string)  { fmt.Println("  ✖", msg) }
-func warn(msg string) { fmt.Println("  ⚠", msg) }
+func ok(msg string)   { fmt.Println(" ", term.Green("[OK]"), msg) }
+func bad(msg string)  { fmt.Println(" ", term.Red("[FAIL]"), msg) }
+func warn(msg string) { fmt.Println(" ", term.Yellow("[WARN]"), msg) }
 
 // certExpiry reads a PEM certificate file and returns its NotAfter (expiry) date.
 func certExpiry(certFile string) (time.Time, error) {
@@ -47,9 +52,9 @@ func certExpiry(certFile string) (time.Time, error) {
 	return cert.NotAfter, nil
 }
 
-// Doctor — installation diagnostics.
-func Doctor(cfg config.Config, version string) error {
-	fmt.Println("🩺 todorio doctor ·", version)
+// Status — installation diagnostics (formerly `todorio doctor`).
+func Status(cfg config.Config, version string) error {
+	fmt.Println(term.Bold("todorio status"), "·", version)
 
 	// config
 	if _, err := os.Stat(config.Path()); err == nil {
@@ -124,6 +129,18 @@ func Doctor(cfg config.Config, version string) error {
 	} else {
 		warn("pg_dump not found — install postgresql-client for backups")
 	}
+
+	// server URL, ready to copy
+	scheme := "http"
+	if cfg.HTTPS {
+		scheme = "https"
+	}
+	host := setup.DetectPublicIP()
+	if host == "" {
+		host = "localhost"
+	}
+	fmt.Println()
+	fmt.Println(" ", term.Cyan("Server:"), fmt.Sprintf("%s://%s:%d", scheme, host, cfg.Port))
 	return nil
 }
 
@@ -162,7 +179,7 @@ func Backup(cfg config.Config) error {
 	if err := f.Close(); err != nil {
 		return err
 	}
-	fmt.Println("✔ DB dump:", dumpPath)
+	ok("DB dump: " + dumpPath)
 
 	// 2. archive of uploads
 	if _, err := os.Stat(cfg.UploadsDir); err == nil {
@@ -173,9 +190,9 @@ func Backup(cfg config.Config) error {
 		if err := tarCmd.Run(); err != nil {
 			return fmt.Errorf("uploads archive: %w", err)
 		}
-		fmt.Println("✔ attachments:", tarPath)
+		ok("attachments: " + tarPath)
 	}
-	fmt.Println("✅ Backup ready. Restore: gunzip -c <dump> | psql <database_url>")
+	fmt.Println(term.Green("Backup ready."), "Restore: gunzip -c <dump> | psql <database_url>")
 	return nil
 }
 
@@ -203,7 +220,7 @@ func Update(version string) error {
 		return err
 	}
 	if strings.TrimPrefix(rel.TagName, "v") == strings.TrimPrefix(version, "v") {
-		fmt.Println("✅ Already up to date:", version)
+		fmt.Println(term.Green("Already up to date:"), version)
 		return nil
 	}
 
@@ -220,7 +237,7 @@ func Update(version string) error {
 	if binURL == "" {
 		return fmt.Errorf("release %s has no binary %s", rel.TagName, wantAsset)
 	}
-	fmt.Println("⬇ Downloading", rel.TagName, "…")
+	fmt.Println(term.Cyan("Downloading"), rel.TagName, "...")
 
 	tmp, err := os.CreateTemp("", "todorio-update-*")
 	if err != nil {
@@ -252,9 +269,9 @@ func Update(version string) error {
 		if !strings.Contains(string(body), gotSum) {
 			return fmt.Errorf("sha256 mismatch — update aborted")
 		}
-		fmt.Println("✔ sha256 verified")
+		ok("sha256 verified")
 	} else {
-		fmt.Println("⚠ checksums.txt not in the release — installing without verification")
+		warn("checksums.txt not in the release — installing without verification")
 	}
 
 	exe, err := os.Executable()
@@ -271,8 +288,109 @@ func Update(version string) error {
 			return err
 		}
 	}
-	fmt.Println("✅ Updated to", rel.TagName, "— restart the service (systemctl restart todorio)")
+	fmt.Println(term.Green("Updated to"), rel.TagName, "— restart the service (systemctl restart todorio)")
 	return nil
+}
+
+// Uninstall removes Todorio from this machine.
+//
+// By default this stops the service and removes the binary, the systemd unit,
+// and the config (/etc/todorio) — but keeps application data (/var/lib/todorio:
+// uploads, backups) and the database, in case this was a mistake.
+//   - --saveconfig also keeps the config directory (handy for reinstalling
+//     with the same settings).
+//   - --purge additionally removes application data and drops the database.
+func Uninstall(cfg config.Config, purge bool, saveConfig bool, yes bool) error {
+	fmt.Println(term.Bold("Uninstalling Todorio..."))
+
+	if !yes {
+		fmt.Print("This will stop the todorio service and remove the binary")
+		if !saveConfig {
+			fmt.Print(" and its config (/etc/todorio)")
+		}
+		if purge {
+			fmt.Print(", and PERMANENTLY delete all application data and the database")
+		}
+		fmt.Print(". Continue? [y/N] ")
+		var resp string
+		fmt.Scanln(&resp)
+		resp = strings.ToLower(strings.TrimSpace(resp))
+		if resp != "y" && resp != "yes" {
+			fmt.Println("Aborted.")
+			return nil
+		}
+	}
+
+	// stop and disable the systemd service, if present
+	if _, err := exec.LookPath("systemctl"); err == nil {
+		_ = exec.Command("systemctl", "disable", "--now", "todorio").Run()
+	}
+	if _, err := os.Stat("/etc/systemd/system/todorio.service"); err == nil {
+		_ = os.Remove("/etc/systemd/system/todorio.service")
+		_ = exec.Command("systemctl", "daemon-reload").Run()
+		ok("removed the systemd service")
+	}
+
+	// binary
+	removed := false
+	if exe, err := os.Executable(); err == nil {
+		if err := os.Remove(exe); err == nil {
+			ok("removed binary: " + exe)
+			removed = true
+		}
+	}
+	if !removed {
+		_ = os.Remove("/usr/local/bin/todorio")
+	}
+
+	// frontend + migrations installed alongside the binary
+	_ = os.RemoveAll("/usr/share/todorio")
+
+	// config: removed by default, kept with --saveconfig
+	if saveConfig {
+		warn("kept config: /etc/todorio (--saveconfig)")
+	} else if err := os.RemoveAll("/etc/todorio"); err != nil {
+		bad("could not remove config: " + err.Error())
+	} else {
+		ok("removed config: /etc/todorio")
+	}
+
+	if !purge {
+		fmt.Println(term.Green("Todorio has been removed.") + " Application data and the database were kept" +
+			" (data: /var/lib/todorio). Re-run with --purge to remove those too.")
+		return nil
+	}
+
+	// purge: application data + database
+	if err := os.RemoveAll("/var/lib/todorio"); err != nil {
+		bad("could not remove /var/lib/todorio: " + err.Error())
+	} else {
+		ok("removed /var/lib/todorio (uploads, backups)")
+	}
+
+	if dbName, err := dbNameFromURL(cfg.DatabaseURL); err == nil && dbName != "" {
+		dropCmd := exec.Command("dropdb", "--if-exists", dbName)
+		dropCmd.Stderr = os.Stderr
+		if err := dropCmd.Run(); err != nil {
+			warn("could not drop database " + dbName + " automatically — drop it manually if needed: " + err.Error())
+		} else {
+			ok("dropped database: " + dbName)
+		}
+	} else {
+		warn("could not determine the database name from the config — drop it manually if needed")
+	}
+
+	fmt.Println(term.Green("Todorio and all of its data have been removed."))
+	return nil
+}
+
+// dbNameFromURL extracts the database name from a postgres connection URL.
+func dbNameFromURL(dbURL string) (string, error) {
+	u, err := url.Parse(dbURL)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimPrefix(u.Path, "/"), nil
 }
 
 func copyFile(src, dst string) error {
@@ -288,4 +406,69 @@ func copyFile(src, dst string) error {
 	defer out.Close()
 	_, err = io.Copy(out, in)
 	return err
+}
+
+// ResetRoot resets the root admin's username and password: generates a fresh
+// temporary password (shown once, never logged), optionally renames the
+// account, forces a password change on next login, and logs the root admin
+// out everywhere by clearing their sessions.
+func ResetRoot(cfg config.Config, newUsername string, yes bool) error {
+	if !yes {
+		fmt.Print("This will reset the root admin's username and password, and log them out everywhere. Continue? [y/N] ")
+		var resp string
+		fmt.Scanln(&resp)
+		resp = strings.ToLower(strings.TrimSpace(resp))
+		if resp != "y" && resp != "yes" {
+			fmt.Println("Aborted.")
+			return nil
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	d, err := db.Connect(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return fmt.Errorf("DB unreachable: %w", err)
+	}
+	defer d.Pool.Close()
+
+	var id int64
+	var username string
+	if err := d.Pool.QueryRow(ctx, `SELECT id, username FROM users WHERE role='root' ORDER BY id LIMIT 1`).Scan(&id, &username); err != nil {
+		return fmt.Errorf("no root admin found — register the first user or run `todorio setup`")
+	}
+
+	newUsername = strings.TrimSpace(newUsername)
+	if newUsername == "" {
+		newUsername = username
+	} else if newUsername != username {
+		var exists bool
+		_ = d.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM users WHERE username=$1 AND id<>$2)`, newUsername, id).Scan(&exists)
+		if exists {
+			return fmt.Errorf("username %q is already taken", newUsername)
+		}
+	}
+
+	password, err := setup.GeneratePassword()
+	if err != nil {
+		return err
+	}
+	hash, err := auth.HashPassword(password)
+	if err != nil {
+		return err
+	}
+
+	if _, err := d.Pool.Exec(ctx,
+		`UPDATE users SET username=$2, password_hash=$3, must_change_password=true WHERE id=$1`,
+		id, newUsername, hash); err != nil {
+		return fmt.Errorf("database error: %w", err)
+	}
+	_, _ = d.Pool.Exec(ctx, `DELETE FROM sessions WHERE user_id=$1`, id)
+
+	fmt.Println(term.Green("Root admin reset."))
+	fmt.Println("   Username:", newUsername)
+	fmt.Println("   Temporary password:", password)
+	fmt.Println("  ", term.Yellow("NOTE"), "The password is shown ONCE and is not written to logs.")
+	fmt.Println("   The site will require changing it on next login. All previous root sessions were logged out.")
+	return nil
 }

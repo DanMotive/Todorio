@@ -1,33 +1,35 @@
-# ⚡ Todorio
+# Todorio
 
 **Your private workspace for tasks and teams.**
 
-Todorio — приватный self-hosted менеджер задач для личной работы и небольших команд. Ставится на VPS одной командой, работает без внешних SaaS, почты и публичного API. Главная фишка — **«Пульс пространства»**: живая сводка здоровья проекта.
+Todorio is a private, self-hosted task manager for personal use and small teams. It installs on a VPS with a single command, and runs without any external SaaS, email, or public API. Its flagship feature is **"Space Pulse"**: a live summary of your project's health.
 
-## Возможности (v1)
+## Features (v1)
 
-- 🔐 Авторизация по логину/паролю (без email), TOTP, ручное одобрение регистраций
-- 👑 RBAC: root admin / admin / user / viewer + точечные разрешения
-- 🗂 Пространства → списки → задачи (подзадачи, зависимости, повторы, чек-листы)
-- 📊 Прогресс-бары, настраиваемые workflow-статусы, пользовательские поля, метки
-- 💬 Комментарии, @упоминания, реакции 👍 ✅ 🎉 🔥 👀 ❓ ❗ ❌ 😭 ⭐, вложения-картинки
-- 🔔 Уведомления в кабинете, дедлайн-плашки 🔴🟠🟡⚪, «Не беспокоить»
-- 🌍 13 локалей (формат язык-страна) + IT-стили `ru-RU-it`, `en-US-it`
-- 🎨 5 цветовых тем (красная/синяя/зелёная/жёлтая/серая), светлая+тёмная, режимы «красивый»/«лёгкий»
-- ⚡ SSE-реалтайм, PWA (кнопка «Установить приложение»)
-- 📈 Статистика, динамические подписи, рейтинги, **Пульс пространства**
-- 🛠 Всё конфигурируется в root-панели **и** в терминале (`todorio server ...`)
+- Login/password authentication (no email required), TOTP, manual registration approval
+- RBAC: root admin / admin / user / viewer + fine-grained permissions
+- Spaces → lists → tasks (subtasks, dependencies, recurrence, checklists)
+- Progress bars, configurable workflow statuses, custom fields, labels
+- Comments, @mentions, reactions (👍 ✅ 🎉 🔥 👀 ❓ ❗ ❌ 😭 ⭐), image attachments
+- In-app notifications, due-date badges, "Do Not Disturb" mode
+- 13 locales (language-country format) + IT styles `ru-RU-it`, `en-US-it`
+- 5 color themes (red/blue/green/yellow/gray), light + dark, "cozy"/"lite" density modes
+- SSE realtime updates, PWA ("Install app" button)
+- Statistics, dynamic labels, leaderboards, **Space Pulse**
+- Everything configurable from the root panel **and** the terminal (`todorio server ...`)
 
-## Установка
+## Installation
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/DanMotive/Todorio/main/scripts/install.sh | sudo bash
 sudo todorio setup
 ```
 
-`setup` спросит: логин root-админа, менеджер процессов (systemd/docker/pm2), порт, HTTPS (self-signed), демо-пространство с обучающими квестами (y/n) — и сгенерирует временный пароль на 16 символов.
+`setup` will ask for: the root admin's username, process manager (systemd/docker/pm2), port, HTTPS (self-signed, Let's Encrypt for your server's IP, or your own certificate), and whether to create the demo onboarding space with quests (y/n) — then it generates a 16-character temporary password.
 
-## Разработка
+To remove Todorio later, run `sudo todorio uninstall`. By default this removes the binary, service, and config; add `--saveconfig` to keep the config, or `--purge` to also delete application data and the database.
+
+## Development
 
 ```bash
 # Backend (Go 1.22+)
@@ -37,16 +39,16 @@ go run ./cmd/todorio serve --dev
 cd web && npm install && npm run dev
 ```
 
-## Структура
+## Project structure
 
 ```
-cmd/todorio/     — CLI и точка входа (setup, serve, doctor, backup, server config)
+cmd/todorio/     — CLI and entry point (setup, serve, doctor, backup, server config)
 internal/        — config, server (HTTP+SSE), setup
-migrations/      — SQL-миграции PostgreSQL
+migrations/      — PostgreSQL SQL migrations
 scripts/         — install.sh
-web/             — React + Vite фронтенд, темы, локали, PWA
+web/             — React + Vite frontend, themes, locales, PWA
 ```
 
-## Лицензия
+## License
 
-Apache 2.0 · Разработано **Vlad**
+Apache 2.0 · Developed by **Vlad**

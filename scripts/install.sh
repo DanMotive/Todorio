@@ -155,3 +155,4 @@ if [ -e /dev/tty ] && [ -r /dev/tty ]; then
 else
   say "Done! Next: sudo todorio setup && sudo systemctl enable --now todorio"
 fi
+say "To remove Todorio later: sudo todorio uninstall (add --purge to also delete application data and the database, --saveconfig to keep /etc/todorio)"

@@ -69,10 +69,10 @@ func Run(cfg config.Config, version string) error {
 	// Frontend static assets + SPA fallback to index.html.
 	mux.Handle("/", spaHandler(webDistDir()))
 
-	handler := auth.Middleware(database)(mux)
+	handler := securityHeaders(cfg.HTTPS)(auth.Middleware(database)(mux))
 
 	addr := fmt.Sprintf("0.0.0.0:%d", cfg.Port) // listen on all interfaces — allow access by bare IP without a domain
-	log.Printf("\u26a1 Todorio %s running at %s (https=%v)", version, addr, cfg.HTTPS)
+	log.Printf("Todorio %s running at %s (https=%v)", version, addr, cfg.HTTPS)
 	if cfg.HTTPS && cfg.CertFile != "" && cfg.KeyFile != "" {
 		return http.ListenAndServeTLS(addr, cfg.CertFile, cfg.KeyFile, handler)
 	}
@@ -115,4 +115,22 @@ func migrationsDir() string {
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// securityHeaders adds a conservative set of hardening headers to every response:
+// no MIME sniffing, no framing by other sites (clickjacking), a strict referrer
+// policy, and (when serving over HTTPS) HSTS so browsers stick to HTTPS afterwards.
+func securityHeaders(https bool) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			h := w.Header()
+			h.Set("X-Content-Type-Options", "nosniff")
+			h.Set("X-Frame-Options", "DENY")
+			h.Set("Referrer-Policy", "no-referrer")
+			if https {
+				h.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }

@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/DanMotive/Todorio/internal/config"
+	"github.com/DanMotive/Todorio/internal/term"
 )
 
 const passwordAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%^&*-_=+"
@@ -56,6 +57,30 @@ func askYN(r *bufio.Reader, prompt string, def bool) bool {
 	return ans == "y" || ans == "yes"
 }
 
+// issueLetsEncryptIPCertVerbose obtains a Let's Encrypt IP certificate and prints the
+// same [INF]-style progress lines as 3x-ui's IP certificate flow. Returns ok=false
+// (with a warning already printed) if the IP is empty or issuance fails, so callers
+// can fall back to a self-signed certificate.
+func issueLetsEncryptIPCertVerbose(ip, ipv6 string, acmePort int) (certFile, keyFile string, ok bool) {
+	if strings.TrimSpace(ip) == "" {
+		fmt.Println(term.Yellow("WARN"), "Could not detect the server's IP automatically and none was provided.")
+		return "", "", false
+	}
+	fmt.Println("[INF] Starting automatic SSL certificate generation for server IP...")
+	fmt.Println("[INF] Using Let's Encrypt shortlived profile (~6 days validity, auto-renews)")
+	fmt.Println("[INF] Server IP detected:", ip)
+	fmt.Printf("[INF] Using port %d to issue certificate for IP: %s\n", acmePort, ip)
+	certFile, keyFile, err := IssueLetsEncryptIPCert("/etc/todorio/ssl", ip, ipv6, acmePort)
+	if err != nil {
+		fmt.Println(term.Yellow("WARN"), "Failed to obtain Let's Encrypt certificate:", err)
+		fmt.Println("  Falling back to a self-signed certificate.")
+		return "", "", false
+	}
+	fmt.Println("[INF] Certificate issued successfully for IP:", ip)
+	fmt.Println(term.Cyan("Certificate:"), certFile, "(~6 days validity, auto-renews via the acme.sh cron job)")
+	return certFile, keyFile, true
+}
+
 func splitHosts(hostsStr string) []string {
 	hosts := []string{}
 	for _, h := range strings.Split(hostsStr, ",") {
@@ -78,10 +103,10 @@ func openFirewallPort(port int) {
 		return
 	}
 	if err := exec.Command(ufwPath, "allow", fmt.Sprintf("%d/tcp", port)).Run(); err != nil {
-		fmt.Println("⚠ Could not open port", port, "in ufw:", err)
+		fmt.Println(term.Yellow("WARN"), "Could not open port", port, "in ufw:", err)
 		return
 	}
-	fmt.Printf("🔓 ufw: opened port %d/tcp\n", port)
+	fmt.Println(term.Green("ufw:"), fmt.Sprintf("opened port %d/tcp", port))
 }
 
 // Run parses `todorio setup` flags and either runs the interactive wizard or, with
@@ -93,8 +118,14 @@ func Run(args []string) error {
 	rootUsername := fs.String("root-username", "root", "root admin username")
 	processManager := fs.String("process-manager", "systemd", "process manager: systemd|docker|pm2")
 	port := fs.Int("port", 8080, "site port")
-	httpsFlag := fs.Bool("https", false, "enable HTTPS with a self-signed certificate")
+	httpsFlag := fs.Bool("https", false, "enable HTTPS")
+	certMode := fs.String("cert-mode", "self-signed", "certificate type: self-signed|letsencrypt-ip|custom")
 	certHosts := fs.String("cert-hosts", "", "comma-separated hosts for the self-signed certificate (default: autodetected)")
+	acmeIP := fs.String("acme-ip", "", "server IP for the Let's Encrypt IP certificate (default: autodetected)")
+	acmeIPv6 := fs.String("acme-ipv6", "", "optional IPv6 address to include in the Let's Encrypt IP certificate")
+	acmePort := fs.Int("acme-port", 80, "port for the ACME HTTP-01 standalone listener (must be open to the internet)")
+	certFileFlag := fs.String("cert-file", "", "your own certificate file (with --cert-mode=custom)")
+	keyFileFlag := fs.String("key-file", "", "your own private key file (with --cert-mode=custom)")
 	demoFlag := fs.Bool("demo", true, "create the onboarding demo space with quests")
 	generatePw := fs.Bool("generate-password", true, "generate the root admin's temporary password")
 	nonInteractive := fs.Bool("non-interactive", false, "skip all prompts and use flags/defaults (for scripted installs)")
@@ -107,7 +138,7 @@ func Run(args []string) error {
 	var demo bool
 
 	if *nonInteractive {
-		fmt.Println("⚡ Todorio — non-interactive setup")
+		fmt.Println(term.Bold("Todorio — non-interactive setup"))
 		fmt.Println(strings.Repeat("─", 40))
 
 		root = *rootUsername
@@ -123,29 +154,56 @@ func Run(args []string) error {
 		cfg.Port = *port
 		cfg.HTTPS = *httpsFlag
 		if cfg.HTTPS {
-			hostsStr := *certHosts
-			if hostsStr == "" {
-				hostsStr = defaultCertHosts()
-			}
-			certFile, keyFile, cerr := GenerateSelfSigned("/etc/todorio/ssl", splitHosts(hostsStr))
-			if cerr != nil {
-				fmt.Println("⚠ Failed to generate certificate:", cerr)
-				fmt.Println("  HTTPS disabled. Set cert_file/key_file manually and enable:")
-				fmt.Println("  todorio server config set https true")
-				cfg.HTTPS = false
-			} else {
-				cfg.CertFile, cfg.KeyFile = certFile, keyFile
-				fmt.Println("🔐 Certificate:", certFile, "(10 years, the browser will show a warning — that's expected)")
+			switch *certMode {
+			case "letsencrypt-ip":
+				ip := *acmeIP
+				if ip == "" {
+					ip = DetectPublicIP()
+				}
+				if certFile, keyFile, ok := issueLetsEncryptIPCertVerbose(ip, *acmeIPv6, *acmePort); ok {
+					cfg.CertFile, cfg.KeyFile = certFile, keyFile
+				} else if certFile, keyFile, cerr := GenerateSelfSigned("/etc/todorio/ssl", splitHosts(defaultCertHosts())); cerr == nil {
+					cfg.CertFile, cfg.KeyFile = certFile, keyFile
+					fmt.Println(term.Cyan("Fell back to a self-signed certificate:"), certFile)
+				} else {
+					fmt.Println(term.Yellow("WARN"), "Failed to generate a fallback certificate:", cerr)
+					cfg.HTTPS = false
+				}
+			case "custom":
+				certFile, keyFile, cerr := InstallCustomCert("/etc/todorio/ssl", *certFileFlag, *keyFileFlag)
+				if cerr != nil {
+					fmt.Println(term.Yellow("WARN"), "Failed to install your certificate:", cerr)
+					fmt.Println("  HTTPS disabled. Re-run setup with --cert-file and --key-file pointing at valid files.")
+					cfg.HTTPS = false
+				} else {
+					cfg.CertFile, cfg.KeyFile = certFile, keyFile
+					fmt.Println(term.Cyan("Certificate:"), certFile, "(your own certificate)")
+				}
+			default:
+				hostsStr := *certHosts
+				if hostsStr == "" {
+					hostsStr = defaultCertHosts()
+				}
+				certFile, keyFile, cerr := GenerateSelfSigned("/etc/todorio/ssl", splitHosts(hostsStr))
+				if cerr != nil {
+					fmt.Println(term.Yellow("WARN"), "Failed to generate certificate:", cerr)
+					fmt.Println("  HTTPS disabled. Set cert_file/key_file manually and enable:")
+					fmt.Println("  todorio server config set https true")
+					cfg.HTTPS = false
+				} else {
+					cfg.CertFile, cfg.KeyFile = certFile, keyFile
+					fmt.Println(term.Cyan("Certificate:"), certFile, "(10 years, the browser will show a warning — that's expected)")
+				}
 			}
 		}
 		demo = *demoFlag
 		if !*generatePw {
-			fmt.Println("⚠ --generate-password=false is ignored — a temporary password is always required for first login.")
+			fmt.Println(term.Yellow("WARN"), "--generate-password=false is ignored — a temporary password is always required for first login.")
 		}
 	} else {
 		r := bufio.NewReader(os.Stdin)
 
-		fmt.Println("⚡ Todorio — first-run setup")
+		fmt.Println(term.Bold("Todorio — first-run setup"))
 		fmt.Println(strings.Repeat("─", 40))
 
 		root = ask(r, "Root admin username", *rootUsername)
@@ -165,18 +223,62 @@ func Run(args []string) error {
 		}
 		cfg.Port = p
 
-		cfg.HTTPS = askYN(r, "Enable HTTPS with a self-signed certificate?", *httpsFlag)
+		cfg.HTTPS = askYN(r, "Enable HTTPS?", *httpsFlag)
 		if cfg.HTTPS {
-			hostsStr := ask(r, "IPs/domains for the certificate (comma-separated)", defaultCertHosts())
-			certFile, keyFile, cerr := GenerateSelfSigned("/etc/todorio/ssl", splitHosts(hostsStr))
-			if cerr != nil {
-				fmt.Println("⚠ Failed to generate certificate:", cerr)
-				fmt.Println("  HTTPS disabled. Set cert_file/key_file manually and enable:")
-				fmt.Println("  todorio server config set https true")
-				cfg.HTTPS = false
+			fmt.Println("Certificate type:")
+			fmt.Println("  1) Self-signed (instant, browsers will show an \"untrusted\" warning)")
+			fmt.Println("  2) Let's Encrypt SSL Certificate for IP Address (trusted, ~6-day cert, auto-renews, requires port 80 open to the internet)")
+			fmt.Println("  3) Use your own certificate (existing cert + key files)")
+			choice := ask(r, "Choose 1, 2 or 3", "1")
+
+			if choice == "3" {
+				certPath := ask(r, "Path to your certificate file (PEM)", *certFileFlag)
+				keyPath := ask(r, "Path to your private key file (PEM)", *keyFileFlag)
+				certFile, keyFile, cerr := InstallCustomCert("/etc/todorio/ssl", certPath, keyPath)
+				if cerr != nil {
+					fmt.Println(term.Yellow("WARN"), "Failed to install your certificate:", cerr)
+					fmt.Println("  HTTPS disabled. Re-run setup once you have a valid certificate and key.")
+					cfg.HTTPS = false
+				} else {
+					cfg.CertFile, cfg.KeyFile = certFile, keyFile
+					fmt.Println(term.Cyan("Certificate:"), certFile, "(your own certificate)")
+				}
+			} else if choice == "2" {
+				fmt.Println("This will obtain a certificate for your server's IP using the shortlived profile.")
+				fmt.Println("Certificate valid for ~6 days, auto-renews via acme.sh cron job.")
+				fmt.Println("Port 80 must be open and accessible from the internet.")
+				if askYN(r, "Do you want to proceed?", true) {
+					ip := ask(r, "Server IP", DetectPublicIP())
+					ipv6 := ask(r, "Do you have an IPv6 address to include? (leave empty to skip)", "")
+					portStr := ask(r, "Port to use for ACME HTTP-01 listener", "80")
+					acmePortN, perr := strconv.Atoi(portStr)
+					if perr != nil || acmePortN < 1 || acmePortN > 65535 {
+						return fmt.Errorf("invalid ACME port: %s", portStr)
+					}
+					if certFile, keyFile, ok := issueLetsEncryptIPCertVerbose(ip, ipv6, acmePortN); ok {
+						cfg.CertFile, cfg.KeyFile = certFile, keyFile
+					} else if certFile, keyFile, cerr := GenerateSelfSigned("/etc/todorio/ssl", splitHosts(defaultCertHosts())); cerr == nil {
+						cfg.CertFile, cfg.KeyFile = certFile, keyFile
+						fmt.Println(term.Cyan("Fell back to a self-signed certificate:"), certFile)
+					} else {
+						fmt.Println(term.Yellow("WARN"), "Failed to generate a fallback certificate:", cerr)
+						cfg.HTTPS = false
+					}
+				} else {
+					cfg.HTTPS = false
+				}
 			} else {
-				cfg.CertFile, cfg.KeyFile = certFile, keyFile
-				fmt.Println("🔐 Certificate:", certFile, "(10 years, the browser will show a warning — that's expected)")
+				hostsStr := ask(r, "IPs/domains for the certificate (comma-separated)", defaultCertHosts())
+				certFile, keyFile, cerr := GenerateSelfSigned("/etc/todorio/ssl", splitHosts(hostsStr))
+				if cerr != nil {
+					fmt.Println(term.Yellow("WARN"), "Failed to generate certificate:", cerr)
+					fmt.Println("  HTTPS disabled. Set cert_file/key_file manually and enable:")
+					fmt.Println("  todorio server config set https true")
+					cfg.HTTPS = false
+				} else {
+					cfg.CertFile, cfg.KeyFile = certFile, keyFile
+					fmt.Println(term.Cyan("Certificate:"), certFile, "(10 years, the browser will show a warning — that's expected)")
+				}
 			}
 		}
 		demo = askYN(r, "Create a demo onboarding space with quests?", *demoFlag)
@@ -195,14 +297,24 @@ func Run(args []string) error {
 
 	fmt.Println()
 	fmt.Println(strings.Repeat("─", 40))
-	fmt.Println("✅ Setup complete. Config:", config.Path())
+	fmt.Println(term.Green("Setup complete."), "Config:", config.Path())
 	fmt.Printf("   Root admin: %s\n", root)
 	fmt.Printf("   Temporary password: %s\n", password)
-	fmt.Println("   ⚠ The password is shown ONCE and is not written to logs.")
+	fmt.Println("  ", term.Yellow("NOTE"), "The password is shown ONCE and is not written to logs.")
 	fmt.Println("   The site will require changing it on first login.")
 	if demo {
-		fmt.Println("   🎓 The demo space with quests will be created on first launch.")
+		fmt.Println("   The demo space with quests will be created on first launch.")
 	}
+
+	scheme := "http"
+	if cfg.HTTPS {
+		scheme = "https"
+	}
+	host := DetectPublicIP()
+	if host == "" {
+		host = "localhost"
+	}
+	fmt.Printf("   Server: %s\n", term.Cyan(fmt.Sprintf("%s://%s:%d", scheme, host, cfg.Port)))
 	fmt.Printf("   Start: sudo systemctl start todorio (or `todorio serve`)\n")
 	return nil
 }
