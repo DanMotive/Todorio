@@ -2,8 +2,8 @@ package api
 
 import "net/http"
 
-// GET /api/spaces/{id}/pulse — «Пульс пространства»: живая сводка здоровья.
-// Сигналы: просрочено, без исполнителя, без дедлайна, заблокировано, зависло (>3 дней без движения).
+// GET /api/spaces/{id}/pulse — "Space Pulse": a live health summary.
+// Signals: overdue, unassigned, no deadline, blocked, stalled (>3 days with no movement).
 func (a *API) handlePulse(w http.ResponseWriter, r *http.Request) {
 	u := a.requireUser(w, r)
 	if u == nil {
@@ -11,7 +11,7 @@ func (a *API) handlePulse(w http.ResponseWriter, r *http.Request) {
 	}
 	spaceID, err := pathID(r)
 	if err != nil || a.spaceRole(r, u.ID, u.IsAdmin(), spaceID) == "" {
-		errJSON(w, http.StatusForbidden, "нет доступа к пространству")
+		errJSON(w, http.StatusForbidden, "no access to the space")
 		return
 	}
 	var (
@@ -31,11 +31,11 @@ func (a *API) handlePulse(w http.ResponseWriter, r *http.Request) {
 		WHERE l.space_id=$1 AND t.archived_at IS NULL AND l.archived_at IS NULL`,
 		spaceID).Scan(&total, &open, &done, &overdue, &unassigned, &noDeadline, &blocked, &stale)
 	if err != nil {
-		errJSON(w, http.StatusInternalServerError, "ошибка БД")
+		errJSON(w, http.StatusInternalServerError, "database error")
 		return
 	}
 
-	// Оценка здоровья 0..100: штрафы за просрочку/зависание/блокировки.
+	// Health score 0..100: penalties for overdue/stalled/blocked items.
 	score := 100
 	if open > 0 {
 		score -= min(50, overdue*100/open/2)
@@ -46,7 +46,7 @@ func (a *API) handlePulse(w http.ResponseWriter, r *http.Request) {
 	if score < 0 {
 		score = 0
 	}
-	mood := "\U0001F7E2" // зелёный
+	mood := "\U0001F7E2" // green
 	if score < 70 {
 		mood = "\U0001F7E1"
 	}

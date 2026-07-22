@@ -1,6 +1,6 @@
-// Локализация Todorio.
-// Локали в формате язык-СТРАНА + IT-стили (ru-RU-it, en-US-it) как пакеты поверх базовой локали.
-// Порядок выбора: профиль → Accept-Language/navigator → дефолт сервера → en-US.
+// Todorio localization.
+// Locales use language-COUNTRY format + IT-slang styles (ru-RU-it, en-US-it) as overlay packs on top of the base locale.
+// Selection order: profile -> Accept-Language/navigator -> server default -> en-US.
 
 import ruRU from "./locales/ru-RU.json"
 import enUS from "./locales/en-US.json"
@@ -38,7 +38,7 @@ const bundles: Record<string, Record<string, string>> = {
   "bn-BD": bnBD,
   "ja-JP": jaJP,
   "ko-KR": koKR,
-  // IT-стили — частичные пакеты поверх базовой локали (см. t()).
+  // IT-slang styles are partial packs layered on top of the base locale (see t()).
   "ru-RU-it": ruRUit,
   "en-US-it": enUSit,
 }
@@ -56,7 +56,7 @@ export function detectLocale(profileLocale?: string): string {
 }
 
 export function t(locale: string, key: string): string {
-  // IT-стиль: сначала ищем в пакете стиля, потом в базовой локали, потом en-US.
+  // IT-slang style: look in the style pack first, then the base locale, then en-US.
   const chain = locale.endsWith("-it")
     ? [locale, locale.slice(0, -3), "en-US"]
     : [locale, "en-US"]
@@ -66,3 +66,9 @@ export function t(locale: string, key: string): string {
   }
   return key
 }
+
+// Current locale (module state) and a short tr() helper.
+let current = detectLocale()
+export function setLocale(l: string) { current = l }
+export function getLocale(): string { return current }
+export function tr(key: string): string { return t(current, key) }

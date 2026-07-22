@@ -1,4 +1,4 @@
-// Package db — подключение к PostgreSQL и прогон миграций.
+// Package db: PostgreSQL connection and migration runner.
 package db
 
 import (
@@ -17,22 +17,22 @@ type DB struct{ Pool *pgxpool.Pool }
 func Connect(ctx context.Context, url string) (*DB, error) {
 	pool, err := pgxpool.New(ctx, url)
 	if err != nil {
-		return nil, fmt.Errorf("подключение к БД: %w", err)
+		return nil, fmt.Errorf("connecting to DB: %w", err)
 	}
 	if err := pool.Ping(ctx); err != nil {
-		return nil, fmt.Errorf("БД недоступна: %w", err)
+		return nil, fmt.Errorf("DB unreachable: %w", err)
 	}
 	return &DB{Pool: pool}, nil
 }
 
-// Migrate применяет *.sql из папки по порядку имён, каждую в транзакции.
+// Migrate applies *.sql files from the directory in name order, each in its own transaction.
 func (d *DB) Migrate(ctx context.Context, dir string) error {
 	if _, err := d.Pool.Exec(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())`); err != nil {
 		return err
 	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return fmt.Errorf("папка миграций %s: %w", dir, err)
+		return fmt.Errorf("migrations directory %s: %w", dir, err)
 	}
 	var files []string
 	for _, e := range entries {
@@ -59,7 +59,7 @@ func (d *DB) Migrate(ctx context.Context, dir string) error {
 		}
 		if _, err := tx.Exec(ctx, string(sqlBytes)); err != nil {
 			_ = tx.Rollback(ctx)
-			return fmt.Errorf("миграция %s: %w", f, err)
+			return fmt.Errorf("migration %s: %w", f, err)
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO schema_migrations(version) VALUES($1)`, f); err != nil {
 			_ = tx.Rollback(ctx)
@@ -72,7 +72,7 @@ func (d *DB) Migrate(ctx context.Context, dir string) error {
 	return nil
 }
 
-// Setting читает значение из system_settings (единый источник для веба и CLI).
+// Setting reads a value from system_settings (shared source of truth for the web UI and CLI).
 func (d *DB) Setting(ctx context.Context, key string, def string) string {
 	var v string
 	err := d.Pool.QueryRow(ctx, `SELECT value #>> '{}' FROM system_settings WHERE key=$1`, key).Scan(&v)
@@ -82,7 +82,7 @@ func (d *DB) Setting(ctx context.Context, key string, def string) string {
 	return v
 }
 
-// SetSetting записывает значение в system_settings (upsert).
+// SetSetting writes a value to system_settings (upsert).
 func (d *DB) SetSetting(ctx context.Context, key string, jsonValue string) error {
 	_, err := d.Pool.Exec(ctx, `INSERT INTO system_settings(key,value,updated_at) VALUES($1,$2::jsonb,now())
 		ON CONFLICT (key) DO UPDATE SET value=$2::jsonb, updated_at=now()`, key, jsonValue)

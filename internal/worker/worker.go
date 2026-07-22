@@ -1,4 +1,4 @@
-// Package worker — фоновые задачи: дедлайны, очистка архива, протухшие сессии.
+// Package worker: background jobs — deadlines, archive cleanup, stale sessions.
 package worker
 
 import (
@@ -17,7 +17,7 @@ func Run(ctx context.Context, d *db.DB, bus *events.Bus) {
 	defer hourly.Stop()
 	defer daily.Stop()
 
-	// первый прогон сразу после старта
+	// run once immediately on startup
 	deadlineSweep(ctx, d, bus)
 
 	for {
@@ -33,7 +33,7 @@ func Run(ctx context.Context, d *db.DB, bus *events.Bus) {
 	}
 }
 
-// deadlineSweep — уведомления о просроченных задачах (не чаще раза в сутки на задачу).
+// deadlineSweep — notifications for overdue tasks (at most once per day per task).
 func deadlineSweep(ctx context.Context, d *db.DB, bus *events.Bus) {
 	rows, err := d.Pool.Query(ctx, `
 		SELECT t.id, t.title, t.assignee_id
@@ -72,7 +72,7 @@ func deadlineSweep(ctx context.Context, d *db.DB, bus *events.Bus) {
 	}
 }
 
-// cleanupArchive — по ТЗ архив самоочищается через 30 дней (настраивается через policy.archive.retention_days).
+// cleanupArchive — per spec, the archive self-cleans after 30 days (configurable via policy.archive.retention_days).
 func cleanupArchive(ctx context.Context, d *db.DB) {
 	days := d.Setting(ctx, "policy.archive.retention_days", "30")
 	_, err := d.Pool.Exec(ctx, `

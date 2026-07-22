@@ -18,16 +18,16 @@ func (a *API) handleListComments(w http.ResponseWriter, r *http.Request) {
 	}
 	taskID, err := pathID(r)
 	if err != nil {
-		errJSON(w, http.StatusBadRequest, "некорректный id")
+		errJSON(w, http.StatusBadRequest, "invalid id")
 		return
 	}
 	var listID int64
 	if a.DB.Pool.QueryRow(r.Context(), `SELECT list_id FROM tasks WHERE id=$1`, taskID).Scan(&listID) != nil {
-		errJSON(w, http.StatusNotFound, "задача не найдена")
+		errJSON(w, http.StatusNotFound, "task not found")
 		return
 	}
 	if !permAtLeast(a.listPermission(r, u, listID), "viewer") {
-		errJSON(w, http.StatusForbidden, "нет доступа")
+		errJSON(w, http.StatusForbidden, "no access")
 		return
 	}
 	rows, err := a.DB.Pool.Query(r.Context(), `
@@ -38,7 +38,7 @@ func (a *API) handleListComments(w http.ResponseWriter, r *http.Request) {
 		WHERE c.task_id=$1 AND c.deleted_at IS NULL
 		ORDER BY c.created_at`, taskID)
 	if err != nil {
-		errJSON(w, http.StatusInternalServerError, "ошибка БД")
+		errJSON(w, http.StatusInternalServerError, "database error")
 		return
 	}
 	defer rows.Close()
@@ -57,7 +57,7 @@ func (a *API) handleListComments(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"comments": comments})
 }
 
-// POST /api/tasks/{id}/comments {body} — @упоминания шлют уведомления; исполнитель и автор задачи тоже уведомляются.
+// POST /api/tasks/{id}/comments {body} — @mentions send notifications; the assignee and task author are notified too.
 func (a *API) handleCreateComment(w http.ResponseWriter, r *http.Request) {
 	u := a.requireUser(w, r)
 	if u == nil {
@@ -65,7 +65,7 @@ func (a *API) handleCreateComment(w http.ResponseWriter, r *http.Request) {
 	}
 	taskID, err := pathID(r)
 	if err != nil {
-		errJSON(w, http.StatusBadRequest, "некорректный id")
+		errJSON(w, http.StatusBadRequest, "invalid id")
 		return
 	}
 	var listID, creatorID int64
@@ -74,34 +74,34 @@ func (a *API) handleCreateComment(w http.ResponseWriter, r *http.Request) {
 	if a.DB.Pool.QueryRow(r.Context(),
 		`SELECT list_id, creator_id, assignee_id, title FROM tasks WHERE id=$1 AND archived_at IS NULL`,
 		taskID).Scan(&listID, &creatorID, &assigneeID, &title) != nil {
-		errJSON(w, http.StatusNotFound, "задача не найдена")
+		errJSON(w, http.StatusNotFound, "task not found")
 		return
 	}
 	if !permAtLeast(a.listPermission(r, u, listID), "viewer") {
-		errJSON(w, http.StatusForbidden, "нет доступа")
+		errJSON(w, http.StatusForbidden, "no access")
 		return
 	}
 	var in struct {
 		Body string `json:"body"`
 	}
 	if err := readJSON(r, &in); err != nil || in.Body == "" {
-		errJSON(w, http.StatusBadRequest, "пустой комментарий")
+		errJSON(w, http.StatusBadRequest, "comment cannot be empty")
 		return
 	}
-	maxLen := 4000 // TODO: читать из policy.limits.comment_max_len
+	maxLen := 4000 // TODO: read from policy.limits.comment_max_len
 	if len(in.Body) > maxLen {
-		errJSON(w, http.StatusBadRequest, fmt.Sprintf("комментарий длиннее %d символов", maxLen))
+		errJSON(w, http.StatusBadRequest, fmt.Sprintf("comment is longer than %d characters", maxLen))
 		return
 	}
 	var id int64
 	if err := a.DB.Pool.QueryRow(r.Context(),
 		`INSERT INTO comments(task_id, author_id, body) VALUES($1,$2,$3) RETURNING id`,
 		taskID, u.ID, in.Body).Scan(&id); err != nil {
-		errJSON(w, http.StatusInternalServerError, "ошибка БД")
+		errJSON(w, http.StatusInternalServerError, "database error")
 		return
 	}
 
-	// адресаты: упомянутые + исполнитель + автор задачи (без дублей, без самого автора комментария)
+	// recipients: mentioned users + assignee + task author (deduplicated, excluding the comment's own author)
 	recipients := map[int64]bool{creatorID: true}
 	if assigneeID != nil {
 		recipients[*assigneeID] = true
@@ -123,7 +123,7 @@ func (a *API) handleCreateComment(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]any{"id": id})
 }
 
-// DELETE /api/comments/{id} — автор или админ.
+// DELETE /api/comments/{id} — author or admin.
 func (a *API) handleDeleteComment(w http.ResponseWriter, r *http.Request) {
 	u := a.requireUser(w, r)
 	if u == nil {
@@ -131,19 +131,19 @@ func (a *API) handleDeleteComment(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := pathID(r)
 	if err != nil {
-		errJSON(w, http.StatusBadRequest, "некорректный id")
+		errJSON(w, http.StatusBadRequest, "invalid id")
 		return
 	}
 	tag, err := a.DB.Pool.Exec(r.Context(),
 		`UPDATE comments SET deleted_at=now() WHERE id=$1 AND ($2 OR author_id=$3)`, id, u.IsAdmin(), u.ID)
 	if err != nil || tag.RowsAffected() == 0 {
-		errJSON(w, http.StatusForbidden, "можно удалять только свои комментарии")
+		errJSON(w, http.StatusForbidden, "you can only delete your own comments")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-// POST /api/reactions {target_type: task|comment, target_id, emoji} — тоггл.
+// POST /api/reactions {target_type: task|comment, target_id, emoji} — toggle.
 func (a *API) handleToggleReaction(w http.ResponseWriter, r *http.Request) {
 	u := a.requireUser(w, r)
 	if u == nil {
@@ -159,14 +159,14 @@ func (a *API) handleToggleReaction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !AllowedReactions[in.Emoji] {
-		errJSON(w, http.StatusBadRequest, "недопустимая реакция")
+		errJSON(w, http.StatusBadRequest, "invalid reaction")
 		return
 	}
 	tag, err := a.DB.Pool.Exec(r.Context(),
 		`DELETE FROM reactions WHERE target_type=$1 AND target_id=$2 AND user_id=$3 AND emoji=$4`,
 		in.TargetType, in.TargetID, u.ID, in.Emoji)
 	if err != nil {
-		errJSON(w, http.StatusInternalServerError, "ошибка БД")
+		errJSON(w, http.StatusInternalServerError, "database error")
 		return
 	}
 	if tag.RowsAffected() > 0 {
@@ -176,10 +176,10 @@ func (a *API) handleToggleReaction(w http.ResponseWriter, r *http.Request) {
 	if _, err := a.DB.Pool.Exec(r.Context(),
 		`INSERT INTO reactions(target_type, target_id, user_id, emoji) VALUES($1,$2,$3,$4)`,
 		in.TargetType, in.TargetID, u.ID, in.Emoji); err != nil {
-		errJSON(w, http.StatusInternalServerError, "ошибка БД")
+		errJSON(w, http.StatusInternalServerError, "database error")
 		return
 	}
-	// уведомляем автора цели
+	// notify the target's author
 	var authorID int64
 	var q string
 	if in.TargetType == "task" {
@@ -207,7 +207,7 @@ func (a *API) handleListNotifications(w http.ResponseWriter, r *http.Request) {
 		WHERE user_id=$1 AND ($2 = false OR read_at IS NULL)
 		ORDER BY created_at DESC LIMIT 100`, u.ID, onlyUnread)
 	if err != nil {
-		errJSON(w, http.StatusInternalServerError, "ошибка БД")
+		errJSON(w, http.StatusInternalServerError, "database error")
 		return
 	}
 	defer rows.Close()
@@ -223,7 +223,7 @@ func (a *API) handleListNotifications(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"notifications": list})
 }
 
-// POST /api/notifications/read {ids?: []} — без ids отмечает все.
+// POST /api/notifications/read {ids?: []} — marks all as read when ids is omitted.
 func (a *API) handleReadNotifications(w http.ResponseWriter, r *http.Request) {
 	u := a.requireUser(w, r)
 	if u == nil {

@@ -1,7 +1,7 @@
--- 0003: инвайты и публичные read-only ссылки
+-- 0003: invites and public read-only links
 
--- Инвайты: код даёт мгновенную активацию без ручного одобрения.
--- Могут ли обычные юзеры создавать инвайты — настройка policy.users.can_invite (дефолт false).
+-- Invites: the code grants instant activation without manual approval.
+-- Whether regular users can create invites is controlled by policy.users.can_invite (default false).
 CREATE TABLE IF NOT EXISTS invites (
     id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     code        TEXT NOT NULL UNIQUE,
@@ -13,8 +13,8 @@ CREATE TABLE IF NOT EXISTS invites (
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Публичные read-only ссылки на списки: /s/{token} (без авторизации).
--- Включаются/выключаются глобально: policy.sharing.public_links (дефолт true).
+-- Public read-only links to lists: /s/{token} (no authentication).
+-- Enabled/disabled globally via policy.sharing.public_links (default true).
 CREATE TABLE IF NOT EXISTS share_links (
     id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     token       TEXT NOT NULL UNIQUE,

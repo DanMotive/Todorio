@@ -18,7 +18,7 @@ const (
 	saltLen      = 16
 )
 
-// HashPassword — argon2id, формат $argon2id$v=19$m=...,t=...,p=...$salt$hash.
+// HashPassword — argon2id, format $argon2id$v=19$m=...,t=...,p=...$salt$hash.
 func HashPassword(password string) (string, error) {
 	salt := make([]byte, saltLen)
 	if _, err := rand.Read(salt); err != nil {

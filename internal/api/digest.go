@@ -5,9 +5,9 @@ import (
 	"time"
 )
 
-// GET /api/digest — сводка «пока вас не было».
-// prev_seen_at ставится middleware'ом при возврате после паузы ≥6 часов
-// и сбрасывается после просмотра — дайджест «не вылезает когда не надо».
+// GET /api/digest — "while you were away" summary.
+// prev_seen_at is set by middleware on return after a pause of ≥6 hours
+// and cleared after viewing — the digest "doesn't pop up when it shouldn't".
 func (a *API) handleDigest(w http.ResponseWriter, r *http.Request) {
 	u := a.requireUser(w, r)
 	if u == nil {
@@ -34,7 +34,7 @@ func (a *API) handleDigest(w http.ResponseWriter, r *http.Request) {
 		u.ID, *since).Scan(&assigned, &comments, &doneAround, &announcements)
 
 	if assigned+comments+doneAround+announcements == 0 {
-		// ничего не произошло — не беспокоим и сбрасываем флаг
+		// nothing happened — don't bother the user, and clear the flag
 		_, _ = a.DB.Pool.Exec(r.Context(), `UPDATE users SET prev_seen_at=NULL WHERE id=$1`, u.ID)
 		writeJSON(w, http.StatusOK, map[string]any{"show": false})
 		return
@@ -51,7 +51,7 @@ func (a *API) handleDigest(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// POST /api/digest/dismiss — закрыть сводку до следующей долгой паузы.
+// POST /api/digest/dismiss — dismiss the summary until the next long pause.
 func (a *API) handleDigestDismiss(w http.ResponseWriter, r *http.Request) {
 	u := a.requireUser(w, r)
 	if u == nil {

@@ -1,9 +1,10 @@
-// Экраны Todorio: вход, «Моё», пространства, задачи, уведомления, админка.
+// Todorio screens: login, "My tasks", spaces, tasks, notifications, admin panel.
 import { useEffect, useState } from "react"
 import { api, REACTIONS, type List, type Me, type Pulse, type Space, type Task } from "./api"
 import { AttachmentsBlock, StatsCard } from "./extras"
+import { tr } from "./i18n"
 
-// ---------- вспомогательное ----------
+// ---------- helpers ----------
 
 function dueClass(due: string | null): string {
   if (!due) return ""
@@ -19,7 +20,7 @@ function dueLabel(due: string | null): string {
   return new Date(due).toLocaleDateString(undefined, { day: "numeric", month: "short" })
 }
 
-// ---------- вход / регистрация ----------
+// ---------- login / registration ----------
 
 export function AuthPage({ siteName, onLogin }: { siteName: string; onLogin: (me: Me) => void }) {
   const [mode, setMode] = useState<"login" | "register">("login")
@@ -41,7 +42,7 @@ export function AuthPage({ siteName, onLogin }: { siteName: string; onLogin: (me
       } else {
         const res = await api.post("/api/register", { username, password, invite_code: invite })
         if (res.status === "pending") {
-          setInfo("Заявка отправлена — дождитесь одобрения администратора, затем войдите.")
+          setInfo(tr("auth.request_sent"))
           setMode("login")
         } else {
           const me = await api.post("/api/login", { username, password })
@@ -60,24 +61,24 @@ export function AuthPage({ siteName, onLogin }: { siteName: string; onLogin: (me
           <img src="/icons/logo.svg" alt="" width={40} height={40} />
           <h1 style={{ margin: 0, fontSize: 22 }}>{siteName}</h1>
         </div>
-        <input className="input" placeholder="Логин" value={username}
+        <input className="input" placeholder={tr("auth.username")} value={username}
           onChange={(e) => setUsername(e.target.value)} autoFocus />
-        <input className="input" type="password" placeholder="Пароль" value={password}
+        <input className="input" type="password" placeholder={tr("auth.password")} value={password}
           onChange={(e) => setPassword(e.target.value)} />
         {mode === "login" && (
-          <input className="input" placeholder="Код 2FA (если включена)" value={totp}
+          <input className="input" placeholder={tr("auth.totp")} value={totp}
             onChange={(e) => setTotp(e.target.value)} />
         )}
         {mode === "register" && (
-          <input className="input" placeholder="Инвайт-код (если есть)" value={invite}
+          <input className="input" placeholder={tr("auth.invite")} value={invite}
             onChange={(e) => setInvite(e.target.value)} />
         )}
         <div className="error-text">{error || info}</div>
         <button className="btn" type="submit">
-          {mode === "login" ? "Войти" : "Зарегистрироваться"}
+          {mode === "login" ? tr("auth.sign_in") : tr("auth.sign_up")}
         </button>
         <button className="nav-btn" type="button" onClick={() => setMode(mode === "login" ? "register" : "login")}>
-          {mode === "login" ? "Нет аккаунта? Регистрация" : "Уже есть аккаунт? Вход"}
+          {mode === "login" ? tr("auth.no_account") : tr("auth.have_account")}
         </button>
       </form>
     </div>
@@ -89,15 +90,15 @@ export function PendingPage({ onLogout }: { onLogout: () => void }) {
     <div className="center-page">
       <div className="card auth-card" style={{ textAlign: "center" }}>
         <div style={{ fontSize: 40 }}>⏳</div>
-        <h2>Аккаунт ожидает одобрения</h2>
-        <p className="muted">Администратор должен подтвердить регистрацию. Загляните позже.</p>
-        <button className="btn" onClick={onLogout}>Выйти</button>
+        <h2>{tr("pending.title")}</h2>
+        <p className="muted">{tr("pending.text")}</p>
+        <button className="btn" onClick={onLogout}>{tr("nav.logout")}</button>
       </div>
     </div>
   )
 }
 
-// ---------- задачи ----------
+// ---------- tasks ----------
 
 function TaskRow({ task, onToggle, onOpen }: { task: Task; onToggle: (t: Task) => void; onOpen: (t: Task) => void }) {
   const done = !!task.completed_at
@@ -148,11 +149,11 @@ export function TaskModal({ task, me, onClose, onChanged }: {
         {task.description && <p>{task.description}</p>}
         <div className="row muted">
           {task.due_at && <span className={"due " + dueClass(task.due_at)}>{dueLabel(task.due_at)}</span>}
-          <span>Приоритет: {task.priority}</span>
-          <span>Статус: {task.status}</span>
+          <span>{tr("task.priority")}: {task.priority}</span>
+          <span>{tr("task.status")}: {task.status}</span>
         </div>
 
-        <div className="section-title">Комментарии</div>
+        <div className="section-title">{tr("task.comments")}</div>
         <AttachmentsBlock taskId={task.id} />
         {comments.map((c) => (
           <div key={c.id} className="card" style={{ marginBottom: 8, padding: 12 }}>
@@ -180,7 +181,7 @@ export function TaskModal({ task, me, onClose, onChanged }: {
           </div>
         ))}
         <form className="row" onSubmit={send}>
-          <input className="input grow" placeholder="Написать комментарий… (@логин — упомянуть)" value={body}
+          <input className="input grow" placeholder={tr("task.comment_placeholder")} value={body}
             onChange={(e) => setBody(e.target.value)} />
           <button className="btn" type="submit">↵</button>
         </form>
@@ -188,7 +189,7 @@ export function TaskModal({ task, me, onClose, onChanged }: {
 
         <div className="row" style={{ marginTop: 12 }}>
           <button className="nav-btn" onClick={async () => { await api.del(`/api/tasks/${task.id}`); onChanged(); onClose() }}>
-            🗑 В архив
+            🗑 {tr("task.archive")}
           </button>
         </div>
       </div>
@@ -196,7 +197,7 @@ export function TaskModal({ task, me, onClose, onChanged }: {
   )
 }
 
-// ---------- «Моё» ----------
+// ---------- "My tasks" ----------
 
 export function MyTasksPage({ me }: { me: Me }) {
   const [tasks, setTasks] = useState<Task[]>([])
@@ -211,15 +212,15 @@ export function MyTasksPage({ me }: { me: Me }) {
 
   return (
     <div className="card">
-      <h2>Мои задачи</h2>
-      {tasks.length === 0 && <p className="muted">Назначенных задач нет — красота! 🎉</p>}
+      <h2>{tr("my.title")}</h2>
+      {tasks.length === 0 && <p className="muted">{tr("my.empty")}</p>}
       {tasks.map((task) => <TaskRow key={task.id} task={task} onToggle={toggle} onOpen={setOpen} />)}
       {open && <TaskModal task={open} me={me} onClose={() => setOpen(null)} onChanged={load} />}
     </div>
   )
 }
 
-// ---------- пространства ----------
+// ---------- spaces ----------
 
 export function SpacesPage({ me }: { me: Me }) {
   const [spaces, setSpaces] = useState<Space[]>([])
@@ -232,11 +233,11 @@ export function SpacesPage({ me }: { me: Me }) {
 
   return (
     <div className="card">
-      <h2>Пространства</h2>
+      <h2>{tr("spaces.title")}</h2>
       {spaces.map((s) => (
         <div key={s.id} className="task-row" onClick={() => setCurrent(s)}>
           <span className="task-title">🌌 {s.name}</span>
-          <span className="muted">{s.my_role || "админ-доступ"}</span>
+          <span className="muted">{s.my_role || tr("spaces.admin_access")}</span>
         </div>
       ))}
       <form className="row" style={{ marginTop: 12 }} onSubmit={async (e) => {
@@ -245,8 +246,8 @@ export function SpacesPage({ me }: { me: Me }) {
         await api.post("/api/spaces", { name }).catch(() => {})
         setName(""); load()
       }}>
-        <input className="input grow" placeholder="Новое пространство…" value={name} onChange={(e) => setName(e.target.value)} />
-        <button className="btn" type="submit">Создать</button>
+        <input className="input grow" placeholder={tr("spaces.new_placeholder")} value={name} onChange={(e) => setName(e.target.value)} />
+        <button className="btn" type="submit">{tr("common.create")}</button>
       </form>
     </div>
   )
@@ -269,7 +270,7 @@ function SpaceView({ me, space, onBack }: { me: Me; space: Space; onBack: () => 
   return (
     <div>
       <div className="row" style={{ marginBottom: 12 }}>
-        <button className="nav-btn" onClick={onBack}>← Назад</button>
+        <button className="nav-btn" onClick={onBack}>← {tr("common.back")}</button>
         <h2 style={{ margin: 0 }}>{space.name}</h2>
       </div>
 
@@ -278,19 +279,19 @@ function SpaceView({ me, space, onBack }: { me: Me; space: Space; onBack: () => 
         <div className="card pulse-card" style={{ marginBottom: 12 }}>
           <div className="pulse-score">{pulse.mood} {pulse.score}</div>
           <div>
-            <div><b>Пульс пространства</b> · открыто {pulse.open} из {pulse.total}</div>
+            <div><b>{tr("pulse.title")}</b> · {tr("pulse.open")}: {pulse.open}/{pulse.total}</div>
             <div style={{ marginTop: 4 }}>
-              <span className="signal">⏰ просрочено: {pulse.signals.overdue}</span>
-              <span className="signal">👤 без исполнителя: {pulse.signals.unassigned}</span>
-              <span className="signal">🧊 зависло: {pulse.signals.stale}</span>
-              <span className="signal">⛔ заблокировано: {pulse.signals.blocked}</span>
+              <span className="signal">⏰ {tr("pulse.overdue")}: {pulse.signals.overdue}</span>
+              <span className="signal">👤 {tr("pulse.unassigned")}: {pulse.signals.unassigned}</span>
+              <span className="signal">🧊 {tr("pulse.stale")}: {pulse.signals.stale}</span>
+              <span className="signal">⛔ {tr("pulse.blocked")}: {pulse.signals.blocked}</span>
             </div>
           </div>
         </div>
       )}
 
       <div className="card">
-        <h3>Списки</h3>
+        <h3>{tr("lists.title")}</h3>
         {lists.map((l) => (
           <div key={l.id} className="task-row" onClick={() => setCurrentList(l)}>
             <span className="task-title">{l.is_private ? "🔒" : "📋"} {l.name}</span>
@@ -304,8 +305,8 @@ function SpaceView({ me, space, onBack }: { me: Me; space: Space; onBack: () => 
           await api.post(`/api/spaces/${space.id}/lists`, { name, is_private: false }).catch(() => {})
           setName(""); load()
         }}>
-          <input className="input grow" placeholder="Новый список…" value={name} onChange={(e) => setName(e.target.value)} />
-          <button className="btn" type="submit">Создать</button>
+          <input className="input grow" placeholder={tr("lists.new_placeholder")} value={name} onChange={(e) => setName(e.target.value)} />
+          <button className="btn" type="submit">{tr("common.create")}</button>
         </form>
       </div>
     </div>
@@ -331,7 +332,7 @@ function ListView({ me, list, onBack }: { me: Me; list: List; onBack: () => void
   return (
     <div className="card">
       <div className="row" style={{ marginBottom: 8 }}>
-        <button className="nav-btn" onClick={onBack}>← Назад</button>
+        <button className="nav-btn" onClick={onBack}>← {tr("common.back")}</button>
         <h2 style={{ margin: 0 }}>{list.name}</h2>
       </div>
       {roots.map((task) => (
@@ -352,7 +353,7 @@ function ListView({ me, list, onBack }: { me: Me; list: List; onBack: () => void
         }).catch(() => {})
         setTitle(""); setDue(""); load()
       }}>
-        <input className="input grow" placeholder="Новая задача…" value={title} onChange={(e) => setTitle(e.target.value)} />
+        <input className="input grow" placeholder={tr("task.new_placeholder")} value={title} onChange={(e) => setTitle(e.target.value)} />
         <input className="input" style={{ width: 170 }} type="date" value={due} onChange={(e) => setDue(e.target.value)} />
         <button className="btn" type="submit">+</button>
       </form>
@@ -361,17 +362,14 @@ function ListView({ me, list, onBack }: { me: Me; list: List; onBack: () => void
   )
 }
 
-// ---------- уведомления ----------
+// ---------- notifications ----------
 
-const KIND_LABEL: Record<string, string> = {
-  approved: "✅ Аккаунт одобрен",
-  task_assigned: "📌 Вам назначена задача",
-  comment: "💬 Новый комментарий",
-  reaction: "✨ Новая реакция",
-  overdue: "⏰ Задача просрочена",
-  space_added: "🌌 Вас добавили в пространство",
-  list_shared: "📋 Вам открыли список",
+const KIND_EMOJI: Record<string, string> = {
+  approved: "✅", task_assigned: "📌", comment: "💬", reaction: "✨",
+  overdue: "⏰", space_added: "🌌", list_shared: "📋",
 }
+const kindLabel = (kind: string) =>
+  KIND_EMOJI[kind] ? `${KIND_EMOJI[kind]} ${tr("notif.kind." + kind)}` : kind
 
 export function NotificationsPage({ onRead }: { onRead: () => void }) {
   const [items, setItems] = useState<any[]>([])
@@ -381,19 +379,19 @@ export function NotificationsPage({ onRead }: { onRead: () => void }) {
   return (
     <div className="card">
       <div className="row">
-        <h2 className="grow">Уведомления</h2>
+        <h2 className="grow">{tr("notif.title")}</h2>
         <button className="nav-btn" onClick={async () => { await api.post("/api/notifications/read"); load(); onRead() }}>
-          Прочитать все
+          {tr("notif.read_all")}
         </button>
       </div>
-      {items.length === 0 && <p className="muted">Пока ��усто.</p>}
+      {items.length === 0 && <p className="muted">{tr("notif.empty")}</p>}
       {items.map((n) => (
         <div key={n.id} className="task-row" style={{ opacity: n.read_at ? 0.55 : 1 }}>
           <span className="task-title">
-            {KIND_LABEL[n.kind] || n.kind}
+            {kindLabel(n.kind)}
             {n.payload?.title ? ` · «${n.payload.title}»` : ""}
             {n.payload?.task_title ? ` · «${n.payload.task_title}»` : ""}
-            {n.payload?.by ? ` · от @${n.payload.by}` : ""}
+            {n.payload?.by ? ` · ${tr("notif.by")} @${n.payload.by}` : ""}
             {n.payload?.emoji ? ` ${n.payload.emoji}` : ""}
           </span>
           <span className="muted">{new Date(n.created_at).toLocaleString()}</span>
@@ -403,7 +401,7 @@ export function NotificationsPage({ onRead }: { onRead: () => void }) {
   )
 }
 
-// ---------- админка ----------
+// ---------- admin panel ----------
 
 export function AdminPage({ me }: { me: Me }) {
   const [users, setUsers] = useState<any[]>([])
@@ -413,11 +411,11 @@ export function AdminPage({ me }: { me: Me }) {
 
   return (
     <div className="card">
-      <h2>Пользователи</h2>
+      <h2>{tr("admin.users")}</h2>
       {tempPass && (
         <div className="card" style={{ borderColor: "var(--accent)", marginBottom: 12 }}>
-          Временный пароль для <b>@{tempPass.user}</b>: <code>{tempPass.pass}</code>
-          <div className="muted">Показывается один раз — передайте лично.</div>
+          {tr("admin.temp_pass_for")} <b>@{tempPass.user}</b>: <code>{tempPass.pass}</code>
+          <div className="muted">{tr("admin.shown_once")}</div>
         </div>
       )}
       {users.map((u) => (
@@ -428,29 +426,29 @@ export function AdminPage({ me }: { me: Me }) {
           {u.status === "pending" && (
             <>
               <button className="btn" onClick={async () => { await api.post(`/api/admin/users/${u.id}/approve`, { role: "user" }); load() }}>
-                Одобрить
+                {tr("admin.approve")}
               </button>
               <button className="nav-btn" onClick={async () => { await api.post(`/api/admin/users/${u.id}/status`, { status: "rejected" }); load() }}>
-                Отклонить
+                {tr("admin.reject")}
               </button>
             </>
           )}
           {u.status === "active" && u.role !== "root" && (
             <>
               <button className="nav-btn" onClick={async () => { await api.post(`/api/admin/users/${u.id}/status`, { status: "blocked" }); load() }}>
-                Блок
+                {tr("admin.block")}
               </button>
               <button className="nav-btn" onClick={async () => {
                 const r = await api.post(`/api/admin/users/${u.id}/reset-password`)
                 setTempPass({ user: u.username, pass: r.temp_password })
               }}>
-                Сброс пароля
+                {tr("admin.reset_password")}
               </button>
             </>
           )}
           {u.status === "blocked" && (
             <button className="btn" onClick={async () => { await api.post(`/api/admin/users/${u.id}/status`, { status: "active" }); load() }}>
-              Разблокировать
+              {tr("admin.unblock")}
             </button>
           )}
         </div>

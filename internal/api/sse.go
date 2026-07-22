@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// GET /api/events — SSE-поток текущего пользователя: уведомления, изменения задач, объявления.
+// GET /api/events — SSE stream for the current user: notifications, task changes, announcements.
 func (a *API) handleSSE(w http.ResponseWriter, r *http.Request) {
 	u := a.requireUser(w, r)
 	if u == nil {
@@ -15,7 +15,7 @@ func (a *API) handleSSE(w http.ResponseWriter, r *http.Request) {
 	}
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		errJSON(w, http.StatusInternalServerError, "SSE не поддерживается")
+		errJSON(w, http.StatusInternalServerError, "SSE is not supported")
 		return
 	}
 	w.Header().Set("Content-Type", "text/event-stream")

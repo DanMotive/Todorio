@@ -1,8 +1,8 @@
 package setup
 
-// Генерация self-signed сертификата для HTTPS по голому IP или домену.
-// Только стандартная библиотека: ECDSA P-256, срок 10 лет.
-// Браузер покажет предупреждение «недоверенный сертификат» — это нормально для self-signed.
+// Self-signed certificate generation for HTTPS by bare IP or domain.
+// Standard library only: ECDSA P-256, 10-year validity.
+// The browser will show an "untrusted certificate" warning — that's expected for self-signed certs.
 
 import (
 	"crypto/ecdsa"
@@ -20,7 +20,7 @@ import (
 	"time"
 )
 
-// defaultCertHosts — localhost + все не-loopback IP машины (чтобы сайт работал прямо по IP ВПС).
+// defaultCertHosts — localhost + every non-loopback IP on the machine (so the site works by bare VPS IP).
 func defaultCertHosts() string {
 	hosts := []string{"localhost", "127.0.0.1"}
 	if addrs, err := net.InterfaceAddrs(); err == nil {
@@ -35,11 +35,11 @@ func defaultCertHosts() string {
 	return strings.Join(hosts, ",")
 }
 
-// GenerateSelfSigned создаёт сертификат для указанных хостов (IP и/или DNS-имена)
-// и пишет cert.pem / key.pem в dir. Возвращает пути к файлам.
+// GenerateSelfSigned creates a certificate for the given hosts (IPs and/or DNS names)
+// and writes cert.pem / key.pem to dir. Returns the file paths.
 func GenerateSelfSigned(dir string, hosts []string) (certFile, keyFile string, err error) {
 	if len(hosts) == 0 {
-		return "", "", fmt.Errorf("нужен хотя бы один хост (IP или домен)")
+		return "", "", fmt.Errorf("at least one host (IP or domain) is required")
 	}
 	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {

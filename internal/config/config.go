@@ -1,7 +1,7 @@
-// Package config — единый источник настроек: читается и root-панелью, и CLI.
-// Файл: /etc/todorio/config.json (или $TODORIO_CONFIG).
-// Динамические политики/лимиты/брендинг хранятся в БД (таблица system_settings),
-// а CLI-команды `todorio server ... set` пишут туда же — без расхождений с вебом.
+// Package config is the single source of truth for settings: read by both the root panel and the CLI.
+// File: /etc/todorio/config.json (or $TODORIO_CONFIG).
+// Dynamic policies/limits/branding are stored in the DB (system_settings table),
+// and the `todorio server ... set` CLI commands write to the same place — no drift from the web UI.
 package config
 
 import (
@@ -21,7 +21,7 @@ type Config struct {
 	ProcessManager string `json:"process_manager"` // systemd | docker | pm2
 	DefaultLocale  string `json:"default_locale"`
 	DetectBrowser  bool   `json:"detect_browser_locale"`
-	// Дефолты темы сервера (root); пользователь может переопределить в профиле.
+	// Server-wide theme defaults (root); the user can override them in their profile.
 	DefaultColor   string `json:"default_color"`  // red | blue | green | yellow | gray
 	DefaultScheme  string `json:"default_scheme"` // light | dark
 	DefaultVisual  string `json:"default_visual"` // rich | lite
@@ -55,7 +55,7 @@ func Load() (Config, error) {
 		return cfg, err
 	}
 	if err := json.Unmarshal(b, &cfg); err != nil {
-		return cfg, fmt.Errorf("повреждён %s: %w", Path(), err)
+		return cfg, fmt.Errorf("corrupted %s: %w", Path(), err)
 	}
 	return cfg, nil
 }
@@ -68,27 +68,27 @@ func Save(cfg Config) error {
 	return os.WriteFile(Path(), b, 0o600)
 }
 
-// RunCLI обрабатывает `todorio server <config|policy|limits|branding|locales> ...`.
-// Скелет: печатает намерение; в полной версии пишет в БД system_settings.
+// RunCLI handles `todorio server <config|policy|limits|branding|locales> ...`.
+// Skeleton: prints intent for now; the full version writes to system_settings in the DB.
 func RunCLI(args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("укажите раздел: config | policy | limits | branding | locales")
+		return fmt.Errorf("specify a section: config | policy | limits | branding | locales")
 	}
 	section := args[0]
 	rest := args[1:]
 	switch section {
 	case "config", "policy", "limits", "branding":
 		if len(rest) == 3 && rest[0] == "set" {
-			fmt.Printf("OK: %s.%s = %q (TODO: запись в system_settings)\n", section, rest[1], rest[2])
+			fmt.Printf("OK: %s.%s = %q (TODO: write to system_settings)\n", section, rest[1], rest[2])
 			return nil
 		}
-		return fmt.Errorf("формат: todorio server %s set <ключ> <значение>", section)
+		return fmt.Errorf("usage: todorio server %s set <key> <value>", section)
 	case "locales":
 		if len(rest) == 2 && (rest[0] == "enable" || rest[0] == "disable") {
-			fmt.Printf("OK: локаль %s → %s (TODO: запись в system_settings)\n", rest[1], rest[0])
+			fmt.Printf("OK: locale %s → %s (TODO: write to system_settings)\n", rest[1], rest[0])
 			return nil
 		}
-		return fmt.Errorf("формат: todorio server locales enable|disable <locale>")
+		return fmt.Errorf("usage: todorio server locales enable|disable <locale>")
 	}
-	return fmt.Errorf("неизвестный раздел: %s", section)
+	return fmt.Errorf("unknown section: %s", section)
 }

@@ -1,5 +1,5 @@
 -- Todorio · 0001_init · PostgreSQL 14+
--- Ядро схемы: пользователи, пространства, списки, задачи, взаимодействия, настройки.
+-- Schema core: users, spaces, lists, tasks, interactions, settings.
 
 CREATE TABLE users (
     id              BIGSERIAL PRIMARY KEY,
@@ -10,22 +10,22 @@ CREATE TABLE users (
     must_change_password BOOLEAN NOT NULL DEFAULT FALSE,
     totp_secret     TEXT,
     display_name    TEXT,
-    avatar_path     TEXT,                           -- NULL = авто-инициалы
-    locale          TEXT,                           -- NULL = автоподбор по Accept-Language
-    -- Тема: NULL = дефолт сервера (задаёт root), пользователь может переопределить
+    avatar_path     TEXT,                           -- NULL = auto initials
+    locale          TEXT,                           -- NULL = auto-detected from Accept-Language
+    -- Theme: NULL = server default (set by root), user can override
     theme_color     TEXT CHECK (theme_color IN ('red','blue','green','yellow','gray')),
     theme_scheme    TEXT CHECK (theme_scheme IN ('light','dark')),
     theme_visual    TEXT CHECK (theme_visual IN ('rich','lite')),
-    notify_prefs    JSONB NOT NULL DEFAULT '{}',    -- типы уведомлений, звук, тихие часы
-    permissions     JSONB NOT NULL DEFAULT '{}',    -- точечные разрешения при одобрении
-    onboarding      JSONB NOT NULL DEFAULT '{}',    -- прогресс обучающих квестов
+    notify_prefs    JSONB NOT NULL DEFAULT '{}',    -- notification types, sound, quiet hours
+    permissions     JSONB NOT NULL DEFAULT '{}',    -- fine-grained permissions granted at approval
+    onboarding      JSONB NOT NULL DEFAULT '{}',    -- onboarding quest progress
     last_seen_at    TIMESTAMPTZ,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    archived_at     TIMESTAMPTZ                     -- архив, автоочистка через 30 дней
+    archived_at     TIMESTAMPTZ                     -- archive, auto-cleanup after 30 days
 );
 
 CREATE TABLE sessions (
-    id          TEXT PRIMARY KEY,                   -- случайный токен (cookie HttpOnly+Secure+SameSite)
+    id          TEXT PRIMARY KEY,                   -- random token (cookie HttpOnly+Secure+SameSite)
     user_id     BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     expires_at  TIMESTAMPTZ NOT NULL,
@@ -36,7 +36,7 @@ CREATE TABLE spaces (
     id          BIGSERIAL PRIMARY KEY,
     name        TEXT NOT NULL,
     owner_id    BIGINT NOT NULL REFERENCES users(id),
-    settings    JSONB NOT NULL DEFAULT '{}',        -- workflow, поля, рейтинги, Пульс, объявления
+    settings    JSONB NOT NULL DEFAULT '{}',        -- workflow, fields, rankings, Pulse, announcements
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     archived_at TIMESTAMPTZ
 );
@@ -52,7 +52,7 @@ CREATE TABLE lists (
     id          BIGSERIAL PRIMARY KEY,
     space_id    BIGINT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
     name        TEXT NOT NULL,
-    is_private  BOOLEAN NOT NULL DEFAULT FALSE,     -- приватный список внутри общего пространства
+    is_private  BOOLEAN NOT NULL DEFAULT FALSE,     -- private list within a shared space
     settings    JSONB NOT NULL DEFAULT '{}',
     position    INTEGER NOT NULL DEFAULT 0,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -69,18 +69,18 @@ CREATE TABLE list_members (
 CREATE TABLE tasks (
     id           BIGSERIAL PRIMARY KEY,
     list_id      BIGINT NOT NULL REFERENCES lists(id) ON DELETE CASCADE,
-    parent_id    BIGINT REFERENCES tasks(id) ON DELETE CASCADE, -- подзадача
-    blocked_by   BIGINT REFERENCES tasks(id) ON DELETE SET NULL,-- зависимость
+    parent_id    BIGINT REFERENCES tasks(id) ON DELETE CASCADE, -- subtask
+    blocked_by   BIGINT REFERENCES tasks(id) ON DELETE SET NULL,-- dependency
     title        TEXT NOT NULL,
     description  TEXT NOT NULL DEFAULT '',
-    status       TEXT NOT NULL DEFAULT 'new',       -- из workflow пространства
+    status       TEXT NOT NULL DEFAULT 'new',       -- from the space's workflow
     priority     TEXT,                              -- low | normal | high | urgent
-    assignee_id  BIGINT REFERENCES users(id) ON DELETE SET NULL, -- блокировка/удаление → NULL (unassigned)
+    assignee_id  BIGINT REFERENCES users(id) ON DELETE SET NULL, -- block/delete -> NULL (unassigned)
     due_at       TIMESTAMPTZ,
-    recurrence   JSONB,                             -- правило повторения
-    progress     SMALLINT,                          -- ручной прогресс 0..100 (NULL = авто по подзадачам)
-    weight       SMALLINT NOT NULL DEFAULT 1,       -- вес для взвешенного прогресса/рейтинга
-    custom_fields JSONB NOT NULL DEFAULT '{}',      -- значения полей пространства (в т.ч. метки)
+    recurrence   JSONB,                             -- recurrence rule
+    progress     SMALLINT,                          -- manual progress 0..100 (NULL = auto from subtasks)
+    weight       SMALLINT NOT NULL DEFAULT 1,       -- weight for weighted progress/ranking
+    custom_fields JSONB NOT NULL DEFAULT '{}',      -- values of space fields (including labels)
     created_by   BIGINT NOT NULL REFERENCES users(id),
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -94,7 +94,7 @@ CREATE INDEX idx_tasks_due ON tasks(due_at) WHERE archived_at IS NULL;
 CREATE TABLE task_versions (
     id          BIGSERIAL PRIMARY KEY,
     task_id     BIGINT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
-    snapshot    JSONB NOT NULL,                     -- состояние задачи до изменения
+    snapshot    JSONB NOT NULL,                     -- task state before the change
     changed_by  BIGINT NOT NULL REFERENCES users(id),
     changed_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -104,7 +104,7 @@ CREATE TABLE comments (
     task_id     BIGINT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
     author_id   BIGINT NOT NULL REFERENCES users(id),
     body        TEXT NOT NULL,
-    is_system   BOOLEAN NOT NULL DEFAULT FALSE,     -- системные события в ленте
+    is_system   BOOLEAN NOT NULL DEFAULT FALSE,     -- system events in the feed
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     edited_at   TIMESTAMPTZ
 );
@@ -114,7 +114,7 @@ CREATE TABLE reactions (
     target_type TEXT NOT NULL CHECK (target_type IN ('task','comment')),
     target_id   BIGINT NOT NULL,
     user_id     BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    emoji       TEXT NOT NULL,                      -- из фиксированного набора
+    emoji       TEXT NOT NULL,                      -- from the fixed set
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (target_type, target_id, user_id, emoji)
 );
@@ -142,7 +142,7 @@ CREATE INDEX idx_notifications_unread ON notifications(user_id) WHERE read_at IS
 
 CREATE TABLE announcements (
     id          BIGSERIAL PRIMARY KEY,
-    space_id    BIGINT REFERENCES spaces(id) ON DELETE CASCADE, -- NULL = весь сервер (только root)
+    space_id    BIGINT REFERENCES spaces(id) ON DELETE CASCADE, -- NULL = whole server (root only)
     author_id   BIGINT NOT NULL REFERENCES users(id),
     level       TEXT NOT NULL DEFAULT 'normal' CHECK (level IN ('normal','important','emergency')),
     body        TEXT NOT NULL,
@@ -152,11 +152,11 @@ CREATE TABLE announcements (
 );
 
 CREATE TABLE templates (
-    id          BIGSERIAL PRIMARY KEY,              -- создаёт/публикует только root
+    id          BIGSERIAL PRIMARY KEY,              -- created/published by root only
     name        TEXT NOT NULL,
-    body        JSONB NOT NULL,                     -- структура списка/задач
-    audience    JSONB NOT NULL DEFAULT '{}',        -- все | роли | админы
-    auto_apply  BOOLEAN NOT NULL DEFAULT FALSE,     -- создавать новому одобренному пользователю
+    body        JSONB NOT NULL,                     -- list/task structure
+    audience    JSONB NOT NULL DEFAULT '{}',        -- all | roles | admins
+    auto_apply  BOOLEAN NOT NULL DEFAULT FALSE,     -- create for a newly approved user
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -168,7 +168,7 @@ CREATE TABLE stat_captions (
     text        TEXT NOT NULL
 );
 
-CREATE TABLE stat_caption_picks (                    -- фиксация подписи на день+пользователя
+CREATE TABLE stat_caption_picks (                    -- pins the caption for a day+user
     user_id     BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     day         DATE NOT NULL,
     caption_1   BIGINT NOT NULL REFERENCES stat_captions(id),
@@ -185,8 +185,8 @@ CREATE TABLE audit_log (
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE TABLE system_settings (                       -- политики/лимиты/брендинг/локали: root-панель и CLI пишут сюда
-    key         TEXT PRIMARY KEY,                    -- например policy.registration.mode, limits.uploads.max_file_size_mb, branding.site_name
+CREATE TABLE system_settings (                       -- policies/limits/branding/locales: written here by the root panel and CLI
+    key         TEXT PRIMARY KEY,                    -- e.g. policy.registration.mode, limits.uploads.max_file_size_mb, branding.site_name
     value       JSONB NOT NULL,
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );

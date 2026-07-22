@@ -2,7 +2,7 @@ package api
 
 import "github.com/DanMotive/Todorio/internal/auth"
 
-// authHash — тонкая обёртка, чтобы не импортировать auth в каждом файле ради одной функции.
+// authHash — thin wrapper so we don't have to import auth in every file just for one function.
 func authHash(password string) (string, error) {
 	return auth.HashPassword(password)
 }

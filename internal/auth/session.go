@@ -1,4 +1,4 @@
-// Package auth — сессии (HttpOnly+Secure+SameSite cookie) и middleware.
+// Package auth: sessions (HttpOnly+Secure+SameSite cookie) and middleware.
 package auth
 
 import (
@@ -51,7 +51,7 @@ func DestroySession(ctx context.Context, d *db.DB, w http.ResponseWriter, r *htt
 	http.SetCookie(w, &http.Cookie{Name: CookieName, Value: "", Path: "/", MaxAge: -1})
 }
 
-// Middleware кладёт текущего пользователя в контекст (если сессия валидна).
+// Middleware puts the current user into the context (if the session is valid).
 func Middleware(d *db.DB) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -63,7 +63,7 @@ func Middleware(d *db.DB) func(http.Handler) http.Handler {
 					WHERE s.id=$1 AND s.expires_at > now() AND u.archived_at IS NULL`,
 					c.Value).Scan(&u.ID, &u.Username, &u.Role, &u.Status, &u.MustChangePassword)
 				if err == nil {
-					// Фиксируем возврат после паузы ≥6 часов — для дайджеста «пока вас не было».
+					// Record the return visit after a pause of ≥6 hours — for the "while you were away" digest.
 					_, _ = d.Pool.Exec(r.Context(), `
 						UPDATE users SET
 							prev_seen_at = CASE

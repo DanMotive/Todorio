@@ -1,4 +1,4 @@
-// Package server — HTTP-сервер: API, статика фронтенда и SSE-реалтайм.
+// Package server: HTTP server — API, frontend static assets, and SSE realtime.
 package server
 
 import (
@@ -23,24 +23,24 @@ import (
 func Run(cfg config.Config, version string) error {
 	ctx := context.Background()
 
-	// --- БД и миграции ---
+	// --- DB and migrations ---
 	database, err := db.Connect(ctx, cfg.DatabaseURL)
 	if err != nil {
 		return err
 	}
-	// демо-пространство с квестами — создаётся один раз после миграций (см. ниже после Migrate)
+	// demo space with quests — created once, after migrations (see below, after Migrate)
 	if err := database.Migrate(ctx, migrationsDir()); err != nil {
-		return fmt.Errorf("миграции: %w", err)
+		return fmt.Errorf("migrations: %w", err)
 	}
 
-	// --- шина событий и фоновые задачи ---
+	// --- event bus and background jobs ---
 	bus := events.New()
 	if err := demo.EnsureDemo(ctx, database); err != nil {
-		log.Println("демо-пространство:", err)
+		log.Println("demo space:", err)
 	}
 	go worker.Run(ctx, database, bus)
 
-	// --- маршруты ---
+	// --- routes ---
 	mux := http.NewServeMux()
 	a := &api.API{DB: database, Bus: bus, Cfg: cfg, Version: version}
 	a.Routes(mux)
@@ -49,7 +49,7 @@ func Run(cfg config.Config, version string) error {
 		writeJSON(w, map[string]any{"ok": true, "version": version})
 	})
 
-	// Публичные настройки для фронта до логина: брендинг, локали, тема по умолчанию.
+	// Public settings for the frontend before login: branding, locales, default theme.
 	mux.HandleFunc("GET /api/bootstrap", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{
 			"site_name":      database.Setting(r.Context(), "branding.site_name", "Todorio"),
@@ -66,20 +66,20 @@ func Run(cfg config.Config, version string) error {
 		})
 	})
 
-	// Статика фронтенда + SPA-fallback на index.html.
+	// Frontend static assets + SPA fallback to index.html.
 	mux.Handle("/", spaHandler(webDistDir()))
 
 	handler := auth.Middleware(database)(mux)
 
-	addr := fmt.Sprintf("0.0.0.0:%d", cfg.Port) // слушаем все интерфейсы — работа по IP без домена
-	log.Printf("\u26a1 Todorio %s запущен на %s (https=%v)", version, addr, cfg.HTTPS)
+	addr := fmt.Sprintf("0.0.0.0:%d", cfg.Port) // listen on all interfaces — allow access by bare IP without a domain
+	log.Printf("\u26a1 Todorio %s running at %s (https=%v)", version, addr, cfg.HTTPS)
 	if cfg.HTTPS && cfg.CertFile != "" && cfg.KeyFile != "" {
 		return http.ListenAndServeTLS(addr, cfg.CertFile, cfg.KeyFile, handler)
 	}
 	return http.ListenAndServe(addr, handler)
 }
 
-// webDistDir — собранный фронтенд: рядом с бинарником (dev) или в /usr/share/todorio (prod).
+// webDistDir — the built frontend: next to the binary (dev) or in /usr/share/todorio (prod).
 func webDistDir() string {
 	if _, err := os.Stat("web/dist"); err == nil {
 		return "web/dist"
@@ -87,7 +87,7 @@ func webDistDir() string {
 	return "/usr/share/todorio/web/dist"
 }
 
-// spaHandler отдаёт файлы из dist, а для клиентских маршрутов (/space/5 и т.п.) — index.html.
+// spaHandler serves files from dist, and for client-side routes (/space/5 etc.) falls back to index.html.
 func spaHandler(dist string) http.Handler {
 	fs := http.FileServer(http.Dir(dist))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -105,7 +105,7 @@ func spaHandler(dist string) http.Handler {
 }
 
 func migrationsDir() string {
-	// Рядом с бинарником в проде (/usr/share/todorio/migrations), в репо — ./migrations.
+	// Next to the binary in prod (/usr/share/todorio/migrations), ./migrations in the repo.
 	if _, err := os.Stat("/usr/share/todorio/migrations"); err == nil {
 		return "/usr/share/todorio/migrations"
 	}

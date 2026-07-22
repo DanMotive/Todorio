@@ -1,8 +1,9 @@
-// Дополнительные блоки Todorio: объявления, дайджест, статистика, вложения, TOTP.
+// Additional Todorio blocks: announcements, digest, statistics, attachments, TOTP.
 import { useEffect, useRef, useState } from "react"
 import { api, type Me } from "./api"
+import { tr } from "./i18n"
 
-// ---------- объявления рута ----------
+// ---------- root announcements ----------
 
 type Announcement = {
   id: number
@@ -35,7 +36,7 @@ export function AnnouncementsBanner() {
           <span>{a.level === "emergency" ? "🚨" : a.level === "important" ? "⚠️" : "📢"}</span>
           <div style={{ flex: 1 }}>{a.body}</div>
           <button className="nav-btn" onClick={() => ack(a.id)}>
-            {a.requires_ack ? "Прочитал(а)" : "Скрыть"}
+            {a.requires_ack ? tr("announce.ack") : tr("announce.hide")}
           </button>
         </div>
       ))}
@@ -43,7 +44,7 @@ export function AnnouncementsBanner() {
   )
 }
 
-// ---------- дайджест «пока вас не было» ----------
+// ---------- "while you were away" digest ----------
 
 type Digest = {
   show: boolean
@@ -62,16 +63,16 @@ export function DigestModal() {
     setD(null)
   }
   const rows: Array<[string, number]> = [
-    ["📌 Новых задач на вас", d.summary.assigned_to_me],
-    ["💬 Комментариев к вашим задачам", d.summary.new_comments],
-    ["✅ Закрыто в ваших списках", d.summary.done_nearby],
-    ["📢 Объявлений", d.summary.announcements],
+    ["📌 " + tr("digest.assigned"), d.summary.assigned_to_me],
+    ["💬 " + tr("digest.comments"), d.summary.new_comments],
+    ["✅ " + tr("digest.done"), d.summary.done_nearby],
+    ["📢 " + tr("digest.announcements"), d.summary.announcements],
   ]
   return (
     <div className="card" style={{ padding: 16, marginBottom: 12, borderLeft: "4px solid var(--accent)" }}>
       <div className="row" style={{ justifyContent: "space-between" }}>
-        <b>👋 Пока вас не было ({d.since ? new Date(d.since).toLocaleString() : ""})</b>
-        <button className="nav-btn" onClick={close}>Понятно</button>
+        <b>👋 {tr("digest.title")} ({d.since ? new Date(d.since).toLocaleString() : ""})</b>
+        <button className="nav-btn" onClick={close}>{tr("digest.ok")}</button>
       </div>
       <div style={{ marginTop: 8, display: "flex", gap: 16, flexWrap: "wrap" }}>
         {rows.filter(([, n]) => n > 0).map(([label, n]) => (
@@ -82,7 +83,7 @@ export function DigestModal() {
   )
 }
 
-// ---------- статистика пространства ----------
+// ---------- space statistics ----------
 
 type StatsMember = { id: number; username: string; name: string; done: number; done_weight: number; overdue: number }
 type Stats = {
@@ -103,10 +104,10 @@ export function StatsCard({ spaceId }: { spaceId: number }) {
   return (
     <div className="card" style={{ padding: 14, marginBottom: 12 }}>
       <div className="row" style={{ justifyContent: "space-between" }}>
-        <b>📊 Статистика</b>
+        <b>📊 {tr("stats.title")}</b>
         <span>
-          <button className={"nav-btn" + (period === "week" ? " active" : "")} onClick={() => setPeriod("week")}>Неделя</button>
-          <button className={"nav-btn" + (period === "month" ? " active" : "")} onClick={() => setPeriod("month")}>Месяц</button>
+          <button className={"nav-btn" + (period === "week" ? " active" : "")} onClick={() => setPeriod("week")}>{tr("stats.week")}</button>
+          <button className={"nav-btn" + (period === "month" ? " active" : "")} onClick={() => setPeriod("month")}>{tr("stats.month")}</button>
         </span>
       </div>
       {(stats.caption.part1 || stats.caption.part2) && (
@@ -115,7 +116,7 @@ export function StatsCard({ spaceId }: { spaceId: number }) {
         </div>
       )}
       {stats.best && (
-        <div style={{ marginBottom: 10 }}>👑 Лучший за период: <b>@{stats.best.username}</b> · {stats.best.done} задач</div>
+        <div style={{ marginBottom: 10 }}>👑 {tr("stats.best")}: <b>@{stats.best.username}</b> · ✅ {stats.best.done}</div>
       )}
       {stats.members.map((m) => (
         <div key={m.id} style={{ marginBottom: 6 }}>
@@ -132,7 +133,7 @@ export function StatsCard({ spaceId }: { spaceId: number }) {
   )
 }
 
-// ---------- вложения-картинки ----------
+// ---------- image attachments ----------
 
 type Attachment = { id: number; mime_type: string; size_bytes: number }
 
@@ -152,7 +153,7 @@ export function AttachmentsBlock({ taskId }: { taskId: number }) {
       const r = await fetch(`/api/tasks/${taskId}/attachments`, { method: "POST", body: fd, credentials: "same-origin" })
       if (!r.ok) {
         const e = await r.json().catch(() => null)
-        alert(e?.error ?? "Не удалось загрузить файл")
+        alert(e?.error ?? tr("attach.failed"))
       }
       await load()
     } finally {
@@ -166,13 +167,13 @@ export function AttachmentsBlock({ taskId }: { taskId: number }) {
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         {items.map((a) => (
           <a key={a.id} href={`/api/attachments/${a.id}`} target="_blank" rel="noreferrer">
-            <img src={`/api/attachments/${a.id}`} alt={`вложение #${a.id}`}
+            <img src={`/api/attachments/${a.id}`} alt={`#${a.id}`}
               style={{ width: 84, height: 84, objectFit: "cover", borderRadius: 8 }} />
           </a>
         ))}
       </div>
       <label className="nav-btn" style={{ display: "inline-block", marginTop: 6, cursor: "pointer" }}>
-        {busy ? "Загрузка…" : "📎 Прикрепить картинку"}
+        {busy ? tr("attach.uploading") : "📎 " + tr("attach.add")}
         <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }}
           onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
       </label>
@@ -180,7 +181,7 @@ export function AttachmentsBlock({ taskId }: { taskId: number }) {
   )
 }
 
-// ---------- TOTP (двухфакторка для рута/админов) ----------
+// ---------- TOTP (two-factor auth for root/admins) ----------
 
 export function TotpCard({ me }: { me: Me }) {
   const [setup, setSetup] = useState<{ secret: string; otpauth: string } | null>(null)
@@ -194,35 +195,35 @@ export function TotpCard({ me }: { me: Me }) {
   const enable = async () => {
     try {
       await api.post("/api/me/totp/enable", { code })
-      setSetup(null); setCode(""); setMsg("✅ Двухфакторка включена — при входе понадобится код из приложения.")
+      setSetup(null); setCode(""); setMsg("✅ " + tr("totp.enabled"))
     } catch (e: any) { setMsg("❌ " + e.message) }
   }
   const disable = async () => {
-    const c = prompt("Код из приложения для отключения:")
+    const c = prompt(tr("totp.disable_prompt"))
     if (!c) return
-    try { await api.post("/api/me/totp/disable", { code: c }); setMsg("Двухфакторка отключена.") } catch (e: any) { setMsg("❌ " + e.message) }
+    try { await api.post("/api/me/totp/disable", { code: c }); setMsg(tr("totp.disabled")) } catch (e: any) { setMsg("❌ " + e.message) }
   }
 
   return (
     <div className="card" style={{ padding: 14, marginTop: 12 }}>
-      <b>🔐 Двухфакторная аутентификация (TOTP)</b>
+      <b>🔐 {tr("totp.title")}</b>
       <div className="muted" style={{ margin: "6px 0" }}>
-        Защита аккаунта рута/админа: код из Google Authenticator, Aegis или любого TOTP-приложения.
+        {tr("totp.desc")}
       </div>
       {!setup ? (
         <div className="row" style={{ gap: 8 }}>
-          <button className="nav-btn" onClick={start}>Настроить</button>
-          <button className="nav-btn" onClick={disable}>Отключить</button>
+          <button className="nav-btn" onClick={start}>{tr("totp.setup")}</button>
+          <button className="nav-btn" onClick={disable}>{tr("totp.disable")}</button>
         </div>
       ) : (
         <div>
           <div style={{ margin: "6px 0" }}>
-            1. Добавьте секрет в приложение: <code>{setup.secret}</code>
-            <div className="muted" style={{ wordBreak: "break-all" }}>или ссылкой: {setup.otpauth}</div>
+            {tr("totp.step1")} <code>{setup.secret}</code>
+            <div className="muted" style={{ wordBreak: "break-all" }}>{tr("totp.or_link")} {setup.otpauth}</div>
           </div>
           <div className="row" style={{ gap: 8 }}>
-            2. <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="6-значный код" maxLength={6} />
-            <button className="nav-btn" onClick={enable}>Подтвердить</button>
+            2. <input value={code} onChange={(e) => setCode(e.target.value)} placeholder={tr("totp.code")} maxLength={6} />
+            <button className="nav-btn" onClick={enable}>{tr("totp.confirm")}</button>
           </div>
         </div>
       )}
@@ -231,7 +232,7 @@ export function TotpCard({ me }: { me: Me }) {
   )
 }
 
-// ---------- инвайты (админка) ----------
+// ---------- invites (admin panel) ----------
 
 type Invite = {
   id: number
@@ -274,30 +275,29 @@ export function InvitesCard({ me }: { me: Me }) {
 
   return (
     <div className="card" style={{ marginTop: 12 }}>
-      <h3 style={{ marginTop: 0 }}>🎟 Инвайты</h3>
+      <h3 style={{ marginTop: 0 }}>🎟 {tr("invites.title")}</h3>
       <p style={{ opacity: 0.7, fontSize: 13 }}>
-        Инвайт-код активирует аккаунт сразу, без ручного одобрения. Разрешить инвайты обычным
-        юзерам: <code>todorio server policy set users.can_invite true</code>
+        {tr("invites.hint")} <code>todorio server policy set users.can_invite true</code>
       </p>
-      <button className="btn" onClick={create}>Создать инвайт (1 использование, 7 дней)</button>
+      <button className="btn" onClick={create}>{tr("invites.create")}</button>
       {lastCode && (
         <p>
-          Новый код: <code>{lastCode}</code>
+          {tr("invites.new_code")} <code>{lastCode}</code>
         </p>
       )}
       {invites.map((i) => (
         <div key={i.id} className="row" style={{ justifyContent: "space-between", padding: "4px 0" }}>
           <span>
-            <code>{i.code}</code> · {i.role} · {i.used_count}/{i.max_uses} · от {i.created_by}
+            <code>{i.code}</code> · {i.role} · {i.used_count}/{i.max_uses} · {tr("invites.by")} {i.created_by}
           </span>
-          <button className="nav-btn" onClick={() => remove(i.id)}>Удалить</button>
+          <button className="nav-btn" onClick={() => remove(i.id)}>{tr("invites.delete")}</button>
         </div>
       ))}
     </div>
   )
 }
 
-// ---------- публичная read-only страница списка (/s/{token}) ----------
+// ---------- public read-only list page (/s/{token}) ----------
 
 export function PublicListPage({ token }: { token: string }) {
   const [data, setData] = useState<any>(null)
@@ -307,7 +307,7 @@ export function PublicListPage({ token }: { token: string }) {
     fetch(`/api/public/${token}`)
       .then(async (r) => {
         const d = await r.json()
-        if (!r.ok) throw new Error(d.error || "ссылка недействительна")
+        if (!r.ok) throw new Error(d.error || tr("public.invalid"))
         return d
       })
       .then(setData)
@@ -321,7 +321,7 @@ export function PublicListPage({ token }: { token: string }) {
           <img src="/icons/logo.svg" alt="" width={28} height={28} />
           <h2 style={{ margin: 0 }}>{data ? data.list.name : "Todorio"}</h2>
         </div>
-        <p style={{ opacity: 0.6, fontSize: 13 }}>Публичная ссылка · только чтение</p>
+        <p style={{ opacity: 0.6, fontSize: 13 }}>{tr("public.readonly")}</p>
         {error && <p>{error}</p>}
         {data &&
           data.tasks.map((t: any) => (
@@ -337,7 +337,7 @@ export function PublicListPage({ token }: { token: string }) {
               </span>
             </div>
           ))}
-        {data && data.tasks.length === 0 && <p>Список пуст.</p>}
+        {data && data.tasks.length === 0 && <p>{tr("public.empty")}</p>}
       </div>
     </div>
   )

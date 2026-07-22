@@ -18,8 +18,8 @@ var imageExt = map[string]string{
 	"image/gif":  ".gif",
 }
 
-// POST /api/tasks/{id}/attachments — multipart-загрузка картинки (поле file).
-// Лимит размера — из настроек (limits.uploads.max_file_size_mb, дефолт 10 МБ).
+// POST /api/tasks/{id}/attachments — multipart image upload (field "file").
+// Size limit comes from settings (limits.uploads.max_file_size_mb, default 10 MB).
 func (a *API) handleUploadAttachment(w http.ResponseWriter, r *http.Request) {
 	u := a.requireUser(w, r)
 	if u == nil {
@@ -27,16 +27,16 @@ func (a *API) handleUploadAttachment(w http.ResponseWriter, r *http.Request) {
 	}
 	taskID, err := pathID(r)
 	if err != nil {
-		errJSON(w, http.StatusBadRequest, "некорректный id")
+		errJSON(w, http.StatusBadRequest, "invalid id")
 		return
 	}
 	var listID int64
 	if a.DB.Pool.QueryRow(r.Context(), `SELECT list_id FROM tasks WHERE id=$1 AND archived_at IS NULL`, taskID).Scan(&listID) != nil {
-		errJSON(w, http.StatusNotFound, "задача не найдена")
+		errJSON(w, http.StatusNotFound, "task not found")
 		return
 	}
 	if !permAtLeast(a.listPermission(r, u, listID), "editor") {
-		errJSON(w, http.StatusForbidden, "нет прав")
+		errJSON(w, http.StatusForbidden, "no permission")
 		return
 	}
 
@@ -46,23 +46,23 @@ func (a *API) handleUploadAttachment(w http.ResponseWriter, r *http.Request) {
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, int64(maxMB)<<20)
 	if err := r.ParseMultipartForm(int64(maxMB) << 20); err != nil {
-		errJSON(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("файл больше %d МБ", maxMB))
+		errJSON(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("file is larger than %d MB", maxMB))
 		return
 	}
 	file, _, err := r.FormFile("file")
 	if err != nil {
-		errJSON(w, http.StatusBadRequest, "ожидается поле file")
+		errJSON(w, http.StatusBadRequest, "expected a file field")
 		return
 	}
 	defer file.Close()
 
-	// Сниффим реальный тип — расширению и Content-Type не доверяем.
+	// Sniff the real file type — we don't trust the extension or Content-Type.
 	head := make([]byte, 512)
 	n, _ := io.ReadFull(file, head)
 	mime := http.DetectContentType(head[:n])
 	ext, ok := imageExt[mime]
 	if !ok {
-		errJSON(w, http.StatusBadRequest, "только картинки: jpeg, png, webp, gif")
+		errJSON(w, http.StatusBadRequest, "images only: jpeg, png, webp, gif")
 		return
 	}
 
@@ -71,19 +71,19 @@ func (a *API) handleUploadAttachment(w http.ResponseWriter, r *http.Request) {
 	rel := filepath.Join("tasks", strconv.FormatInt(taskID, 10), hex.EncodeToString(rnd)+ext)
 	abs := filepath.Join(a.Cfg.UploadsDir, rel)
 	if err := os.MkdirAll(filepath.Dir(abs), 0o750); err != nil {
-		errJSON(w, http.StatusInternalServerError, "хранилище недоступно")
+		errJSON(w, http.StatusInternalServerError, "storage unavailable")
 		return
 	}
 	dst, err := os.Create(abs)
 	if err != nil {
-		errJSON(w, http.StatusInternalServerError, "хранилище недоступно")
+		errJSON(w, http.StatusInternalServerError, "storage unavailable")
 		return
 	}
 	defer dst.Close()
 	size, err := io.Copy(dst, io.MultiReader(newBytesReader(head[:n]), file))
 	if err != nil {
 		_ = os.Remove(abs)
-		errJSON(w, http.StatusInternalServerError, "ошибка записи")
+		errJSON(w, http.StatusInternalServerError, "write error")
 		return
 	}
 
@@ -93,7 +93,7 @@ func (a *API) handleUploadAttachment(w http.ResponseWriter, r *http.Request) {
 		VALUES('task',$1,$2,$3,$4,$5) RETURNING id`,
 		taskID, u.ID, rel, mime, size).Scan(&id); err != nil {
 		_ = os.Remove(abs)
-		errJSON(w, http.StatusInternalServerError, "ошибка БД")
+		errJSON(w, http.StatusInternalServerError, "database error")
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{"id": id, "mime_type": mime, "size_bytes": size})
@@ -107,23 +107,23 @@ func (a *API) handleListAttachments(w http.ResponseWriter, r *http.Request) {
 	}
 	taskID, err := pathID(r)
 	if err != nil {
-		errJSON(w, http.StatusBadRequest, "некорректный id")
+		errJSON(w, http.StatusBadRequest, "invalid id")
 		return
 	}
 	var listID int64
 	if a.DB.Pool.QueryRow(r.Context(), `SELECT list_id FROM tasks WHERE id=$1`, taskID).Scan(&listID) != nil {
-		errJSON(w, http.StatusNotFound, "задача не найдена")
+		errJSON(w, http.StatusNotFound, "task not found")
 		return
 	}
 	if !permAtLeast(a.listPermission(r, u, listID), "viewer") {
-		errJSON(w, http.StatusForbidden, "нет доступа")
+		errJSON(w, http.StatusForbidden, "no access")
 		return
 	}
 	rows, err := a.DB.Pool.Query(r.Context(), `
 		SELECT id, mime_type, size_bytes, created_at FROM attachments
 		WHERE target_type='task' AND target_id=$1 ORDER BY id`, taskID)
 	if err != nil {
-		errJSON(w, http.StatusInternalServerError, "ошибка БД")
+		errJSON(w, http.StatusInternalServerError, "database error")
 		return
 	}
 	defer rows.Close()
@@ -139,7 +139,7 @@ func (a *API) handleListAttachments(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"attachments": list})
 }
 
-// GET /api/attachments/{id} — отдача файла с проверкой доступа к задаче.
+// GET /api/attachments/{id} — serves the file after checking access to the task.
 func (a *API) handleGetAttachment(w http.ResponseWriter, r *http.Request) {
 	u := a.requireUser(w, r)
 	if u == nil {
@@ -147,7 +147,7 @@ func (a *API) handleGetAttachment(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := pathID(r)
 	if err != nil {
-		errJSON(w, http.StatusBadRequest, "некорректный id")
+		errJSON(w, http.StatusBadRequest, "invalid id")
 		return
 	}
 	var rel, mime string
@@ -155,13 +155,13 @@ func (a *API) handleGetAttachment(w http.ResponseWriter, r *http.Request) {
 	if a.DB.Pool.QueryRow(r.Context(), `
 		SELECT file_path, mime_type, target_id FROM attachments WHERE id=$1 AND target_type='task'`,
 		id).Scan(&rel, &mime, &taskID) != nil {
-		errJSON(w, http.StatusNotFound, "вложение не найдено")
+		errJSON(w, http.StatusNotFound, "attachment not found")
 		return
 	}
 	var listID int64
 	if a.DB.Pool.QueryRow(r.Context(), `SELECT list_id FROM tasks WHERE id=$1`, taskID).Scan(&listID) != nil ||
 		!permAtLeast(a.listPermission(r, u, listID), "viewer") {
-		errJSON(w, http.StatusForbidden, "нет доступа")
+		errJSON(w, http.StatusForbidden, "no access")
 		return
 	}
 	w.Header().Set("Content-Type", mime)
@@ -169,7 +169,7 @@ func (a *API) handleGetAttachment(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, filepath.Join(a.Cfg.UploadsDir, rel))
 }
 
-// DELETE /api/attachments/{id} — загрузивший или админ.
+// DELETE /api/attachments/{id} — uploader or admin.
 func (a *API) handleDeleteAttachment(w http.ResponseWriter, r *http.Request) {
 	u := a.requireUser(w, r)
 	if u == nil {
@@ -177,7 +177,7 @@ func (a *API) handleDeleteAttachment(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := pathID(r)
 	if err != nil {
-		errJSON(w, http.StatusBadRequest, "некорректный id")
+		errJSON(w, http.StatusBadRequest, "invalid id")
 		return
 	}
 	var rel string
@@ -185,14 +185,14 @@ func (a *API) handleDeleteAttachment(w http.ResponseWriter, r *http.Request) {
 		DELETE FROM attachments WHERE id=$1 AND ($2 OR uploader_id=$3) RETURNING file_path`,
 		id, u.IsAdmin(), u.ID).Scan(&rel)
 	if err != nil {
-		errJSON(w, http.StatusForbidden, "можно удалять только свои вложения")
+		errJSON(w, http.StatusForbidden, "you can only delete your own attachments")
 		return
 	}
 	_ = os.Remove(filepath.Join(a.Cfg.UploadsDir, rel))
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-// newBytesReader — мини-хелпер, чтобы не тянуть bytes ради одного Reader.
+// newBytesReader — tiny helper so we don't pull in bytes just for one Reader.
 type bytesReader struct {
 	b []byte
 	i int

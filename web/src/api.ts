@@ -1,4 +1,4 @@
-// Тонкий клиент к Todorio API (cookie-сессии, JSON).
+// Thin client for the Todorio API (cookie sessions, JSON).
 
 async function handle(r: Response) {
   if (r.ok) return r.json()

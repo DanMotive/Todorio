@@ -4,7 +4,7 @@ import (
 	"net/http"
 )
 
-// GET /api/spaces — пространства, где пользователь участник (root/admin видят все).
+// GET /api/spaces — spaces the user is a member of (root/admin see all).
 func (a *API) handleListSpaces(w http.ResponseWriter, r *http.Request) {
 	u := a.requireUser(w, r)
 	if u == nil {
@@ -18,7 +18,7 @@ func (a *API) handleListSpaces(w http.ResponseWriter, r *http.Request) {
 		ORDER BY s.created_at`
 	rows, err := a.DB.Pool.Query(r.Context(), query, u.ID, u.IsAdmin())
 	if err != nil {
-		errJSON(w, http.StatusInternalServerError, "ошибка БД")
+		errJSON(w, http.StatusInternalServerError, "database error")
 		return
 	}
 	defer rows.Close()
@@ -34,28 +34,28 @@ func (a *API) handleListSpaces(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"spaces": spaces})
 }
 
-// POST /api/spaces {name} — политика users.can_create_spaces (дефолт true).
+// POST /api/spaces {name} — governed by policy users.can_create_spaces (default true).
 func (a *API) handleCreateSpace(w http.ResponseWriter, r *http.Request) {
 	u := a.requireUser(w, r)
 	if u == nil {
 		return
 	}
 	if !u.IsAdmin() && a.DB.Setting(r.Context(), "policy.users.can_create_spaces", "true") != "true" {
-		errJSON(w, http.StatusForbidden, "создание пространств отключено администратором")
+		errJSON(w, http.StatusForbidden, "space creation is disabled by the administrator")
 		return
 	}
 	var in struct {
 		Name string `json:"name"`
 	}
 	if err := readJSON(r, &in); err != nil || in.Name == "" {
-		errJSON(w, http.StatusBadRequest, "нужно имя пространства")
+		errJSON(w, http.StatusBadRequest, "a space name is required")
 		return
 	}
 	var id int64
 	err := a.DB.Pool.QueryRow(r.Context(),
 		`INSERT INTO spaces(name, owner_id) VALUES($1,$2) RETURNING id`, in.Name, u.ID).Scan(&id)
 	if err != nil {
-		errJSON(w, http.StatusInternalServerError, "ошибка БД")
+		errJSON(w, http.StatusInternalServerError, "database error")
 		return
 	}
 	_, _ = a.DB.Pool.Exec(r.Context(),
@@ -75,7 +75,7 @@ func (a *API) spaceRole(r *http.Request, u int64, isAdmin bool, spaceID int64) s
 	return role
 }
 
-// PATCH /api/spaces/{id} {name?, settings?} — только owner пространства (настройки: workflow, Пульс, рейтинги...).
+// PATCH /api/spaces/{id} {name?, settings?} — space owner only (settings: workflow, Pulse, rankings, ...).
 func (a *API) handleUpdateSpace(w http.ResponseWriter, r *http.Request) {
 	u := a.requireUser(w, r)
 	if u == nil {
@@ -83,7 +83,7 @@ func (a *API) handleUpdateSpace(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := pathID(r)
 	if err != nil || a.spaceRole(r, u.ID, u.IsAdmin(), id) != "owner" {
-		errJSON(w, http.StatusForbidden, "нужны права владельца пространства")
+		errJSON(w, http.StatusForbidden, "space owner permission required")
 		return
 	}
 	var in struct {
@@ -91,7 +91,7 @@ func (a *API) handleUpdateSpace(w http.ResponseWriter, r *http.Request) {
 		Settings *map[string]any `json:"settings"`
 	}
 	if err := readJSON(r, &in); err != nil {
-		errJSON(w, http.StatusBadRequest, "некорректный запрос")
+		errJSON(w, http.StatusBadRequest, "invalid request")
 		return
 	}
 	_, err = a.DB.Pool.Exec(r.Context(), `
@@ -99,13 +99,13 @@ func (a *API) handleUpdateSpace(w http.ResponseWriter, r *http.Request) {
 			settings = COALESCE($3, settings)
 		WHERE id=$1`, id, in.Name, in.Settings)
 	if err != nil {
-		errJSON(w, http.StatusInternalServerError, "ошибка БД")
+		errJSON(w, http.StatusInternalServerError, "database error")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-// DELETE /api/spaces/{id} — в архив (автоочистка через 30 дней — worker).
+// DELETE /api/spaces/{id} — moves to archive (auto-cleanup after 30 days — worker).
 func (a *API) handleArchiveSpace(w http.ResponseWriter, r *http.Request) {
 	u := a.requireUser(w, r)
 	if u == nil {
@@ -113,7 +113,7 @@ func (a *API) handleArchiveSpace(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := pathID(r)
 	if err != nil || a.spaceRole(r, u.ID, u.IsAdmin(), id) != "owner" {
-		errJSON(w, http.StatusForbidden, "нужны права владельца пространства")
+		errJSON(w, http.StatusForbidden, "space owner permission required")
 		return
 	}
 	_, _ = a.DB.Pool.Exec(r.Context(), `UPDATE spaces SET archived_at=now() WHERE id=$1`, id)
@@ -128,7 +128,7 @@ func (a *API) handleAddSpaceMember(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := pathID(r)
 	if err != nil || a.spaceRole(r, u.ID, u.IsAdmin(), id) != "owner" {
-		errJSON(w, http.StatusForbidden, "нужны права владельца пространства")
+		errJSON(w, http.StatusForbidden, "space owner permission required")
 		return
 	}
 	var in struct {
@@ -136,7 +136,7 @@ func (a *API) handleAddSpaceMember(w http.ResponseWriter, r *http.Request) {
 		Role     string `json:"role"` // member | viewer | owner
 	}
 	if err := readJSON(r, &in); err != nil {
-		errJSON(w, http.StatusBadRequest, "некорректный запрос")
+		errJSON(w, http.StatusBadRequest, "invalid request")
 		return
 	}
 	if in.Role != "owner" && in.Role != "member" && in.Role != "viewer" {
@@ -145,21 +145,21 @@ func (a *API) handleAddSpaceMember(w http.ResponseWriter, r *http.Request) {
 	var userID int64
 	if a.DB.Pool.QueryRow(r.Context(),
 		`SELECT id FROM users WHERE username=$1 AND status='active' AND archived_at IS NULL`, in.Username).Scan(&userID) != nil {
-		errJSON(w, http.StatusNotFound, "активный пользователь не найден")
+		errJSON(w, http.StatusNotFound, "active user not found")
 		return
 	}
 	_, err = a.DB.Pool.Exec(r.Context(), `
 		INSERT INTO space_members(space_id, user_id, role) VALUES($1,$2,$3)
 		ON CONFLICT (space_id, user_id) DO UPDATE SET role=$3`, id, userID, in.Role)
 	if err != nil {
-		errJSON(w, http.StatusInternalServerError, "ошибка БД")
+		errJSON(w, http.StatusInternalServerError, "database error")
 		return
 	}
 	a.notify(r, userID, "space_added", map[string]any{"space_id": id, "role": in.Role})
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-// GET /api/spaces/{id}/lists — списки пространства, доступные пользователю.
+// GET /api/spaces/{id}/lists — lists in the space that the user can access.
 func (a *API) handleListLists(w http.ResponseWriter, r *http.Request) {
 	u := a.requireUser(w, r)
 	if u == nil {
@@ -167,7 +167,7 @@ func (a *API) handleListLists(w http.ResponseWriter, r *http.Request) {
 	}
 	spaceID, err := pathID(r)
 	if err != nil || a.spaceRole(r, u.ID, u.IsAdmin(), spaceID) == "" {
-		errJSON(w, http.StatusForbidden, "нет доступа к пространству")
+		errJSON(w, http.StatusForbidden, "no access to the space")
 		return
 	}
 	rows, err := a.DB.Pool.Query(r.Context(), `
@@ -180,7 +180,7 @@ func (a *API) handleListLists(w http.ResponseWriter, r *http.Request) {
 			AND ($3 OR lm.user_id IS NOT NULL OR l.is_private=false)
 		ORDER BY l.position, l.id`, spaceID, u.ID, u.IsAdmin())
 	if err != nil {
-		errJSON(w, http.StatusInternalServerError, "ошибка БД")
+		errJSON(w, http.StatusInternalServerError, "database error")
 		return
 	}
 	defer rows.Close()
@@ -208,7 +208,7 @@ func (a *API) handleCreateList(w http.ResponseWriter, r *http.Request) {
 	spaceID, err := pathID(r)
 	role := a.spaceRole(r, u.ID, u.IsAdmin(), spaceID)
 	if err != nil || (role != "owner" && role != "member") {
-		errJSON(w, http.StatusForbidden, "нет прав на создание списка")
+		errJSON(w, http.StatusForbidden, "no permission to create a list")
 		return
 	}
 	var in struct {
@@ -216,7 +216,7 @@ func (a *API) handleCreateList(w http.ResponseWriter, r *http.Request) {
 		IsPrivate bool   `json:"is_private"`
 	}
 	if err := readJSON(r, &in); err != nil || in.Name == "" {
-		errJSON(w, http.StatusBadRequest, "нужно имя списка")
+		errJSON(w, http.StatusBadRequest, "a list name is required")
 		return
 	}
 	var id int64
@@ -224,7 +224,7 @@ func (a *API) handleCreateList(w http.ResponseWriter, r *http.Request) {
 		`INSERT INTO lists(space_id, name, is_private) VALUES($1,$2,$3) RETURNING id`,
 		spaceID, in.Name, in.IsPrivate).Scan(&id)
 	if err != nil {
-		errJSON(w, http.StatusInternalServerError, "ошибка БД")
+		errJSON(w, http.StatusInternalServerError, "database error")
 		return
 	}
 	_, _ = a.DB.Pool.Exec(r.Context(),
@@ -240,7 +240,7 @@ func (a *API) handleUpdateList(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := pathID(r)
 	if err != nil || !permAtLeast(a.listPermission(r, u, id), "owner") {
-		errJSON(w, http.StatusForbidden, "нужны права владельца списка")
+		errJSON(w, http.StatusForbidden, "list owner permission required")
 		return
 	}
 	var in struct {
@@ -249,14 +249,14 @@ func (a *API) handleUpdateList(w http.ResponseWriter, r *http.Request) {
 		Position *int            `json:"position"`
 	}
 	if err := readJSON(r, &in); err != nil {
-		errJSON(w, http.StatusBadRequest, "некорректный запрос")
+		errJSON(w, http.StatusBadRequest, "invalid request")
 		return
 	}
 	_, err = a.DB.Pool.Exec(r.Context(), `
 		UPDATE lists SET name=COALESCE($2,name), settings=COALESCE($3,settings), position=COALESCE($4,position)
 		WHERE id=$1`, id, in.Name, in.Settings, in.Position)
 	if err != nil {
-		errJSON(w, http.StatusInternalServerError, "ошибка БД")
+		errJSON(w, http.StatusInternalServerError, "database error")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
@@ -269,7 +269,7 @@ func (a *API) handleArchiveList(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := pathID(r)
 	if err != nil || !permAtLeast(a.listPermission(r, u, id), "owner") {
-		errJSON(w, http.StatusForbidden, "нужны права владельца списка")
+		errJSON(w, http.StatusForbidden, "list owner permission required")
 		return
 	}
 	_, _ = a.DB.Pool.Exec(r.Context(), `UPDATE lists SET archived_at=now() WHERE id=$1`, id)
@@ -284,7 +284,7 @@ func (a *API) handleAddListMember(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := pathID(r)
 	if err != nil || !permAtLeast(a.listPermission(r, u, id), "owner") {
-		errJSON(w, http.StatusForbidden, "нужны права владельца списка")
+		errJSON(w, http.StatusForbidden, "list owner permission required")
 		return
 	}
 	var in struct {
@@ -292,7 +292,7 @@ func (a *API) handleAddListMember(w http.ResponseWriter, r *http.Request) {
 		Permission string `json:"permission"` // owner | editor | viewer
 	}
 	if err := readJSON(r, &in); err != nil {
-		errJSON(w, http.StatusBadRequest, "некорректный запрос")
+		errJSON(w, http.StatusBadRequest, "invalid request")
 		return
 	}
 	if in.Permission != "owner" && in.Permission != "editor" && in.Permission != "viewer" {
@@ -301,14 +301,14 @@ func (a *API) handleAddListMember(w http.ResponseWriter, r *http.Request) {
 	var userID int64
 	if a.DB.Pool.QueryRow(r.Context(),
 		`SELECT id FROM users WHERE username=$1 AND status='active' AND archived_at IS NULL`, in.Username).Scan(&userID) != nil {
-		errJSON(w, http.StatusNotFound, "активный пользователь не найден")
+		errJSON(w, http.StatusNotFound, "active user not found")
 		return
 	}
 	_, err = a.DB.Pool.Exec(r.Context(), `
 		INSERT INTO list_members(list_id, user_id, permission) VALUES($1,$2,$3)
 		ON CONFLICT (list_id, user_id) DO UPDATE SET permission=$3`, id, userID, in.Permission)
 	if err != nil {
-		errJSON(w, http.StatusInternalServerError, "ошибка БД")
+		errJSON(w, http.StatusInternalServerError, "database error")
 		return
 	}
 	a.notify(r, userID, "list_shared", map[string]any{"list_id": id, "permission": in.Permission})

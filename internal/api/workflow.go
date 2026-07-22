@@ -1,8 +1,8 @@
 package api
 
-// Кастомные статусы воркфлоу: владелец пространства хранит их в
+// Custom workflow statuses: the space owner stores them in
 // spaces.settings -> {"workflow":{"statuses":["design","qa",...]}} (PATCH /api/spaces/{id}).
-// Дефолтные статусы есть всегда; 'done' закрывает задачу (completed_at).
+// Default statuses always exist; 'done' closes the task (sets completed_at).
 
 import (
 	"encoding/json"
@@ -38,7 +38,7 @@ func mergeStatuses(rawJSON *string) []string {
 	return statuses
 }
 
-// listStatuses — допустимые статусы для задач списка (через его пространство).
+// listStatuses — the statuses allowed for tasks in this list (via its space).
 func (a *API) listStatuses(r *http.Request, listID int64) []string {
 	var raw *string
 	_ = a.DB.Pool.QueryRow(r.Context(), `
@@ -48,7 +48,7 @@ func (a *API) listStatuses(r *http.Request, listID int64) []string {
 	return mergeStatuses(raw)
 }
 
-// GET /api/spaces/{id}/workflow — набор статусов пространства (для селекторов в UI).
+// GET /api/spaces/{id}/workflow — the space's status set (for UI selectors).
 func (a *API) handleGetWorkflow(w http.ResponseWriter, r *http.Request) {
 	u := a.requireUser(w, r)
 	if u == nil {
@@ -56,7 +56,7 @@ func (a *API) handleGetWorkflow(w http.ResponseWriter, r *http.Request) {
 	}
 	spaceID, err := pathID(r)
 	if err != nil || a.spaceRole(r, u.ID, u.IsAdmin(), spaceID) == "" {
-		errJSON(w, http.StatusForbidden, "нет доступа к пространству")
+		errJSON(w, http.StatusForbidden, "no access to the space")
 		return
 	}
 	var raw *string

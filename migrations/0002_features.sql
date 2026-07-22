@@ -1,20 +1,20 @@
--- Todorio · 0002_features · TOTP, вложения, статистика, объявления, дайджест.
--- Заодно выравниваем схему 0001 с кодом API.
+-- Todorio · 0002_features · TOTP, attachments, statistics, announcements, digest.
+-- Also aligns the 0001 schema with the API code.
 
--- выравнивание схемы
+-- schema alignment
 ALTER TABLE tasks RENAME COLUMN created_by TO creator_id;
 ALTER TABLE tasks DROP COLUMN blocked_by;
 ALTER TABLE tasks ADD COLUMN blocked_by BIGINT[] NOT NULL DEFAULT '{}';
 ALTER TABLE task_versions RENAME COLUMN changed_by TO editor_id;
 ALTER TABLE comments ADD COLUMN deleted_at TIMESTAMPTZ;
 
--- TOTP (двухфакторка для root/админов)
+-- TOTP (two-factor auth for root/admins)
 ALTER TABLE users ADD COLUMN totp_enabled BOOLEAN NOT NULL DEFAULT FALSE;
 
--- дайджест после отсутствия ≥6 часов: фиксируем момент последнего визита перед паузой
+-- digest after an absence of >=6 hours: records the last-seen moment before the pause
 ALTER TABLE users ADD COLUMN prev_seen_at TIMESTAMPTZ;
 
--- подтверждения/скрытия объявлений
+-- announcement acknowledgements/dismissals
 CREATE TABLE announcement_acks (
     announcement_id BIGINT NOT NULL REFERENCES announcements(id) ON DELETE CASCADE,
     user_id         BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -22,8 +22,8 @@ CREATE TABLE announcement_acks (
     PRIMARY KEY (announcement_id, user_id)
 );
 
--- Подписи статистики из двух частей: итоговая фраза = часть 1 + часть 2.
--- 15 × 15 = 225 комбинаций для ru-RU.
+-- Two-part statistics captions: final phrase = part 1 + part 2.
+-- 15 × 15 = 225 combinations for ru-RU.
 INSERT INTO stat_captions(locale, category, part, text) VALUES
 ('ru-RU','success',1,'Машина продуктивности'),
 ('ru-RU','success',1,'Герой дедлайнов'),

@@ -1,9 +1,22 @@
 {
-  "pwa.install": "Ship it to my device",
+  "announce.ack": "Ack",
+  "auth.sign_in": "Log in",
+  "auth.sign_up": "Sign up",
+  "digest.title": "While you were AFK",
   "footer.developed_by": "Coded by",
+  "my.empty": "Zero tickets assigned — ship it 🚀",
   "nav.my": "My backlog",
   "nav.notifications": "Pings",
-  "task.new": "New ticket",
+  "notif.kind.comment": "New comment in the thread",
+  "notif.kind.overdue": "Ticket went stale",
+  "notif.kind.task_assigned": "A ticket landed on you",
+  "pulse.blocked": "blocker",
+  "pulse.stale": "stuck in prod",
+  "pulse.title": "Space healthcheck",
+  "pwa.install": "Ship it to my device",
+  "stats.best": "Sprint MVP",
+  "task.archive": "To /dev/null",
   "task.done": "Shipped 🚀",
-  "pulse.title": "Space healthcheck"
+  "task.new": "New ticket",
+  "task.new_placeholder": "New ticket…"
 }

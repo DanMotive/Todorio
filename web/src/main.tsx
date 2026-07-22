@@ -4,7 +4,7 @@ import App from "./App"
 import { PublicListPage } from "./extras"
 import "./theme.css"
 
-// Публичные read-only ссылки /s/{token} рендерятся без авторизации.
+// Public read-only links /s/{token} render without authentication.
 const share = window.location.pathname.match(/^\/s\/([A-Za-z0-9]+)\/?$/)
 
 ReactDOM.createRoot(document.getElementById("root")!).render(

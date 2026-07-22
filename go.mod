@@ -7,4 +7,4 @@ require (
 	golang.org/x/crypto v0.24.0
 )
 
-// После клонирования выполни: go mod tidy (подтянет косвенные зависимости и go.sum)
+// After cloning, run: go mod tidy (fetches indirect dependencies and generates go.sum)

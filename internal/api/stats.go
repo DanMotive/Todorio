@@ -4,9 +4,9 @@ import (
 	"net/http"
 )
 
-// GET /api/spaces/{id}/stats?period=week|month — статистика пространства:
-// по-участникам (сделано, взвешенный вклад), «кто лучший» и случайная подпись из двух частей.
-// Рейтинг отключаем: spaces.settings -> stats.show_best = false.
+// GET /api/spaces/{id}/stats?period=week|month — space statistics:
+// per-member (done, weighted contribution), "top performer", and a random two-part caption.
+// Rankings can be disabled: spaces.settings -> stats.show_best = false.
 func (a *API) handleStats(w http.ResponseWriter, r *http.Request) {
 	u := a.requireUser(w, r)
 	if u == nil {
@@ -14,7 +14,7 @@ func (a *API) handleStats(w http.ResponseWriter, r *http.Request) {
 	}
 	spaceID, err := pathID(r)
 	if err != nil || a.spaceRole(r, u.ID, u.IsAdmin(), spaceID) == "" {
-		errJSON(w, http.StatusForbidden, "нет доступа к пространству")
+		errJSON(w, http.StatusForbidden, "no access to the space")
 		return
 	}
 	interval := "7 days"
@@ -35,7 +35,7 @@ func (a *API) handleStats(w http.ResponseWriter, r *http.Request) {
 		GROUP BY u.id, u.username, u.display_name
 		ORDER BY done_weight DESC, done_cnt DESC`, spaceID, interval)
 	if err != nil {
-		errJSON(w, http.StatusInternalServerError, "ошибка БД")
+		errJSON(w, http.StatusInternalServerError, "database error")
 		return
 	}
 	defer rows.Close()
@@ -59,7 +59,7 @@ func (a *API) handleStats(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Категория подписи по состоянию периода.
+	// Caption category based on the period's state.
 	category := "neutral"
 	switch {
 	case totalOverdue > totalDone && totalOverdue > 0:
@@ -70,9 +70,9 @@ func (a *API) handleStats(w http.ResponseWriter, r *http.Request) {
 		category = "focus"
 	}
 
-	// Подпись из двух частей: детерминированный «случайный» выбор на день (seed = space_id + день года),
-	// чтобы подпись не менялась при каждом обновлении страницы.
-	locale := a.DB.Setting(r.Context(), "branding.stats_locale", "ru-RU")
+	// Two-part caption: deterministic "random" pick per day (seed = space_id + day of year),
+	// so the caption doesn't change on every page refresh.
+	locale := a.DB.Setting(r.Context(), "branding.stats_locale", "en-US")
 	var part1, part2 string
 	_ = a.DB.Pool.QueryRow(r.Context(), `
 		SELECT text FROM stat_captions WHERE locale=$1 AND category=$2 AND part=1
@@ -91,7 +91,7 @@ func (a *API) handleStats(w http.ResponseWriter, r *http.Request) {
 		"caption":  map[string]string{"part1": part1, "part2": part2, "category": category},
 	}
 
-	// «Кто лучший» — настраивается владельцем пространства (settings.stats.show_best).
+	// "Top performer" — configurable by the space owner (settings.stats.show_best).
 	var showBest *bool
 	_ = a.DB.Pool.QueryRow(r.Context(),
 		`SELECT (settings #>> '{stats,show_best}')::boolean FROM spaces WHERE id=$1`, spaceID).Scan(&showBest)

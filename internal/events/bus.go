@@ -1,4 +1,4 @@
-// Package events — in-memory шина событий для SSE (подписка по user id).
+// Package events: in-memory event bus for SSE (subscriptions keyed by user id).
 package events
 
 import "sync"
@@ -30,7 +30,7 @@ func (b *Bus) Subscribe(userID int64) (chan Event, func()) {
 	}
 }
 
-// Publish — неблокирующая доставка; медленные подписчики пропускают событие.
+// Publish — non-blocking delivery; slow subscribers miss the event.
 func (b *Bus) Publish(userIDs []int64, e Event) {
 	b.mu.Lock()
 	defer b.mu.Unlock()

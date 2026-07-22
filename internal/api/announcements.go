@@ -7,8 +7,8 @@ import (
 	"github.com/DanMotive/Todorio/internal/events"
 )
 
-// POST /api/announcements — объявление на весь сервер (только root, space_id не указан)
-// или на пространство (владелец пространства или админ).
+// POST /api/announcements — server-wide announcement (root only, space_id omitted)
+// or space-scoped (space owner or admin).
 func (a *API) handleCreateAnnouncement(w http.ResponseWriter, r *http.Request) {
 	u := a.requireUser(w, r)
 	if u == nil {
@@ -22,7 +22,7 @@ func (a *API) handleCreateAnnouncement(w http.ResponseWriter, r *http.Request) {
 		ExpiresDays *int   `json:"expires_days"`
 	}
 	if err := readJSON(r, &in); err != nil || in.Body == "" {
-		errJSON(w, http.StatusBadRequest, "некорректный запрос")
+		errJSON(w, http.StatusBadRequest, "invalid request")
 		return
 	}
 	switch in.Level {
@@ -35,11 +35,11 @@ func (a *API) handleCreateAnnouncement(w http.ResponseWriter, r *http.Request) {
 	}
 	if in.SpaceID == nil {
 		if u.Role != "root" {
-			errJSON(w, http.StatusForbidden, "объявления на весь сервер делает только root")
+			errJSON(w, http.StatusForbidden, "only root can create server-wide announcements")
 			return
 		}
 	} else if a.spaceRole(r, u.ID, u.IsAdmin(), *in.SpaceID) != "owner" {
-		errJSON(w, http.StatusForbidden, "нужны права владельца пространства")
+		errJSON(w, http.StatusForbidden, "space owner permission required")
 		return
 	}
 
@@ -53,12 +53,12 @@ func (a *API) handleCreateAnnouncement(w http.ResponseWriter, r *http.Request) {
 		INSERT INTO announcements(space_id, author_id, level, body, requires_ack, expires_at)
 		VALUES($1,$2,$3,$4,$5,$6) RETURNING id`,
 		in.SpaceID, u.ID, in.Level, in.Body, in.RequiresAck, expires).Scan(&id); err != nil {
-		errJSON(w, http.StatusInternalServerError, "ошибка БД")
+		errJSON(w, http.StatusInternalServerError, "database error")
 		return
 	}
 
-	// Получатели: весь сервер или участники пространства. Баннер приедет по SSE всем,
-	// в колокольчик пишем только important/emergency, чтобы не спамить.
+	// Recipients: the whole server or just the space members. The banner reaches everyone via SSE,
+	// while the bell only gets important/emergency to avoid spamming.
 	query := `SELECT id FROM users WHERE status='active' AND archived_at IS NULL`
 	args := []any{}
 	if in.SpaceID != nil {
@@ -89,7 +89,7 @@ func (a *API) handleCreateAnnouncement(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]any{"id": id})
 }
 
-// GET /api/announcements/active — актуальные для текущего пользователя (не скрытые и не истёкшие).
+// GET /api/announcements/active — announcements still relevant to the current user (not dismissed, not expired).
 func (a *API) handleActiveAnnouncements(w http.ResponseWriter, r *http.Request) {
 	u := a.requireUser(w, r)
 	if u == nil {
@@ -104,7 +104,7 @@ func (a *API) handleActiveAnnouncements(w http.ResponseWriter, r *http.Request) 
 		ORDER BY CASE an.level WHEN 'emergency' THEN 0 WHEN 'important' THEN 1 ELSE 2 END, an.id DESC
 		LIMIT 20`, u.ID)
 	if err != nil {
-		errJSON(w, http.StatusInternalServerError, "ошибка БД")
+		errJSON(w, http.StatusInternalServerError, "database error")
 		return
 	}
 	defer rows.Close()
@@ -127,7 +127,7 @@ func (a *API) handleActiveAnnouncements(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, map[string]any{"announcements": list})
 }
 
-// POST /api/announcements/{id}/ack — «прочитал/скрыть».
+// POST /api/announcements/{id}/ack — "read/dismiss".
 func (a *API) handleAckAnnouncement(w http.ResponseWriter, r *http.Request) {
 	u := a.requireUser(w, r)
 	if u == nil {
@@ -135,7 +135,7 @@ func (a *API) handleAckAnnouncement(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := pathID(r)
 	if err != nil {
-		errJSON(w, http.StatusBadRequest, "некорректный id")
+		errJSON(w, http.StatusBadRequest, "invalid id")
 		return
 	}
 	_, _ = a.DB.Pool.Exec(r.Context(), `

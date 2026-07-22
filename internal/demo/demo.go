@@ -1,4 +1,4 @@
-// Package demo — обучающее демо-пространство и онбординг-квесты.
+// Package demo: onboarding demo space and quests.
 package demo
 
 import (
@@ -13,39 +13,39 @@ type Quest struct {
 	Description string
 }
 
-// Quests — задания для освоения сервиса (экскурсионный обзор в виде задач).
+// Quests — tasks to help a new user learn the product (a guided tour as to-dos).
 func Quests() []Quest {
 	return []Quest{
-		{"✅ Закрой эту задачу", "Нажми на кружок слева от названия — так отмечаются выполненные задачи."},
-		{"📝 Создай свою первую задачу", "Открой свой список и нажми «Новая задача». Назови её как угодно!"},
-		{"⏰ Поставь дедлайн", "Открой задачу и укажи срок — появится цветная плашка, а перед просрочкой придёт уведомление."},
-		{"💬 Напиши комментарий", "В карточке задачи есть лента обсуждения. Упомяни коллегу через @логин — ему придёт уведомление."},
-		{"🔥 Поставь реакцию", "Любой задаче или комментарию можно поставить смайл: 👍 ✅ 🎉 🔥 👀 ❓ ❗ ❌ 😭 ⭐"},
-		{"🎨 Переключи тему", "В шапке сайта есть выбор из 5 цветов, светлая/тёмная схема и лёгкий режим для слабых машин."},
-		{"📊 Загляни в Пульс пространства", "На странице пространства есть здоровье команды: просрочки, зависшие задачи и общий балл."},
-		{"📱 Установи как приложение", "Кнопка ⬇️ в шапке ставит Todorio как PWA на телефон или в систему (нужен HTTPS)."},
+		{"✅ Close this task", "Click the circle to the left of the title — that's how completed tasks are marked."},
+		{"📝 Create your first task", "Open your list and click \"New task\". Name it anything you like!"},
+		{"⏰ Set a due date", "Open a task and set a due date — a colored badge will appear, and you'll get a notification before it's overdue."},
+		{"💬 Write a comment", "Every task card has a discussion feed. Mention a teammate with @username and they'll get a notification."},
+		{"🔥 Add a reaction", "Any task or comment can get an emoji reaction: 👍 ✅ 🎉 🔥 👀 ❓ ❗ ❌ 😭 ⭐"},
+		{"🎨 Switch the theme", "The site header has a choice of 5 colors, a light/dark scheme, and a lite mode for slower machines."},
+		{"📊 Check the space Pulse", "The space page shows team health: overdue tasks, stalled tasks, and an overall score."},
+		{"📱 Install as an app", "The ⬇️ button in the header installs Todorio as a PWA on your phone or desktop (requires HTTPS)."},
 	}
 }
 
-// EnsureDemo создаёт демо-пространство при первом запуске (если включено в setup).
-// Повторные запуски — no-op (флаг onboarding.demo_space_id в system_settings).
+// EnsureDemo creates the demo space on first run (if enabled during setup).
+// Safe to call again — it's a no-op after the first run (flag: onboarding.demo_space_id in system_settings).
 func EnsureDemo(ctx context.Context, d *db.DB) error {
 	if d.Setting(ctx, "onboarding.demo", "on") == "off" {
 		return nil
 	}
 	if d.Setting(ctx, "onboarding.demo_space_id", "") != "" {
-		return nil // уже создано
+		return nil // already created
 	}
 	var rootID int64
 	if err := d.Pool.QueryRow(ctx,
 		`SELECT id FROM users WHERE role='root' ORDER BY id LIMIT 1`).Scan(&rootID); err != nil {
-		return nil // root ещё не создан — попробуем при следующем старте
+		return nil // root not created yet — try again on the next startup
 	}
 
 	var spaceID int64
 	if err := d.Pool.QueryRow(ctx,
 		`INSERT INTO spaces(name, owner_id) VALUES($1,$2) RETURNING id`,
-		"🎓 Добро пожаловать в Todorio", rootID).Scan(&spaceID); err != nil {
+		"🎓 Welcome to Todorio", rootID).Scan(&spaceID); err != nil {
 		return err
 	}
 	if _, err := d.Pool.Exec(ctx,
@@ -55,7 +55,7 @@ func EnsureDemo(ctx context.Context, d *db.DB) error {
 	var listID int64
 	if err := d.Pool.QueryRow(ctx,
 		`INSERT INTO lists(space_id, name) VALUES($1,$2) RETURNING id`,
-		spaceID, "🎯 Квесты освоения").Scan(&listID); err != nil {
+		spaceID, "🎯 Onboarding quests").Scan(&listID); err != nil {
 		return err
 	}
 	if _, err := d.Pool.Exec(ctx,

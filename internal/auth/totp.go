@@ -1,6 +1,6 @@
 package auth
 
-// TOTP (RFC 6238) на чистой стандартной библиотеке: HMAC-SHA1, шаг 30 с, 6 цифр, окно ±1.
+// TOTP (RFC 6238) using only the standard library: HMAC-SHA1, 30s step, 6 digits, ±1 window.
 
 import (
 	"crypto/hmac"
@@ -40,7 +40,7 @@ func totpCode(secret string, counter uint64) (string, error) {
 	return fmt.Sprintf("%06d", code), nil
 }
 
-// VerifyTOTP принимает код текущего, предыдущего и следующего 30-секундного окна.
+// VerifyTOTP accepts the code from the current, previous, and next 30-second window.
 func VerifyTOTP(secret, code string) bool {
 	code = strings.TrimSpace(code)
 	if len(code) != 6 {
@@ -59,7 +59,7 @@ func VerifyTOTP(secret, code string) bool {
 	return false
 }
 
-// TOTPURL — otpauth-ссылка для QR в любом аутентификаторе (Google Authenticator, Aegis и т.п.).
+// TOTPURL — otpauth link for a QR code in any authenticator app (Google Authenticator, Aegis, etc.).
 func TOTPURL(secret, account, issuer string) string {
 	return fmt.Sprintf("otpauth://totp/%s:%s?secret=%s&issuer=%s&digits=6&period=30",
 		url.PathEscape(issuer), url.PathEscape(account), secret, url.QueryEscape(issuer))

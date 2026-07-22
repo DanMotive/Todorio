@@ -1,9 +1,22 @@
 {
-  "pwa.install": "Заинсталлить аппку",
+  "announce.ack": "Ack",
+  "auth.sign_in": "Залогиниться",
+  "auth.sign_up": "Зарегаться",
+  "digest.title": "Пока вы были в оффлайне",
   "footer.developed_by": "Закодил",
+  "my.empty": "Тасок нет — можно катить деплой 🚀",
   "nav.my": "Мои таски",
   "nav.notifications": "Нотификейшены",
-  "task.new": "Новый таск",
+  "notif.kind.comment": "Новый коммент",
+  "notif.kind.overdue": "Таска протухла",
+  "notif.kind.task_assigned": "На вас повесили таску",
+  "pulse.blocked": "блокер",
+  "pulse.stale": "зависло в проде",
+  "pulse.title": "Хелсчек спейса",
+  "pwa.install": "Заинсталлить аппку",
+  "stats.best": "MVP спринта",
+  "task.archive": "В /dev/null",
   "task.done": "Задеплоено 🚀",
-  "pulse.title": "Хелсчек спейса"
+  "task.new": "Новый таск",
+  "task.new_placeholder": "Новая таска…"
 }

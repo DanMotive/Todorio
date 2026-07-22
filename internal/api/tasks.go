@@ -52,13 +52,13 @@ func (a *API) handleListTasks(w http.ResponseWriter, r *http.Request) {
 	}
 	listID, err := pathID(r)
 	if err != nil || !permAtLeast(a.listPermission(r, u, listID), "viewer") {
-		errJSON(w, http.StatusForbidden, "нет доступа к списку")
+		errJSON(w, http.StatusForbidden, "no access to the list")
 		return
 	}
 	rows, err := a.DB.Pool.Query(r.Context(),
 		taskSelect+` WHERE t.list_id=$1 AND t.archived_at IS NULL ORDER BY t.position, t.id`, listID)
 	if err != nil {
-		errJSON(w, http.StatusInternalServerError, "ошибка БД")
+		errJSON(w, http.StatusInternalServerError, "database error")
 		return
 	}
 	defer rows.Close()
@@ -71,7 +71,7 @@ func (a *API) handleListTasks(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"tasks": tasks})
 }
 
-// GET /api/my/tasks — экран «Моё»: все назначенные мне открытые задачи, ближайшие дедлайны сверху.
+// GET /api/my/tasks — the "My tasks" screen: all open tasks assigned to me, nearest deadlines first.
 func (a *API) handleMyTasks(w http.ResponseWriter, r *http.Request) {
 	u := a.requireUser(w, r)
 	if u == nil {
@@ -81,7 +81,7 @@ func (a *API) handleMyTasks(w http.ResponseWriter, r *http.Request) {
 		taskSelect+` WHERE t.assignee_id=$1 AND t.archived_at IS NULL AND t.completed_at IS NULL
 		ORDER BY t.due_at NULLS LAST, t.priority DESC, t.id`, u.ID)
 	if err != nil {
-		errJSON(w, http.StatusInternalServerError, "ошибка БД")
+		errJSON(w, http.StatusInternalServerError, "database error")
 		return
 	}
 	defer rows.Close()
@@ -101,16 +101,16 @@ func (a *API) handleGetTask(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := pathID(r)
 	if err != nil {
-		errJSON(w, http.StatusBadRequest, "некорректный id")
+		errJSON(w, http.StatusBadRequest, "invalid id")
 		return
 	}
 	t, err := scanTask(a.DB.Pool.QueryRow(r.Context(), taskSelect+` WHERE t.id=$1 AND t.archived_at IS NULL`, id))
 	if err != nil {
-		errJSON(w, http.StatusNotFound, "задача не найдена")
+		errJSON(w, http.StatusNotFound, "task not found")
 		return
 	}
 	if !permAtLeast(a.listPermission(r, u, t.ListID), "viewer") {
-		errJSON(w, http.StatusForbidden, "нет доступа")
+		errJSON(w, http.StatusForbidden, "no access")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"task": t})
@@ -124,7 +124,7 @@ func (a *API) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	}
 	listID, err := pathID(r)
 	if err != nil || !permAtLeast(a.listPermission(r, u, listID), "editor") {
-		errJSON(w, http.StatusForbidden, "нет прав на создание задач")
+		errJSON(w, http.StatusForbidden, "no permission to create tasks")
 		return
 	}
 	var in struct {
@@ -137,7 +137,7 @@ func (a *API) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		Weight      *int       `json:"weight"`
 	}
 	if err := readJSON(r, &in); err != nil || in.Title == "" {
-		errJSON(w, http.StatusBadRequest, "нужен заголовок задачи")
+		errJSON(w, http.StatusBadRequest, "a task title is required")
 		return
 	}
 	var id int64
@@ -146,7 +146,7 @@ func (a *API) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		VALUES($1,$2,$3,$4,COALESCE($5,'normal'),$6,$7,COALESCE($8,1),$9) RETURNING id`,
 		listID, in.ParentID, in.Title, in.Description, in.Priority, in.AssigneeID, in.DueAt, in.Weight, u.ID).Scan(&id)
 	if err != nil {
-		errJSON(w, http.StatusInternalServerError, "ошибка БД")
+		errJSON(w, http.StatusInternalServerError, "database error")
 		return
 	}
 	if in.AssigneeID != nil && *in.AssigneeID != u.ID {
@@ -156,7 +156,7 @@ func (a *API) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]any{"id": id})
 }
 
-// PATCH /api/tasks/{id} — любые поля; перед изменением пишется снимок в task_versions.
+// PATCH /api/tasks/{id} — any field; a snapshot is written to task_versions before the change.
 func (a *API) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 	u := a.requireUser(w, r)
 	if u == nil {
@@ -164,18 +164,18 @@ func (a *API) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := pathID(r)
 	if err != nil {
-		errJSON(w, http.StatusBadRequest, "некорректный id")
+		errJSON(w, http.StatusBadRequest, "invalid id")
 		return
 	}
 	var listID int64
 	var oldAssignee *int64
 	if a.DB.Pool.QueryRow(r.Context(),
 		`SELECT list_id, assignee_id FROM tasks WHERE id=$1 AND archived_at IS NULL`, id).Scan(&listID, &oldAssignee) != nil {
-		errJSON(w, http.StatusNotFound, "задача не найдена")
+		errJSON(w, http.StatusNotFound, "task not found")
 		return
 	}
 	if !permAtLeast(a.listPermission(r, u, listID), "editor") {
-		errJSON(w, http.StatusForbidden, "нет прав на редактирование")
+		errJSON(w, http.StatusForbidden, "no permission to edit")
 		return
 	}
 	var in struct {
@@ -193,11 +193,11 @@ func (a *API) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 		Position    *int       `json:"position"`
 	}
 	if err := readJSON(r, &in); err != nil {
-		errJSON(w, http.StatusBadRequest, "некорректный запрос")
+		errJSON(w, http.StatusBadRequest, "invalid request")
 		return
 	}
 
-	// снимок версии до изменения
+	// snapshot of the version before the change
 	_, _ = a.DB.Pool.Exec(r.Context(), `
 		INSERT INTO task_versions(task_id, editor_id, snapshot)
 		SELECT id, $2, to_jsonb(t) FROM tasks t WHERE id=$1`, id, u.ID)
@@ -224,8 +224,13 @@ func (a *API) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 		in.AssigneeID, in.ClearAssignee, in.DueAt, in.ClearDueAt,
 		in.Progress, in.Weight, in.BlockedBy, in.Position)
 	if err != nil {
-		errJSON(w, http.StatusBadRequest, "не удалось обновить (проверь значения)")
+		errJSON(w, http.StatusBadRequest, "update failed (check the values)")
 		return
+	}
+
+	// recurring tasks: spawn the next occurrence once this one is marked done
+	if in.Status != nil && *in.Status == "done" {
+		a.spawnRecurrence(r.Context(), id)
 	}
 
 	if in.AssigneeID != nil && (oldAssignee == nil || *oldAssignee != *in.AssigneeID) && *in.AssigneeID != u.ID {
@@ -235,7 +240,7 @@ func (a *API) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-// DELETE /api/tasks/{id} — в архив.
+// DELETE /api/tasks/{id} — moves to archive.
 func (a *API) handleArchiveTask(w http.ResponseWriter, r *http.Request) {
 	u := a.requireUser(w, r)
 	if u == nil {
@@ -243,16 +248,16 @@ func (a *API) handleArchiveTask(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := pathID(r)
 	if err != nil {
-		errJSON(w, http.StatusBadRequest, "некорректный id")
+		errJSON(w, http.StatusBadRequest, "invalid id")
 		return
 	}
 	var listID int64
 	if a.DB.Pool.QueryRow(r.Context(), `SELECT list_id FROM tasks WHERE id=$1`, id).Scan(&listID) != nil {
-		errJSON(w, http.StatusNotFound, "задача не найдена")
+		errJSON(w, http.StatusNotFound, "task not found")
 		return
 	}
 	if !permAtLeast(a.listPermission(r, u, listID), "editor") {
-		errJSON(w, http.StatusForbidden, "нет прав")
+		errJSON(w, http.StatusForbidden, "no permission")
 		return
 	}
 	_, _ = a.DB.Pool.Exec(r.Context(), `UPDATE tasks SET archived_at=now() WHERE id=$1 OR parent_id=$1`, id)
@@ -260,7 +265,7 @@ func (a *API) handleArchiveTask(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-// publishToListMembers рассылает SSE-событие всем участникам списка.
+// publishToListMembers broadcasts an SSE event to every member of the list.
 func (a *API) publishToListMembers(r *http.Request, listID int64, e events.Event) {
 	rows, err := a.DB.Pool.Query(r.Context(), `SELECT user_id FROM list_members WHERE list_id=$1`, listID)
 	if err != nil {

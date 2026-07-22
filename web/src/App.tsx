@@ -4,6 +4,7 @@ import "./theme.css"
 import "./ui.css"
 import { AdminPage, AuthPage, MyTasksPage, NotificationsPage, PendingPage, SpacesPage } from "./views"
 import { AnnouncementsBanner, DigestModal, TotpCard, InvitesCard } from "./extras"
+import { detectLocale, setLocale, tr } from "./i18n"
 
 type Bootstrap = {
   site_name: string
@@ -34,7 +35,7 @@ function beep() {
     gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.25)
     osc.start()
     osc.stop(ctx.currentTime + 0.25)
-  } catch { /* звук недоступен */ }
+  } catch { /* sound unavailable */ }
 }
 
 export default function App() {
@@ -47,7 +48,7 @@ export default function App() {
   const [installEvt, setInstallEvt] = useState<any>(null)
   const esRef = useRef<EventSource | null>(null)
 
-  // тема: серверный дефолт ← личное переопределение (localStorage + профиль)
+  // theme: server default <- personal override (localStorage + profile)
   const savedTheme = JSON.parse(localStorage.getItem("todorio.theme") || "null")
   const [theme, setTheme] = useState<{ color: string; scheme: string; visual: string }>(
     savedTheme || { color: "blue", scheme: "dark", visual: "rich" },
@@ -55,6 +56,8 @@ export default function App() {
 
   useEffect(() => {
     api.get("/api/bootstrap").then((b: Bootstrap) => {
+      const nav = detectLocale()
+      setLocale(nav !== "en-US" ? nav : (b.default_locale || "en-US"))
       setBoot(b)
       document.title = b.browser_title || b.site_name
       if (!savedTheme) setTheme(b.theme)
@@ -70,7 +73,7 @@ export default function App() {
 
   useEffect(() => { applyTheme(theme.color, theme.scheme, theme.visual) }, [theme])
 
-  // SSE — живые уведомления после входа
+  // SSE — live notifications after login
   useEffect(() => {
     if (!me || me.status !== "active") return
     const es = new EventSource("/api/events")
@@ -110,40 +113,40 @@ export default function App() {
       <nav className="nav">
         <img src="/icons/logo.svg" alt="" width={28} height={28} />
         <b>{siteName}</b>
-        <button className={"nav-btn" + (view === "my" ? " active" : "")} onClick={() => setView("my")}>Моё</button>
-        <button className={"nav-btn" + (view === "spaces" ? " active" : "")} onClick={() => setView("spaces")}>Пространства</button>
+        <button className={"nav-btn" + (view === "my" ? " active" : "")} onClick={() => setView("my")}>{tr("nav.my")}</button>
+        <button className={"nav-btn" + (view === "spaces" ? " active" : "")} onClick={() => setView("spaces")}>{tr("nav.spaces")}</button>
         <button className={"nav-btn" + (view === "notifications" ? " active" : "")} onClick={() => { setView("notifications") }}>
           🔔{unread > 0 && <span className="badge">{unread}</span>}
         </button>
         {me.role !== "user" && me.role !== "viewer" && (
-          <button className={"nav-btn" + (view === "admin" ? " active" : "")} onClick={() => setView("admin")}>Админка</button>
+          <button className={"nav-btn" + (view === "admin" ? " active" : "")} onClick={() => setView("admin")}>{tr("nav.admin")}</button>
         )}
         <span className="spacer" />
         <select className="input" style={{ width: "auto", padding: "6px 8px" }} value={theme.color}
           onChange={(e) => updateTheme({ color: e.target.value })}>
           {COLORS.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
-        <button className="nav-btn" title="Светлая/тёмная"
+        <button className="nav-btn" title={tr("nav.theme")}
           onClick={() => updateTheme({ scheme: theme.scheme === "dark" ? "light" : "dark" })}>
           {theme.scheme === "dark" ? "🌙" : "☀️"}
         </button>
-        <button className="nav-btn" title="Красивый/лёгкий режим"
+        <button className="nav-btn" title={tr("nav.visual")}
           onClick={() => updateTheme({ visual: theme.visual === "rich" ? "lite" : "rich" })}>
           {theme.visual === "rich" ? "✨" : "🪶"}
         </button>
-        <button className="nav-btn" title="Звук уведомлений" onClick={() => {
+        <button className="nav-btn" title={tr("nav.sound")} onClick={() => {
           const next = !soundOn
           setSoundOn(next)
           localStorage.setItem("todorio.sound", next ? "1" : "0")
         }}>{soundOn ? "🔊" : "🔇"}</button>
         {installEvt && (
-          <button className="nav-btn" title="Установить приложение" onClick={async () => {
+          <button className="nav-btn" title={tr("pwa.install")} onClick={async () => {
             installEvt.prompt()
             await installEvt.userChoice
             setInstallEvt(null)
           }}>⬇️</button>
         )}
-        <button className="nav-btn" onClick={logout} title={"@" + me.username}>Выйти</button>
+        <button className="nav-btn" onClick={logout} title={"@" + me.username}>{tr("nav.logout")}</button>
       </nav>
 
       <main style={{ marginTop: 16 }}>
@@ -156,7 +159,7 @@ export default function App() {
       </main>
 
       <footer className="muted" style={{ marginTop: 40, textAlign: "center" }}>
-        {siteName} · Разработано {boot?.developer_name || "Vlad"}
+        {siteName} · {tr("footer.developed_by")} {boot?.developer_name || "Vlad"}
       </footer>
     </div>
   )

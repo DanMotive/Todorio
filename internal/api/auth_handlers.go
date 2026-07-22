@@ -9,12 +9,12 @@ import (
 
 var usernameRe = regexp.MustCompile(`^[a-zA-Z0-9_]{3,32}$`)
 
-// POST /api/register — открытая регистрация со статусом pending (ручное одобрение).
-// Первый зарегистрированный пользователь становится root (случай dev-запуска без setup).
+// POST /api/register — open registration with pending status (manual approval).
+// The first registered user becomes root (covers a dev bootstrap without setup).
 func (a *API) handleRegister(w http.ResponseWriter, r *http.Request) {
 	mode := a.DB.Setting(r.Context(), "policy.registration.mode", "open_approval")
 	if mode == "closed" {
-		errJSON(w, http.StatusForbidden, "регистрация закрыта")
+		errJSON(w, http.StatusForbidden, "registration is closed")
 		return
 	}
 	var in struct {
@@ -22,20 +22,20 @@ func (a *API) handleRegister(w http.ResponseWriter, r *http.Request) {
 		Password string `json:"password"`
 	}
 	if err := readJSON(r, &in); err != nil {
-		errJSON(w, http.StatusBadRequest, "некорректный запрос")
+		errJSON(w, http.StatusBadRequest, "invalid request")
 		return
 	}
 	if !usernameRe.MatchString(in.Username) {
-		errJSON(w, http.StatusBadRequest, "логин: 3–32 символа, только буквы/цифры/_")
+		errJSON(w, http.StatusBadRequest, "username: 3–32 characters, letters/digits/_ only")
 		return
 	}
 	if len(in.Password) < 8 {
-		errJSON(w, http.StatusBadRequest, "пароль минимум 8 символов")
+		errJSON(w, http.StatusBadRequest, "password must be at least 8 characters")
 		return
 	}
 	hash, err := auth.HashPassword(in.Password)
 	if err != nil {
-		errJSON(w, http.StatusInternalServerError, "ошибка сервера")
+		errJSON(w, http.StatusInternalServerError, "server error")
 		return
 	}
 
@@ -43,7 +43,7 @@ func (a *API) handleRegister(w http.ResponseWriter, r *http.Request) {
 	_ = a.DB.Pool.QueryRow(r.Context(), `SELECT count(*) FROM users`).Scan(&total)
 	role, status := "user", "pending"
 	if total == 0 {
-		role, status = "root", "active" // dev-бутстрап
+		role, status = "root", "active" // dev bootstrap
 	}
 
 	var id int64
@@ -52,13 +52,13 @@ func (a *API) handleRegister(w http.ResponseWriter, r *http.Request) {
 		 ON CONFLICT (username) DO NOTHING RETURNING id`,
 		in.Username, hash, role, status).Scan(&id)
 	if err != nil {
-		errJSON(w, http.StatusConflict, "логин уже занят")
+		errJSON(w, http.StatusConflict, "username is already taken")
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{"id": id, "status": status})
 }
 
-// POST /api/login — вход по логину/паролю; при включённой двухфакторке требуется totp_code.
+// POST /api/login — login by username/password; totp_code is required when 2FA is enabled.
 func (a *API) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Username string `json:"username"`
@@ -66,7 +66,7 @@ func (a *API) handleLogin(w http.ResponseWriter, r *http.Request) {
 		TOTPCode string `json:"totp_code"`
 	}
 	if err := readJSON(r, &in); err != nil {
-		errJSON(w, http.StatusBadRequest, "некорректный запрос")
+		errJSON(w, http.StatusBadRequest, "invalid request")
 		return
 	}
 	var (
@@ -80,7 +80,7 @@ func (a *API) handleLogin(w http.ResponseWriter, r *http.Request) {
 		 FROM users WHERE username=$1 AND archived_at IS NULL`,
 		in.Username).Scan(&id, &hash, &role, &status, &mustChange, &totpSecret, &totpEnabled)
 	if err != nil || !auth.VerifyPassword(in.Password, hash) {
-		errJSON(w, http.StatusUnauthorized, "неверный логин или пароль")
+		errJSON(w, http.StatusUnauthorized, "invalid username or password")
 		return
 	}
 	if totpEnabled {
@@ -89,16 +89,16 @@ func (a *API) handleLogin(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if totpSecret == nil || !auth.VerifyTOTP(*totpSecret, in.TOTPCode) {
-			errJSON(w, http.StatusUnauthorized, "неверный код двухфакторки")
+			errJSON(w, http.StatusUnauthorized, "invalid two-factor code")
 			return
 		}
 	}
 	if status == "blocked" || status == "rejected" {
-		errJSON(w, http.StatusForbidden, "доступ отключён администратором")
+		errJSON(w, http.StatusForbidden, "access disabled by the administrator")
 		return
 	}
 	if err := auth.CreateSession(r.Context(), a.DB, w, id, r.UserAgent(), a.Cfg.HTTPS); err != nil {
-		errJSON(w, http.StatusInternalServerError, "ошибка сессии")
+		errJSON(w, http.StatusInternalServerError, "session error")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -112,11 +112,11 @@ func (a *API) handleLogout(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-// GET /api/me — доступен и pending-пользователю (страница ожидания).
+// GET /api/me — reachable by pending users too (for the waiting page).
 func (a *API) handleMe(w http.ResponseWriter, r *http.Request) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
-		errJSON(w, http.StatusUnauthorized, "требуется вход")
+		errJSON(w, http.StatusUnauthorized, "login required")
 		return
 	}
 	var unread int
@@ -125,11 +125,11 @@ func (a *API) handleMe(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"user": u, "unread_notifications": unread})
 }
 
-// PATCH /api/me — локаль, тема, настройки уведомлений, имя.
+// PATCH /api/me — locale, theme, notification settings, display name.
 func (a *API) handleUpdateMe(w http.ResponseWriter, r *http.Request) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
-		errJSON(w, http.StatusUnauthorized, "требуется вход")
+		errJSON(w, http.StatusUnauthorized, "login required")
 		return
 	}
 	var in struct {
@@ -141,7 +141,7 @@ func (a *API) handleUpdateMe(w http.ResponseWriter, r *http.Request) {
 		NotifyPrefs *map[string]any `json:"notify_prefs"`
 	}
 	if err := readJSON(r, &in); err != nil {
-		errJSON(w, http.StatusBadRequest, "некорректный запрос")
+		errJSON(w, http.StatusBadRequest, "invalid request")
 		return
 	}
 	_, err := a.DB.Pool.Exec(r.Context(), `
@@ -154,17 +154,17 @@ func (a *API) handleUpdateMe(w http.ResponseWriter, r *http.Request) {
 		WHERE id=$1`,
 		u.ID, in.DisplayName, in.Locale, in.ThemeColor, in.ThemeScheme, in.ThemeVisual)
 	if err != nil {
-		errJSON(w, http.StatusBadRequest, "недопустимое значение (проверь тему: red/blue/green/yellow/gray)")
+		errJSON(w, http.StatusBadRequest, "invalid value (check the theme: red/blue/green/yellow/gray)")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-// POST /api/me/password — смена пароля (доступна и pending, и must_change_password).
+// POST /api/me/password — change password (available to pending users and must_change_password too).
 func (a *API) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
-		errJSON(w, http.StatusUnauthorized, "требуется вход")
+		errJSON(w, http.StatusUnauthorized, "login required")
 		return
 	}
 	var in struct {
@@ -172,21 +172,21 @@ func (a *API) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		NewPassword string `json:"new_password"`
 	}
 	if err := readJSON(r, &in); err != nil || len(in.NewPassword) < 8 {
-		errJSON(w, http.StatusBadRequest, "новый пароль минимум 8 символов")
+		errJSON(w, http.StatusBadRequest, "new password must be at least 8 characters")
 		return
 	}
 	var hash string
 	if err := a.DB.Pool.QueryRow(r.Context(), `SELECT password_hash FROM users WHERE id=$1`, u.ID).Scan(&hash); err != nil {
-		errJSON(w, http.StatusInternalServerError, "ошибка сервера")
+		errJSON(w, http.StatusInternalServerError, "server error")
 		return
 	}
 	if !auth.VerifyPassword(in.OldPassword, hash) {
-		errJSON(w, http.StatusForbidden, "старый пароль неверен")
+		errJSON(w, http.StatusForbidden, "old password is incorrect")
 		return
 	}
 	newHash, err := auth.HashPassword(in.NewPassword)
 	if err != nil {
-		errJSON(w, http.StatusInternalServerError, "ошибка сервера")
+		errJSON(w, http.StatusInternalServerError, "server error")
 		return
 	}
 	_, _ = a.DB.Pool.Exec(r.Context(),

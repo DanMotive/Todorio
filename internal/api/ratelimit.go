@@ -1,7 +1,7 @@
 package api
 
-// Рейт-лимит логина: in-memory, окно 10 минут, ключ = IP + логин.
-// Максимум попыток настраивается рутом: limits.login.max_attempts (дефолт 10).
+// Login rate limiting: in-memory, 10-minute window, keyed by IP + username.
+// Max attempts is configurable by root: limits.login.max_attempts (default 10).
 
 import (
 	"net"
@@ -25,7 +25,7 @@ type rateLimiter struct {
 
 var loginLimiter = &rateLimiter{m: map[string]*rlEntry{}}
 
-// allow проверяет, не исчерпан ли лимит (не увеличивает счётчик).
+// allow checks whether the limit is already exhausted (does not increment the counter).
 func (rl *rateLimiter) allow(key string, max int) bool {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
@@ -37,7 +37,7 @@ func (rl *rateLimiter) allow(key string, max int) bool {
 	return e.count < max
 }
 
-// fail регистрирует неудачную попытку.
+// fail records a failed attempt.
 func (rl *rateLimiter) fail(key string) {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
@@ -49,7 +49,7 @@ func (rl *rateLimiter) fail(key string) {
 	e.count++
 }
 
-// reset сбрасывает счётчик после успешного входа.
+// reset clears the counter after a successful login.
 func (rl *rateLimiter) reset(key string) {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
@@ -64,7 +64,7 @@ func clientIP(r *http.Request) string {
 	return host
 }
 
-// maxLoginAttempts читает лимит из system_settings.
+// maxLoginAttempts reads the limit from system_settings.
 func (a *API) maxLoginAttempts(r *http.Request) int {
 	if n, err := strconv.Atoi(a.DB.Setting(r.Context(), "limits.login.max_attempts", "10")); err == nil && n > 0 {
 		return n
