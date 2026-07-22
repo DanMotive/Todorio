@@ -70,14 +70,18 @@ func issueLetsEncryptIPCertVerbose(ip, ipv6 string, acmePort int) (certFile, key
 	fmt.Println("[INF] Using Let's Encrypt shortlived profile (~6 days validity, auto-renews)")
 	fmt.Println("[INF] Server IP detected:", ip)
 	fmt.Printf("[INF] Using port %d to issue certificate for IP: %s\n", acmePort, ip)
-	certFile, keyFile, err := IssueLetsEncryptIPCert("/etc/todorio/ssl", ip, ipv6, acmePort)
+	certFile, keyFile, shortlived, err := IssueLetsEncryptIPCert("/etc/todorio/ssl", ip, ipv6, acmePort)
 	if err != nil {
 		fmt.Println(term.Yellow("WARN"), "Failed to obtain Let's Encrypt certificate:", err)
 		fmt.Println("  Falling back to a self-signed certificate.")
 		return "", "", false
 	}
 	fmt.Println("[INF] Certificate issued successfully for IP:", ip)
-	fmt.Println(term.Cyan("Certificate:"), certFile, "(~6 days validity, auto-renews via the acme.sh cron job)")
+	if shortlived {
+		fmt.Println(term.Cyan("Certificate:"), certFile, "(~6 days validity, auto-renews via the acme.sh cron job)")
+	} else {
+		fmt.Println(term.Cyan("Certificate:"), certFile, "(~90 days validity, standard profile, auto-renews via the acme.sh cron job)")
+	}
 	return certFile, keyFile, true
 }
 
@@ -315,6 +319,58 @@ func Run(args []string) error {
 		host = "localhost"
 	}
 	fmt.Printf("   Server: %s\n", term.Cyan(fmt.Sprintf("%s://%s:%d", scheme, host, cfg.Port)))
-	fmt.Printf("   Start: sudo systemctl start todorio (or `todorio serve`)\n")
+
+	// If todorio is already running under the chosen process manager, restart it now
+	// so the new config (port/HTTPS/certificate) takes effect immediately. Without
+	// this, a process started under the old config keeps running — e.g. an old HTTPS
+	// listener would keep rejecting plain HTTP requests even after HTTPS is disabled.
+	restartRunningService(cfg.ProcessManager)
+
+	switch cfg.ProcessManager {
+	case "pm2":
+		fmt.Printf("   Start: pm2 start $(command -v todorio) --name todorio -- serve (or restart: pm2 restart todorio)\n")
+	case "docker":
+		fmt.Printf("   Start: docker start todorio (or restart: docker restart todorio; or run `todorio serve` directly)\n")
+	default:
+		fmt.Printf("   Start: sudo systemctl start todorio (or `todorio serve`)\n")
+	}
 	return nil
+}
+
+// restartRunningService best-effort restarts an already-running todorio process under
+// the given process manager, so config changes from `todorio setup` take effect right
+// away instead of requiring the user to remember to do it manually. It does nothing
+// (silently) if the process manager's tool isn't installed or no todorio process/unit
+// is registered with it yet — that's expected on a brand-new install.
+func restartRunningService(processManager string) {
+	switch processManager {
+	case "systemd":
+		if _, err := exec.LookPath("systemctl"); err != nil {
+			return
+		}
+		if _, err := os.Stat("/etc/systemd/system/todorio.service"); err != nil {
+			return
+		}
+		if err := exec.Command("systemctl", "try-restart", "todorio").Run(); err == nil {
+			fmt.Println("  ", term.Green("systemd:"), "restarted the todorio service to apply the new config")
+		}
+	case "pm2":
+		if _, err := exec.LookPath("pm2"); err != nil {
+			return
+		}
+		if err := exec.Command("pm2", "restart", "todorio").Run(); err == nil {
+			fmt.Println("  ", term.Green("pm2:"), "restarted the todorio process to apply the new config")
+		} else {
+			fmt.Println("  ", term.Yellow("NOTE"), "no pm2 process named \"todorio\" was found — start it with the command below so future `todorio setup` runs can restart it automatically")
+		}
+	case "docker":
+		if _, err := exec.LookPath("docker"); err != nil {
+			return
+		}
+		if err := exec.Command("docker", "restart", "todorio").Run(); err == nil {
+			fmt.Println("  ", term.Green("docker:"), "restarted the todorio container to apply the new config")
+		} else {
+			fmt.Println("  ", term.Yellow("NOTE"), "no docker container named \"todorio\" was found — start/restart it manually so the new config takes effect")
+		}
+	}
 }

@@ -9,6 +9,7 @@ package setup
 
 import (
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -60,40 +61,64 @@ func DetectPublicIP() string {
 	return ""
 }
 
-// IssueLetsEncryptIPCert obtains a short-lived, trusted Let's Encrypt certificate for a
-// bare server IP address using acme.sh in standalone mode on httpPort (port 80 by
-// default must be open and reachable from the internet for HTTP-01 validation). The
-// certificate is valid for ~6 days and auto-renews via the cron job acme.sh installs
-// for itself. ipv6 may be empty to issue for the IPv4 address only.
-func IssueLetsEncryptIPCert(dir, ip, ipv6 string, httpPort int) (certFile, keyFile string, err error) {
+// runAcme runs an acme.sh command, streaming its output to the terminal (so progress is
+// still visible live) while also capturing it, so callers can inspect it for known,
+// recoverable error messages (e.g. an older acme.sh that doesn't support a flag yet).
+func runAcme(acme string, args []string) (output string, err error) {
+	cmd := exec.Command(acme, args...)
+	var buf strings.Builder
+	cmd.Stdout = io.MultiWriter(os.Stdout, &buf)
+	cmd.Stderr = io.MultiWriter(os.Stderr, &buf)
+	err = cmd.Run()
+	return buf.String(), err
+}
+
+// IssueLetsEncryptIPCert obtains a trusted Let's Encrypt certificate for a bare server IP
+// address using acme.sh in standalone mode on httpPort (port 80 by default must be open
+// and reachable from the internet for HTTP-01 validation). ipv6 may be empty to issue for
+// the IPv4 address only.
+//
+// It first tries the "shortlived" ACME profile (~6 days validity, auto-renews frequently)
+// like 3x-ui's IP certificate flow. Older acme.sh installs don't know this flag yet
+// ("Unknown parameter: --profile") — in that case it automatically retries without it,
+// which issues a standard ~90-day certificate instead. shortlived reports which one was
+// obtained, so callers can show the correct validity period to the user.
+func IssueLetsEncryptIPCert(dir, ip, ipv6 string, httpPort int) (certFile, keyFile string, shortlived bool, err error) {
 	if ip == "" {
-		return "", "", fmt.Errorf("server IP is required")
+		return "", "", false, fmt.Errorf("server IP is required")
 	}
 	acme, err := acmeShPath()
 	if err != nil {
-		return "", "", err
+		return "", "", false, err
 	}
 
-	args := []string{
+	baseArgs := []string{
 		"--issue", "--standalone",
 		"-d", ip,
 		"--httpport", fmt.Sprintf("%d", httpPort),
 		"--server", "letsencrypt",
 		"--ecc",
-		"--profile", "shortlived",
 	}
 	if ipv6 = strings.TrimSpace(ipv6); ipv6 != "" {
-		args = append(args, "-d", ipv6, "--listen-v6")
+		baseArgs = append(baseArgs, "-d", ipv6, "--listen-v6")
 	}
 
-	issue := exec.Command(acme, args...)
-	issue.Stdout, issue.Stderr = os.Stdout, os.Stderr
-	if err := issue.Run(); err != nil {
-		return "", "", fmt.Errorf("acme.sh --issue failed: %w", err)
+	shortlivedArgs := append(append([]string{}, baseArgs...), "--profile", "shortlived")
+	output, runErr := runAcme(acme, shortlivedArgs)
+	shortlived = runErr == nil
+	if runErr != nil {
+		if strings.Contains(output, "Unknown parameter") && strings.Contains(output, "--profile") {
+			fmt.Println(term.Yellow("WARN"), "This acme.sh install does not support the shortlived profile yet — retrying with a standard ~90-day certificate.")
+			_, runErr = runAcme(acme, baseArgs)
+			shortlived = false
+		}
+		if runErr != nil {
+			return "", "", false, fmt.Errorf("acme.sh --issue failed: %w", runErr)
+		}
 	}
 
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", "", err
+		return "", "", false, err
 	}
 	certFile = filepath.Join(dir, "cert.pem")
 	keyFile = filepath.Join(dir, "key.pem")
@@ -105,8 +130,8 @@ func IssueLetsEncryptIPCert(dir, ip, ipv6 string, httpPort int) (certFile, keyFi
 	)
 	install.Stdout, install.Stderr = os.Stdout, os.Stderr
 	if err := install.Run(); err != nil {
-		return "", "", fmt.Errorf("acme.sh --installcert failed: %w", err)
+		return "", "", false, fmt.Errorf("acme.sh --installcert failed: %w", err)
 	}
 
-	return certFile, keyFile, nil
+	return certFile, keyFile, shortlived, nil
 }
