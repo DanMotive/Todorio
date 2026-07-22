@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Todorio logo, refined ring and lightning</title>
+  <desc id="desc">A centered letter T within a near-complete progress ring. A compact lightning bolt fills the clean upper-right gap.</desc>
+  <rect width="1024" height="1024" rx="220" fill="#121A2A"/>
+  <!-- A precise 300px-radius progress ring with a 60-degree upper-right gap. -->
+  <path d="M590 222 A300 300 0 1 0 802 434" fill="none" stroke="#3DE0BC" stroke-width="68" stroke-linecap="round"/>
+  <!-- Centered monogram: all endpoints use the same 84px stroke. -->
+  <path d="M385 430H639M512 430V685" fill="none" stroke="#E8E7FF" stroke-width="84" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Refined bolt: balanced silhouette with subtly softened corners. -->
+  <path d="M758 205 Q766 201 763 211 L744 266 L781 266 Q790 266 784 274 L719 349 Q711 357 715 346 L735 289 L702 289 Q693 289 699 281 Z" fill="#E8E7FF"/>
+</svg>
