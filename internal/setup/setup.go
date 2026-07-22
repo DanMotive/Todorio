@@ -3,6 +3,7 @@ package setup
 
 import (
 	"bufio"
+	"context"
 	"crypto/rand"
 	"flag"
 	"fmt"
@@ -11,8 +12,11 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/DanMotive/Todorio/internal/auth"
 	"github.com/DanMotive/Todorio/internal/config"
+	"github.com/DanMotive/Todorio/internal/db"
 	"github.com/DanMotive/Todorio/internal/term"
 )
 
@@ -113,14 +117,60 @@ func openFirewallPort(port int) {
 	fmt.Println(term.Green("ufw:"), fmt.Sprintf("opened port %d/tcp", port))
 }
 
+// ensureRootUser connects to the database, applies migrations if needed, and creates
+// the root admin account with the given username/password if no root account exists
+// yet. If a root account already exists, its credentials are left untouched (use
+// `todorio resetroot` to change them) and created is reported as false.
+func ensureRootUser(cfg config.Config, username, password string) (created bool, err error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	database, err := db.Connect(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return false, fmt.Errorf("connecting to the database: %w", err)
+	}
+	defer database.Pool.Close()
+
+	if err := database.Migrate(ctx, migrationsDir()); err != nil {
+		return false, fmt.Errorf("running migrations: %w", err)
+	}
+
+	var existing int
+	if err := database.Pool.QueryRow(ctx, `SELECT count(*) FROM users WHERE role='root'`).Scan(&existing); err != nil {
+		return false, fmt.Errorf("checking for an existing root admin: %w", err)
+	}
+	if existing > 0 {
+		return false, nil
+	}
+
+	hash, err := auth.HashPassword(password)
+	if err != nil {
+		return false, fmt.Errorf("hashing the root admin password: %w", err)
+	}
+	if _, err := database.Pool.Exec(ctx,
+		`INSERT INTO users(username, password_hash, role, status, must_change_password) VALUES($1,$2,'root','active',true)`,
+		username, hash); err != nil {
+		return false, fmt.Errorf("creating the root admin account: %w", err)
+	}
+	return true, nil
+}
+
+// migrationsDir mirrors internal/server's lookup: next to the binary in prod
+// (/usr/share/todorio/migrations), ./migrations when run from the repo.
+func migrationsDir() string {
+	if _, err := os.Stat("/usr/share/todorio/migrations"); err == nil {
+		return "/usr/share/todorio/migrations"
+	}
+	return "migrations"
+}
+
 // Run parses `todorio setup` flags and either runs the interactive wizard or, with
 // --non-interactive, configures everything from flags/defaults (for scripted installs).
-// TODO (full version): create the DB and root user (argon2id, must_change_password=true),
-// install the unit file/compose/pm2, create the onboarding demo space with quests.
+// The process is always managed by systemd (see scripts/install.sh).
+// TODO (full version): create the onboarding demo space with quests.
 func Run(args []string) error {
 	fs := flag.NewFlagSet("setup", flag.ContinueOnError)
 	rootUsername := fs.String("root-username", "root", "root admin username")
-	processManager := fs.String("process-manager", "systemd", "process manager: systemd|docker|pm2")
 	port := fs.Int("port", 8080, "site port")
 	httpsFlag := fs.Bool("https", false, "enable HTTPS")
 	certMode := fs.String("cert-mode", "self-signed", "certificate type: self-signed|letsencrypt-ip|custom")
@@ -146,12 +196,6 @@ func Run(args []string) error {
 		fmt.Println(strings.Repeat("─", 40))
 
 		root = *rootUsername
-		switch *processManager {
-		case "systemd", "docker", "pm2":
-			cfg.ProcessManager = *processManager
-		default:
-			return fmt.Errorf("unknown process manager: %s", *processManager)
-		}
 		if *port < 1 || *port > 65535 {
 			return fmt.Errorf("invalid port: %d", *port)
 		}
@@ -211,14 +255,6 @@ func Run(args []string) error {
 		fmt.Println(strings.Repeat("─", 40))
 
 		root = ask(r, "Root admin username", *rootUsername)
-
-		pm := ask(r, "Process manager (systemd/docker/pm2)", *processManager)
-		switch pm {
-		case "systemd", "docker", "pm2":
-			cfg.ProcessManager = pm
-		default:
-			return fmt.Errorf("unknown process manager: %s", pm)
-		}
 
 		portStr := ask(r, "Site port", strconv.Itoa(*port))
 		p, err := strconv.Atoi(portStr)
@@ -299,13 +335,25 @@ func Run(args []string) error {
 
 	openFirewallPort(cfg.Port)
 
+	rootCreated, rootErr := ensureRootUser(cfg, root, password)
+
 	fmt.Println()
 	fmt.Println(strings.Repeat("─", 40))
 	fmt.Println(term.Green("Setup complete."), "Config:", config.Path())
-	fmt.Printf("   Root admin: %s\n", root)
-	fmt.Printf("   Temporary password: %s\n", password)
-	fmt.Println("  ", term.Yellow("NOTE"), "The password is shown ONCE and is not written to logs.")
-	fmt.Println("   The site will require changing it on first login.")
+	switch {
+	case rootErr != nil:
+		fmt.Println("  ", term.Yellow("WARN"), "Could not create the root admin account:", rootErr)
+		fmt.Println("   Login will not work until this is fixed. Check that PostgreSQL is running and")
+		fmt.Println("   database_url in", config.Path(), "is correct, then run `sudo todorio setup` again.")
+	case rootCreated:
+		fmt.Printf("   Root admin: %s\n", root)
+		fmt.Printf("   Temporary password: %s\n", password)
+		fmt.Println("  ", term.Yellow("NOTE"), "The password is shown ONCE and is not written to logs.")
+		fmt.Println("   The site will require changing it on first login.")
+	default:
+		fmt.Println("  ", term.Cyan("NOTE"), "A root admin account already exists — its credentials were not changed.")
+		fmt.Println("   Run `sudo todorio resetroot` if you need to reset the root username/password.")
+	}
 	if demo {
 		fmt.Println("   The demo space with quests will be created on first launch.")
 	}
@@ -320,57 +368,29 @@ func Run(args []string) error {
 	}
 	fmt.Printf("   Server: %s\n", term.Cyan(fmt.Sprintf("%s://%s:%d", scheme, host, cfg.Port)))
 
-	// If todorio is already running under the chosen process manager, restart it now
-	// so the new config (port/HTTPS/certificate) takes effect immediately. Without
-	// this, a process started under the old config keeps running — e.g. an old HTTPS
-	// listener would keep rejecting plain HTTP requests even after HTTPS is disabled.
-	restartRunningService(cfg.ProcessManager)
+	// If todorio is already running under systemd, restart it now so the new config
+	// (port/HTTPS/certificate) takes effect immediately. Without this, a process
+	// started under the old config keeps running — e.g. an old HTTPS listener would
+	// keep rejecting plain HTTP requests even after HTTPS is disabled.
+	restartRunningService()
 
-	switch cfg.ProcessManager {
-	case "pm2":
-		fmt.Printf("   Start: pm2 start $(command -v todorio) --name todorio -- serve (or restart: pm2 restart todorio)\n")
-	case "docker":
-		fmt.Printf("   Start: docker start todorio (or restart: docker restart todorio; or run `todorio serve` directly)\n")
-	default:
-		fmt.Printf("   Start: sudo systemctl start todorio (or `todorio serve`)\n")
-	}
+	fmt.Printf("   Start: sudo systemctl start todorio (or `todorio serve`)\n")
 	return nil
 }
 
-// restartRunningService best-effort restarts an already-running todorio process under
-// the given process manager, so config changes from `todorio setup` take effect right
-// away instead of requiring the user to remember to do it manually. It does nothing
-// (silently) if the process manager's tool isn't installed or no todorio process/unit
-// is registered with it yet — that's expected on a brand-new install.
-func restartRunningService(processManager string) {
-	switch processManager {
-	case "systemd":
-		if _, err := exec.LookPath("systemctl"); err != nil {
-			return
-		}
-		if _, err := os.Stat("/etc/systemd/system/todorio.service"); err != nil {
-			return
-		}
-		if err := exec.Command("systemctl", "try-restart", "todorio").Run(); err == nil {
-			fmt.Println("  ", term.Green("systemd:"), "restarted the todorio service to apply the new config")
-		}
-	case "pm2":
-		if _, err := exec.LookPath("pm2"); err != nil {
-			return
-		}
-		if err := exec.Command("pm2", "restart", "todorio").Run(); err == nil {
-			fmt.Println("  ", term.Green("pm2:"), "restarted the todorio process to apply the new config")
-		} else {
-			fmt.Println("  ", term.Yellow("NOTE"), "no pm2 process named \"todorio\" was found — start it with the command below so future `todorio setup` runs can restart it automatically")
-		}
-	case "docker":
-		if _, err := exec.LookPath("docker"); err != nil {
-			return
-		}
-		if err := exec.Command("docker", "restart", "todorio").Run(); err == nil {
-			fmt.Println("  ", term.Green("docker:"), "restarted the todorio container to apply the new config")
-		} else {
-			fmt.Println("  ", term.Yellow("NOTE"), "no docker container named \"todorio\" was found — start/restart it manually so the new config takes effect")
-		}
+// restartRunningService best-effort restarts an already-running todorio systemd
+// service, so config changes from `todorio setup` take effect right away instead of
+// requiring the user to remember to do it manually. It does nothing (silently) if
+// systemctl isn't available or no todorio unit is installed yet — that's expected on
+// a brand-new install (the unit is created by scripts/install.sh).
+func restartRunningService() {
+	if _, err := exec.LookPath("systemctl"); err != nil {
+		return
+	}
+	if _, err := os.Stat("/etc/systemd/system/todorio.service"); err != nil {
+		return
+	}
+	if err := exec.Command("systemctl", "try-restart", "todorio").Run(); err == nil {
+		fmt.Println("  ", term.Green("systemd:"), "restarted the todorio service to apply the new config")
 	}
 }

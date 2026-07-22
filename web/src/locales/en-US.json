@@ -14,6 +14,7 @@
   "attach.uploading": "Uploading…",
   "auth.have_account": "Already have an account? Sign in",
   "auth.invite": "Invite code (if any)",
+  "auth.language": "Language",
   "auth.no_account": "No account? Sign up",
   "auth.password": "Password",
   "auth.request_sent": "Request sent — wait for admin approval, then sign in.",

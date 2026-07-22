@@ -14,6 +14,7 @@
   "attach.uploading": "Загрузка…",
   "auth.have_account": "Уже есть аккаунт? Вход",
   "auth.invite": "Инвайт-код (если есть)",
+  "auth.language": "Язык",
   "auth.no_account": "Нет аккаунта? Регистрация",
   "auth.password": "Пароль",
   "auth.request_sent": "Заявка отправлена — дождитесь одобрения администратора, затем войдите.",

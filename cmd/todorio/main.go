@@ -53,7 +53,6 @@ func usage() {
 	cmdLine("todorio setup [flags]", "First-run setup (interactive by default)")
 	subLine("--non-interactive", "Skip all prompts, use flags/defaults (scripted installs)")
 	subLine("--root-username <name>", "Root admin username (default: root)")
-	subLine("--process-manager <systemd|docker|pm2>", "")
 	subLine("--port <port>", "")
 	subLine("--https", "Enable HTTPS")
 	subLine("--cert-mode <self-signed|letsencrypt-ip|custom>", "")

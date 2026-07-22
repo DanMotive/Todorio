@@ -2,6 +2,10 @@
    Управляется атрибутами на <html>: data-color, data-scheme, data-visual.
    root задаёт дефолт сервера; пользователь меняет в профиле. */
 
+/* Without this, elements with width:100% plus padding/border (e.g. .input)
+   overflow past their parent's edge instead of respecting it. */
+*, *::before, *::after { box-sizing: border-box; }
+
 /* —— Акцентные цвета —— */
 :root[data-color="red"]    { --accent: #E5484D; --accent-soft: #E5484D22; }
 :root[data-color="blue"]   { --accent: #3B82F6; --accent-soft: #3B82F622; }

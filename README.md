@@ -25,7 +25,7 @@ curl -fsSL https://raw.githubusercontent.com/DanMotive/Todorio/main/scripts/inst
 sudo todorio setup
 ```
 
-`setup` will ask for: the root admin's username, process manager (systemd/docker/pm2), port, HTTPS (self-signed, Let's Encrypt for your server's IP, or your own certificate), and whether to create the demo onboarding space with quests (y/n) — then it generates a 16-character temporary password.
+`setup` will ask for: the root admin's username, port, HTTPS (self-signed, Let's Encrypt for your server's IP, or your own certificate), and whether to create the demo onboarding space with quests (y/n) — then it generates a 16-character temporary password and creates the root admin account in the database (the process is always managed by systemd).
 
 To remove Todorio later, run `sudo todorio uninstall`. By default this removes the binary, service, and config; add `--saveconfig` to keep the config, or `--purge` to also delete application data and the database.
 

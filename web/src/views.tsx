@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react"
 import { api, REACTIONS, type List, type Me, type Pulse, type Space, type Task } from "./api"
 import { AttachmentsBlock, StatsCard } from "./extras"
-import { tr } from "./i18n"
+import { tr, setLocale, getLocale, SUPPORTED } from "./i18n"
 
 // ---------- helpers ----------
 
@@ -30,6 +30,12 @@ export function AuthPage({ siteName, onLogin }: { siteName: string; onLogin: (me
   const [info, setInfo] = useState("")
   const [totp, setTotp] = useState("")
   const [invite, setInvite] = useState("")
+  const [locale, setLocaleState] = useState(getLocale())
+
+  function changeLocale(l: string) {
+    setLocale(l)
+    setLocaleState(l)
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -57,7 +63,11 @@ export function AuthPage({ siteName, onLogin }: { siteName: string; onLogin: (me
   return (
     <div className="center-page">
       <form className="card auth-card" onSubmit={submit}>
-        <div className="row">
+        <select className="input lang-select" value={locale} aria-label={tr("auth.language")}
+          onChange={(e) => changeLocale(e.target.value)}>
+          {SUPPORTED.map((l) => <option key={l} value={l}>{l}</option>)}
+        </select>
+        <div className="row" style={{ marginTop: 22 }}>
           <img src="/icons/logo.svg" alt="" width={40} height={40} />
           <h1 style={{ margin: 0, fontSize: 22 }}>{siteName}</h1>
         </div>

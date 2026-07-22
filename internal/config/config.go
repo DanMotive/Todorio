@@ -18,7 +18,6 @@ type Config struct {
 	KeyFile        string `json:"key_file,omitempty"`
 	DatabaseURL    string `json:"database_url"`
 	UploadsDir     string `json:"uploads_dir"`
-	ProcessManager string `json:"process_manager"` // systemd | docker | pm2
 	DefaultLocale  string `json:"default_locale"`
 	DetectBrowser  bool   `json:"detect_browser_locale"`
 	// Server-wide theme defaults (root); the user can override them in their profile.
@@ -32,7 +31,6 @@ func Defaults() Config {
 		Port:           8080,
 		DatabaseURL:    "postgres://todorio:todorio@localhost:5432/todorio",
 		UploadsDir:     "/var/lib/todorio/uploads",
-		ProcessManager: "systemd",
 		DefaultLocale:  "en-US",
 		DetectBrowser:  true,
 		DefaultColor:   "blue",
