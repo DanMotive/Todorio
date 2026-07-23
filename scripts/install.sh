@@ -4,6 +4,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/DanMotive/Todorio/main/scripts/install.sh | sudo bash
 #
 # When it finishes, the site is already running; the temporary root password is shown in the console.
+say "Starting installation..."
 set -euo pipefail
 
 REPO="https://github.com/DanMotive/Todorio.git"

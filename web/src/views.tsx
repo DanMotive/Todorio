@@ -61,7 +61,7 @@ export function AuthPage({ siteName, onLogin }: { siteName: string; onLogin: (me
   }
 
   return (
-    <div className="center-page">
+    <div className="center-page"> 
       <form className="card auth-card" onSubmit={submit}>
         <select className="input lang-select" value={locale} aria-label={tr("auth.language")}
           onChange={(e) => changeLocale(e.target.value)}>
@@ -131,8 +131,74 @@ export function TaskModal({ task, me, onClose, onChanged }: {
   const [body, setBody] = useState("")
   const [error, setError] = useState("")
 
+  // Editable task states
+  const [status, setStatus] = useState(task.status || "todo")
+  const [priority, setPriority] = useState(task.priority || "medium")
+  const [freq, setFreq] = useState((task as any).recurrence?.freq || "none")
+  const [blockedByInput, setBlockedByInput] = useState("")
+  const [blockedBy, setBlockedBy] = useState<number[]>((task as any).blocked_by || [])
+  const [customFields, setCustomFields] = useState<Record<string, string>>((task as any).custom_fields || {})
+  const [newKey, setNewKey] = useState("")
+  const [newValue, setNewValue] = useState("")
+
   const load = () => api.get(`/api/tasks/${task.id}/comments`).then((r) => setComments(r.comments)).catch(() => {})
   useEffect(() => { load() }, [task.id])
+
+  async function updateTask(patch: any) {
+    try {
+      await api.patch(`/api/tasks/${task.id}`, patch)
+      onChanged()
+    } catch (err) {
+      setError((err as Error).message)
+    }
+  }
+
+  async function handleStatusChange(s: string) {
+    setStatus(s)
+    await updateTask({ status: s })
+  }
+
+  async function handlePriorityChange(p: string) {
+    setPriority(p)
+    await updateTask({ priority: p })
+  }
+
+  async function handleFreqChange(f: string) {
+    setFreq(f)
+    const recurrence = f === "none" ? null : { freq: f, interval: 1 }
+    await updateTask({ recurrence })
+  }
+
+  async function addBlockedBy() {
+    const id = parseInt(blockedByInput.trim(), 10)
+    if (!id || isNaN(id) || blockedBy.includes(id)) return
+    const next = [...blockedBy, id]
+    setBlockedBy(next)
+    setBlockedByInput("")
+    await updateTask({ blocked_by: next })
+  }
+
+  async function removeBlockedBy(id: number) {
+    const next = blockedBy.filter((b) => b !== id)
+    setBlockedBy(next)
+    await updateTask({ blocked_by: next })
+  }
+
+  async function addCustomField() {
+    if (!newKey.trim()) return
+    const next = { ...customFields, [newKey.trim()]: newValue.trim() }
+    setCustomFields(next)
+    setNewKey("")
+    setNewValue("")
+    await updateTask({ custom_fields: next })
+  }
+
+  async function removeCustomField(key: string) {
+    const next = { ...customFields }
+    delete next[key]
+    setCustomFields(next)
+    await updateTask({ custom_fields: next })
+  }
 
   async function send(e: React.FormEvent) {
     e.preventDefault()
@@ -151,16 +217,83 @@ export function TaskModal({ task, me, onClose, onChanged }: {
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 640 }}>
         <div className="row">
-          <h2 className="grow" style={{ margin: 0 }}>{task.title}</h2>
-          <button className="nav-btn" onClick={onClose}>✕</button>
+          <h2 className="grow" style={{ margin: 0, fontSize: 20 }}>{task.title}</h2>
+          <button className="nav-btn" onClick={onClose}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
         </div>
-        {task.description && <p>{task.description}</p>}
-        <div className="row muted">
-          {task.due_at && <span className={"due " + dueClass(task.due_at)}>{dueLabel(task.due_at)}</span>}
-          <span>{tr("task.priority")}: {task.priority}</span>
-          <span>{tr("task.status")}: {task.status}</span>
+
+        {task.description && <p style={{ color: "var(--text-muted)", margin: "8px 0 16px" }}>{task.description}</p>}
+
+        {/* Task Properties grid */}
+        <div className="card" style={{ padding: 12, marginBottom: 16, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div>
+            <label className="muted" style={{ display: "block", fontSize: 12, marginBottom: 4 }}>{tr("task.status")}</label>
+            <select className="input" value={status} onChange={(e) => handleStatusChange(e.target.value)}>
+              <option value="todo">To Do</option>
+              <option value="in_progress">In Progress</option>
+              <option value="done">Done</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="muted" style={{ display: "block", fontSize: 12, marginBottom: 4 }}>{tr("task.priority")}</label>
+            <select className="input" value={priority} onChange={(e) => handlePriorityChange(e.target.value)}>
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+              <option value="urgent">Urgent</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="muted" style={{ display: "block", fontSize: 12, marginBottom: 4 }}>
+              🔄 {tr("recurrence") || "Повторение"}
+            </label>
+            <select className="input" value={freq} onChange={(e) => handleFreqChange(e.target.value)}>
+              <option value="none">Без повторений</option>
+              <option value="daily">Каждый день</option>
+              <option value="weekly">Каждую неделю</option>
+              <option value="monthly">Каждый месяц</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="muted" style={{ display: "block", fontSize: 12, marginBottom: 4 }}>
+              🔒 Зависит от (IDs)
+            </label>
+            <div className="row">
+              <input className="input grow" placeholder="ID задачи" value={blockedByInput} onChange={(e) => setBlockedByInput(e.target.value)} />
+              <button className="btn secondary" style={{ padding: "6px 10px" }} onClick={addBlockedBy}>+</button>
+            </div>
+            {blockedBy.length > 0 && (
+              <div className="row" style={{ marginTop: 6, flexWrap: "wrap", gap: 4 }}>
+                {blockedBy.map((id) => (
+                  <span key={id} className="badge" style={{ cursor: "pointer" }} onClick={() => removeBlockedBy(id)} title="Нажмите, чтобы удалить">
+                    #{id} ✕
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Custom Fields section */}
+        <div style={{ marginBottom: 16 }}>
+          <div className="section-title" style={{ fontSize: 13, marginBottom: 6 }}>Custom Fields</div>
+          {Object.entries(customFields).map(([k, v]) => (
+            <div key={k} className="row" style={{ marginBottom: 4, fontSize: 13 }}>
+              <b>{k}:</b> <span>{v}</span>
+              <button className="nav-btn" style={{ padding: "2px 6px", fontSize: 11 }} onClick={() => removeCustomField(k)}>✕</button>
+            </div>
+          ))}
+          <div className="row" style={{ marginTop: 6 }}>
+            <input className="input" style={{ width: 120 }} placeholder="Ключ" value={newKey} onChange={(e) => setNewKey(e.target.value)} />
+            <input className="input grow" placeholder="Значение" value={newValue} onChange={(e) => setNewValue(e.target.value)} />
+            <button className="btn secondary" onClick={addCustomField}>+ Поле</button>
+          </div>
         </div>
 
         <div className="section-title">{tr("task.comments")}</div>
@@ -193,13 +326,16 @@ export function TaskModal({ task, me, onClose, onChanged }: {
         <form className="row" onSubmit={send}>
           <input className="input grow" placeholder={tr("task.comment_placeholder")} value={body}
             onChange={(e) => setBody(e.target.value)} />
-          <button className="btn" type="submit">↵</button>
+          <button className="btn" type="submit">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+          </button>
         </form>
         <div className="error-text">{error}</div>
 
-        <div className="row" style={{ marginTop: 12 }}>
-          <button className="nav-btn" onClick={async () => { await api.del(`/api/tasks/${task.id}`); onChanged(); onClose() }}>
-            🗑 {tr("task.archive")}
+        <div className="row" style={{ marginTop: 16, justifyContent: "space-between" }}>
+          <button className="nav-btn" style={{ color: "var(--due-overdue)" }} onClick={async () => { await api.del(`/api/tasks/${task.id}`); onChanged(); onClose() }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 6 }}><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            {tr("task.archive")}
           </button>
         </div>
       </div>

@@ -109,58 +109,93 @@ export default function App() {
   if (me.status !== "active") return <PendingPage onLogout={logout} />
 
   return (
-    <div style={{ maxWidth: 860, margin: "0 auto", padding: "0 12px 40px" }}>
-      <nav className="nav">
-        <img src="/icons/logo.svg" alt="" width={28} height={28} />
-        <b>{siteName}</b>
-        <button className={"nav-btn" + (view === "my" ? " active" : "")} onClick={() => setView("my")}>{tr("nav.my")}</button>
-        <button className={"nav-btn" + (view === "spaces" ? " active" : "")} onClick={() => setView("spaces")}>{tr("nav.spaces")}</button>
-        <button className={"nav-btn" + (view === "notifications" ? " active" : "")} onClick={() => { setView("notifications") }}>
-          🔔{unread > 0 && <span className="badge">{unread}</span>}
-        </button>
-        {me.role !== "user" && me.role !== "viewer" && (
-          <button className={"nav-btn" + (view === "admin" ? " active" : "")} onClick={() => setView("admin")}>{tr("nav.admin")}</button>
-        )}
-        <span className="spacer" />
-        <select className="input" style={{ width: "auto", padding: "6px 8px" }} value={theme.color}
-          onChange={(e) => updateTheme({ color: e.target.value })}>
-          {COLORS.map((c) => <option key={c} value={c}>{c}</option>)}
-        </select>
-        <button className="nav-btn" title={tr("nav.theme")}
-          onClick={() => updateTheme({ scheme: theme.scheme === "dark" ? "light" : "dark" })}>
-          {theme.scheme === "dark" ? "🌙" : "☀️"}
-        </button>
-        <button className="nav-btn" title={tr("nav.visual")}
-          onClick={() => updateTheme({ visual: theme.visual === "rich" ? "lite" : "rich" })}>
-          {theme.visual === "rich" ? "✨" : "🪶"}
-        </button>
-        <button className="nav-btn" title={tr("nav.sound")} onClick={() => {
-          const next = !soundOn
-          setSoundOn(next)
-          localStorage.setItem("todorio.sound", next ? "1" : "0")
-        }}>{soundOn ? "🔊" : "🔇"}</button>
-        {installEvt && (
-          <button className="nav-btn" title={tr("pwa.install")} onClick={async () => {
-            installEvt.prompt()
-            await installEvt.userChoice
-            setInstallEvt(null)
-          }}>⬇️</button>
-        )}
-        <button className="nav-btn" onClick={logout} title={"@" + me.username}>{tr("nav.logout")}</button>
-      </nav>
+    <div className="app-layout">
+      <aside className="sidebar">
+        <div className="sidebar-header">
+          <img src="/icons/logo.svg" alt="" />
+          <b>{siteName}</b>
+        </div>
+        
+        <div className="sidebar-nav">
+          <button className={"sidebar-btn" + (view === "my" ? " active" : "")} onClick={() => setView("my")}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+            {tr("nav.my")}
+          </button>
+          
+          <button className={"sidebar-btn" + (view === "spaces" ? " active" : "")} onClick={() => setView("spaces")}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+            {tr("nav.spaces")}
+          </button>
+          
+          <button className={"sidebar-btn" + (view === "notifications" ? " active" : "")} onClick={() => setView("notifications")}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+            {tr("nav.notifications")}
+            {unread > 0 && <span className="badge" style={{ marginLeft: "auto" }}>{unread}</span>}
+          </button>
 
-      <main style={{ marginTop: 16 }}>
+          {me.role !== "user" && me.role !== "viewer" && (
+            <button className={"sidebar-btn" + (view === "admin" ? " active" : "")} onClick={() => setView("admin")}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+              {tr("nav.admin")}
+            </button>
+          )}
+        </div>
+
+        <div className="sidebar-footer">
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8, fontSize: 13 }}>
+            <span className="muted">@{me.username}</span>
+            <select className="input" style={{ width: "auto", padding: "4px 6px", fontSize: 12 }} value={theme.color}
+              onChange={(e) => updateTheme({ color: e.target.value })}>
+              {COLORS.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+
+          <div className="sidebar-controls">
+            <button className="ctrl-btn" title={tr("nav.theme")}
+              onClick={() => updateTheme({ scheme: theme.scheme === "dark" ? "light" : "dark" })}>
+              {theme.scheme === "dark" ? (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+              ) : (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2m0 18v2M4.22 4.22l1.42 1.42m12.72 12.72l1.42 1.42M1 12h2m18 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+              )}
+            </button>
+
+            <button className="ctrl-btn" title={tr("nav.visual")}
+              onClick={() => updateTheme({ visual: theme.visual === "rich" ? "lite" : "rich" })}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            </button>
+
+            <button className="ctrl-btn" title={tr("nav.sound")} onClick={() => {
+              const next = !soundOn
+              setSoundOn(next)
+              localStorage.setItem("todorio.sound", next ? "1" : "0")
+            }}>
+              {soundOn ? (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="11 5 6 9H2v6h4l5 4V5z"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+              ) : (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="11 5 6 9H2v6h4l5 4V5z"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
+              )}
+            </button>
+
+            <button className="ctrl-btn" title={tr("nav.logout")} onClick={logout}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      <main className="main-content">
         <AnnouncementsBanner />
         <DigestModal />
         {view === "my" && <MyTasksPage me={me} />}
         {view === "spaces" && <SpacesPage me={me} />}
         {view === "notifications" && <NotificationsPage onRead={() => setUnread(0)} />}
         {view === "admin" && <><AdminPage me={me} /><TotpCard me={me} /><InvitesCard me={me} /></>}
-      </main>
 
-      <footer className="muted" style={{ marginTop: 40, textAlign: "center" }}>
-        {siteName} · {tr("footer.developed_by")} {boot?.developer_name || "Vlad"}
-      </footer>
+        <footer className="muted" style={{ marginTop: 60, textAlign: "center", fontSize: 13 }}>
+          {siteName} · {tr("footer.developed_by")} {boot?.developer_name || "Vlad"}
+        </footer>
+      </main>
     </div>
   )
 }

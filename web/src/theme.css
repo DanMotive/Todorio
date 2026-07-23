@@ -57,10 +57,39 @@
 
 body {
   margin: 0;
-  background: var(--bg);
-  color: var(--text);
-  font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-}
+  background: var(--bg);\n  color: var(--text);\n  font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;\n}
+
+/* Layout with Sidebar */
+.app-layout {
+  display: flex;\n  min-height: 100vh;\n}
+.sidebar {
+  width: 260px;\n  background: var(--glass);\n  backdrop-filter: var(--blur);\n  border-right: 1px solid var(--border);\n  display: flex;\n  flex-direction: column;\n  padding: 20px 16px;\n  position: sticky;\n  top: 0;\n  height: 100vh;\n  z-index: 10;\n  box-shadow: var(--shadow);\n}
+.sidebar-header {
+  display: flex;\n  align-items: center;\n  gap: 12px;\n  margin-bottom: 28px;\n  padding-left: 4px;\n}
+.sidebar-header img { width: 32px; height: 32px; }
+.sidebar-header b { font-size: 18px; letter-spacing: -0.3px; }
+
+.sidebar-nav {
+  display: flex;\n  flex-direction: column;\n  gap: 6px;\n  flex: 1;\n}
+.sidebar-btn {
+  display: flex;\n  align-items: center;\n  gap: 12px;\n  width: 100%;\n  padding: 10px 14px;\n  background: transparent;\n  border: none;\n  border-radius: var(--radius);\n  color: var(--text-muted);\n  font-size: 14px;\n  font-weight: 500;\n  cursor: pointer;\n  text-align: left;\n  transition: background var(--transition), color var(--transition);\n}
+.sidebar-btn:hover {
+  background: var(--accent-soft);\n  color: var(--text);\n}
+.sidebar-btn.active {
+  background: var(--accent);\n  color: #fff;\n  box-shadow: 0 4px 14px var(--accent-soft);\n}
+.sidebar-btn svg { width: 18px; height: 18px; flex-shrink: 0; }
+
+.sidebar-footer {
+  border-top: 1px solid var(--border);\n  padding-top: 16px;\n  display: flex;\n  flex-direction: column;\n  gap: 10px;\n}
+.sidebar-controls {
+  display: grid;\n  grid-template-columns: repeat(4, 1fr);\n  gap: 6px;\n}
+.ctrl-btn {
+  padding: 8px;\n  background: var(--surface);\n  border: 1px solid var(--border);\n  border-radius: var(--radius);\n  color: var(--text);\n  cursor: pointer;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  transition: background var(--transition);\n}
+.ctrl-btn:hover { background: var(--accent-soft); border-color: var(--accent); }
+.ctrl-btn svg { width: 16px; height: 16px; }
+
+.main-content {
+  flex: 1;\n  max-width: 900px;\n  padding: 32px 40px;\n  overflow-y: auto;\n}
 
 .card {
   background: var(--glass);
