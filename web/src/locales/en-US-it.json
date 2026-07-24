@@ -18,5 +18,18 @@
   "task.archive": "To /dev/null",
   "task.done": "Shipped 🚀",
   "task.new": "New ticket",
-  "task.new_placeholder": "New ticket…"
+  "task.new_placeholder": "New ticket…",
+  "task.status.open": "Backlog",
+  "task.status.in_progress": "WIP",
+  "task.status.review": "In code review",
+  "task.status.done": "Shipped 🚀",
+  "task.priority.urgent": "Hotfix",
+  "task.priority.high": "P1",
+  "view.kanban": "Kanban board",
+  "view.my_week": "My sprint",
+  "focus.start": "Enter deep work mode",
+  "focus.stop": "Bail",
+  "my_week.overdue": "On fire 🔥",
+  "notes.title": "Scratchpad",
+  "activity.title": "Commit log"
 }

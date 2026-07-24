@@ -6,17 +6,20 @@ Todorio is a private, self-hosted task manager for personal use and small teams.
 
 ## Features (v1)
 
-- Login/password authentication (no email required), TOTP, manual registration approval
-- RBAC: root admin / admin / user / viewer + fine-grained permissions
-- Spaces → lists → tasks (subtasks, dependencies, recurrence, checklists)
-- Progress bars, configurable workflow statuses, custom fields, labels
+- Login/password authentication (no email required), TOTP, manual registration or invite codes
+- RBAC: root admin / admin / user / viewer, rate-limited login, registration modes (open/invite-only/closed)
+- Spaces → lists → tasks (subtasks, dependencies, recurrence, checklists, custom fields)
+- Four task views: List, Kanban board (drag & drop), Table, and "My Week"
+- Progress bars, configurable workflow statuses, notes (Markdown pages), favorites
 - Comments, @mentions, reactions (👍 ✅ 🎉 🔥 👀 ❓ ❗ ❌ 😭 ⭐), image attachments
-- In-app notifications, due-date badges, "Do Not Disturb" mode
+- In-app notifications, due-date badges, "Do Not Disturb" mode, "while you were away" digest
+- Focus mode / time tracking, global search across tasks/notes/comments, keyboard shortcuts (`?` for help)
 - 13 locales (language-country format) + IT styles `ru-RU-it`, `en-US-it`
 - 5 color themes (red/blue/green/yellow/gray), light + dark, "cozy"/"lite" density modes
-- SSE realtime updates, PWA ("Install app" button)
+- SSE realtime updates, working PWA install button (requires HTTPS)
 - Statistics, dynamic labels, leaderboards, **Space Pulse**
-- Everything configurable from the root panel **and** the terminal (`todorio server ...`)
+- List templates, emergency announcements, list-level public read-only share links
+- Everything configurable from the root panel **and** the terminal (`todorio server ...`) — same settings, either way
 
 ## Installation
 

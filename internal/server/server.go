@@ -51,13 +51,27 @@ func Run(cfg config.Config, version string) error {
 
 	// Public settings for the frontend before login: branding, locales, default theme.
 	mux.HandleFunc("GET /api/bootstrap", func(w http.ResponseWriter, r *http.Request) {
+		allLocales := []string{
+			"en-US", "ru-RU", "uk-UA", "be-BY", "kk-KZ",
+			"es-ES", "pt-BR", "tr-TR",
+			"zh-CN", "hi-IN", "bn-BD", "ja-JP", "ko-KR",
+		}
+		locales := allLocales
+		if raw := database.Setting(r.Context(), "locales.enabled", "[]"); raw != "[]" {
+			var enabled []string
+			if json.Unmarshal([]byte(raw), &enabled) == nil && len(enabled) > 0 {
+				locales = enabled
+			}
+		}
 		writeJSON(w, map[string]any{
-			"site_name":      database.Setting(r.Context(), "branding.site_name", "Todorio"),
-			"browser_title":  database.Setting(r.Context(), "branding.browser_title", "Todorio"),
-			"developer_name": database.Setting(r.Context(), "branding.developer_name", "Vlad"),
-			"default_locale": cfg.DefaultLocale,
+			"site_name":             database.Setting(r.Context(), "branding.site_name", "Todorio"),
+			"browser_title":         database.Setting(r.Context(), "branding.browser_title", "Todorio"),
+			"developer_name":        database.Setting(r.Context(), "branding.developer_name", "Vlad"),
+			"footer_text":           database.Setting(r.Context(), "branding.footer_text", ""),
+			"default_locale":        cfg.DefaultLocale,
 			"detect_browser_locale": cfg.DetectBrowser,
-			"registration_mode": database.Setting(r.Context(), "policy.registration.mode", "open_approval"),
+			"registration_mode":     database.Setting(r.Context(), "policy.registration.mode", "open_approval"),
+			"locales_enabled":       locales,
 			"theme": map[string]string{
 				"color":  database.Setting(r.Context(), "branding.default_color", cfg.DefaultColor),
 				"scheme": database.Setting(r.Context(), "branding.default_scheme", cfg.DefaultScheme),

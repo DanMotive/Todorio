@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"time"
 
@@ -8,30 +9,33 @@ import (
 )
 
 type taskRow struct {
-	ID          int64      `json:"id"`
-	ListID      int64      `json:"list_id"`
-	ParentID    *int64     `json:"parent_id"`
-	Title       string     `json:"title"`
-	Description *string    `json:"description"`
-	Status      string     `json:"status"`
-	Priority    string     `json:"priority"`
-	AssigneeID  *int64     `json:"assignee_id"`
-	CreatorID   int64      `json:"creator_id"`
-	DueAt       *time.Time `json:"due_at"`
-	Weight      int        `json:"weight"`
-	Progress    *int       `json:"progress"`
-	BlockedBy   []int64    `json:"blocked_by"`
-	CompletedAt *time.Time `json:"completed_at"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
-	SubtaskDone int        `json:"subtasks_done"`
-	SubtaskAll  int        `json:"subtasks_total"`
+	ID           int64           `json:"id"`
+	ListID       int64           `json:"list_id"`
+	ParentID     *int64          `json:"parent_id"`
+	Title        string          `json:"title"`
+	Description  *string         `json:"description"`
+	Status       string          `json:"status"`
+	Priority     string          `json:"priority"`
+	AssigneeID   *int64          `json:"assignee_id"`
+	CreatorID    int64           `json:"creator_id"`
+	DueAt        *time.Time      `json:"due_at"`
+	Weight       int             `json:"weight"`
+	Progress     *int            `json:"progress"`
+	BlockedBy    []int64         `json:"blocked_by"`
+	CustomFields json.RawMessage `json:"custom_fields"`
+	Recurrence   json.RawMessage `json:"recurrence"`
+	CompletedAt  *time.Time      `json:"completed_at"`
+	CreatedAt    time.Time       `json:"created_at"`
+	UpdatedAt    time.Time       `json:"updated_at"`
+	SubtaskDone  int             `json:"subtasks_done"`
+	SubtaskAll   int             `json:"subtasks_total"`
 }
 
 const taskSelect = `
 	SELECT t.id, t.list_id, t.parent_id, t.title, t.description, t.status, t.priority,
 		t.assignee_id, t.creator_id, t.due_at, t.weight, t.progress,
-		COALESCE(t.blocked_by, '{}'), t.completed_at, t.created_at, t.updated_at,
+		COALESCE(t.blocked_by, '{}'), t.custom_fields, t.recurrence,
+		t.completed_at, t.created_at, t.updated_at,
 		(SELECT count(*) FROM tasks s WHERE s.parent_id=t.id AND s.archived_at IS NULL AND s.completed_at IS NOT NULL)::int,
 		(SELECT count(*) FROM tasks s WHERE s.parent_id=t.id AND s.archived_at IS NULL)::int
 	FROM tasks t`
@@ -40,7 +44,8 @@ func scanTask(row interface{ Scan(...any) error }) (taskRow, error) {
 	var t taskRow
 	err := row.Scan(&t.ID, &t.ListID, &t.ParentID, &t.Title, &t.Description, &t.Status, &t.Priority,
 		&t.AssigneeID, &t.CreatorID, &t.DueAt, &t.Weight, &t.Progress,
-		&t.BlockedBy, &t.CompletedAt, &t.CreatedAt, &t.UpdatedAt, &t.SubtaskDone, &t.SubtaskAll)
+		&t.BlockedBy, &t.CustomFields, &t.Recurrence,
+		&t.CompletedAt, &t.CreatedAt, &t.UpdatedAt, &t.SubtaskDone, &t.SubtaskAll)
 	return t, err
 }
 
@@ -179,22 +184,39 @@ func (a *API) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in struct {
-		Title       *string    `json:"title"`
-		Description *string    `json:"description"`
-		Status      *string    `json:"status"`
-		Priority    *string    `json:"priority"`
-		AssigneeID  *int64     `json:"assignee_id"`
-		ClearAssignee bool     `json:"clear_assignee"`
-		DueAt       *time.Time `json:"due_at"`
-		ClearDueAt  bool       `json:"clear_due_at"`
-		Progress    *int       `json:"progress"`
-		Weight      *int       `json:"weight"`
-		BlockedBy   *[]int64   `json:"blocked_by"`
-		Position    *int       `json:"position"`
+		Title           *string            `json:"title"`
+		Description     *string            `json:"description"`
+		Status          *string            `json:"status"`
+		Priority        *string            `json:"priority"`
+		AssigneeID      *int64             `json:"assignee_id"`
+		ClearAssignee   bool               `json:"clear_assignee"`
+		DueAt           *time.Time         `json:"due_at"`
+		ClearDueAt      bool               `json:"clear_due_at"`
+		Progress        *int               `json:"progress"`
+		Weight          *int               `json:"weight"`
+		BlockedBy       *[]int64           `json:"blocked_by"`
+		Position        *int               `json:"position"`
+		Recurrence      *recurrenceRule    `json:"recurrence"`
+		ClearRecurrence bool               `json:"clear_recurrence"`
+		CustomFields    *map[string]string `json:"custom_fields"`
 	}
 	if err := readJSON(r, &in); err != nil {
 		errJSON(w, http.StatusBadRequest, "invalid request")
 		return
+	}
+	if in.Status != nil {
+		allowed := a.listStatuses(r, listID)
+		ok := false
+		for _, s := range allowed {
+			if s == *in.Status {
+				ok = true
+				break
+			}
+		}
+		if !ok {
+			errJSON(w, http.StatusBadRequest, "unknown status for this space's workflow")
+			return
+		}
 	}
 
 	// snapshot of the version before the change
@@ -214,6 +236,8 @@ func (a *API) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 			weight      = COALESCE($11, weight),
 			blocked_by  = COALESCE($12, blocked_by),
 			position    = COALESCE($13, position),
+			recurrence  = CASE WHEN $14 THEN NULL ELSE COALESCE($15, recurrence) END,
+			custom_fields = COALESCE($16, custom_fields),
 			completed_at = CASE
 				WHEN $4 = 'done' AND completed_at IS NULL THEN now()
 				WHEN $4 IS NOT NULL AND $4 <> 'done' THEN NULL
@@ -222,7 +246,8 @@ func (a *API) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 		WHERE id=$1`,
 		id, in.Title, in.Description, in.Status, in.Priority,
 		in.AssigneeID, in.ClearAssignee, in.DueAt, in.ClearDueAt,
-		in.Progress, in.Weight, in.BlockedBy, in.Position)
+		in.Progress, in.Weight, in.BlockedBy, in.Position,
+		in.ClearRecurrence, in.Recurrence, in.CustomFields)
 	if err != nil {
 		errJSON(w, http.StatusBadRequest, "update failed (check the values)")
 		return
