@@ -269,5 +269,6 @@
   "fields.type.checkbox": "চেকবক্স",
   "fields.type.user": "ব্যবহারকারী",
   "fields.type.link": "লিংক",
-  "fields.type.rating": "রেটিং"
+  "fields.type.rating": "রেটিং",
+  "task.load_error": "কাজ লোড করা যায়নি"
 }

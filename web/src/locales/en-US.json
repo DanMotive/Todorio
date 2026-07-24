@@ -269,5 +269,6 @@
   "fields.type.checkbox": "Checkbox",
   "fields.type.user": "User",
   "fields.type.link": "Link",
-  "fields.type.rating": "Rating"
+  "fields.type.rating": "Rating",
+  "task.load_error": "Couldn't load tasks"
 }

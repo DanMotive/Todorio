@@ -972,8 +972,18 @@ function ListView({ me, list, spaceId, onBack }: { me: Me; list: List; spaceId: 
   const [viewMode, setViewMode] = useState<"list" | "kanban" | "table" | "calendar">("list")
   const [statuses, setStatuses] = useState<string[]>(DEFAULT_STATUSES)
   const [filterQuery, setFilterQuery] = useState<FilterQuery | null>(null)
+  const [loadError, setLoadError] = useState("")
+  const [createError, setCreateError] = useState("")
 
-  const load = () => api.get(`/api/lists/${list.id}/tasks`).then((r) => setTasks(r.tasks)).catch(() => {})
+  // Both load() and the create-task submit below used to swallow errors entirely
+  // (`.catch(() => {})`), so a failed request looked identical to "the list is just empty" or
+  // "the task was created" — exactly the confusing silent-failure shape that made an earlier,
+  // real bug (a missing DB column) look like "tasks aren't created" with zero diagnostic
+  // information. Both now surface the actual error message instead of hiding it.
+  const load = () => {
+    setLoadError("")
+    api.get(`/api/lists/${list.id}/tasks`).then((r) => setTasks(r.tasks)).catch((err) => setLoadError((err as Error).message))
+  }
   useEffect(() => { load() }, [list.id])
   useEffect(() => {
     api.get(`/api/spaces/${spaceId}/workflow`).then((r: Workflow) => setStatuses(r.statuses)).catch(() => {})
@@ -1007,6 +1017,8 @@ function ListView({ me, list, spaceId, onBack }: { me: Me; list: List; spaceId: 
 
       <FiltersBar listId={list.id} statuses={statuses} onFilter={setFilterQuery} />
 
+      {loadError && <p className="error-text">{tr("task.load_error")}: {loadError}</p>}
+
       {viewMode === "list" && filteredRoots.map((task) => (
         <div key={task.id}>
           <TaskRow task={task} onToggle={toggle} onOpen={setOpen} />
@@ -1024,15 +1036,22 @@ function ListView({ me, list, spaceId, onBack }: { me: Me; list: List; spaceId: 
       <form className="row" style={{ marginTop: 12 }} onSubmit={async (e) => {
         e.preventDefault()
         if (!title.trim()) return
-        await api.post(`/api/lists/${list.id}/tasks`, {
-          title, due_at: due ? new Date(due).toISOString() : null,
-        }).catch(() => {})
-        setTitle(""); setDue(""); load()
+        setCreateError("")
+        try {
+          await api.post(`/api/lists/${list.id}/tasks`, {
+            title, due_at: due ? new Date(due).toISOString() : null,
+          })
+          setTitle(""); setDue("")
+          load()
+        } catch (err) {
+          setCreateError((err as Error).message)
+        }
       }}>
         <input className="input grow" placeholder={tr("task.new_placeholder")} value={title} onChange={(e) => setTitle(e.target.value)} />
         <input className="input" style={{ width: 170 }} type="date" value={due} onChange={(e) => setDue(e.target.value)} />
         <button className="btn" type="submit">+</button>
       </form>
+      {createError && <p className="error-text">{createError}</p>}
       {open && <TaskModal task={open} me={me} spaceId={spaceId} onClose={() => setOpen(null)} onChanged={load} />}
     </div>
   )

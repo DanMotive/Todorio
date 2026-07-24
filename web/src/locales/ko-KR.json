@@ -269,5 +269,6 @@
   "fields.type.checkbox": "체크박스",
   "fields.type.user": "사용자",
   "fields.type.link": "링크",
-  "fields.type.rating": "평점"
+  "fields.type.rating": "평점",
+  "task.load_error": "작업을 불러올 수 없습니다"
 }

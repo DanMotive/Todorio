@@ -269,5 +269,6 @@
   "fields.type.checkbox": "चेकबॉक्स",
   "fields.type.user": "उपयोगकर्ता",
   "fields.type.link": "लिंक",
-  "fields.type.rating": "रेटिंग"
+  "fields.type.rating": "रेटिंग",
+  "task.load_error": "कार्य लोड नहीं हो सके"
 }

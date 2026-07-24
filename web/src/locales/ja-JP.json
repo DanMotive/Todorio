@@ -269,5 +269,6 @@
   "fields.type.checkbox": "チェックボックス",
   "fields.type.user": "ユーザー",
   "fields.type.link": "リンク",
-  "fields.type.rating": "評価"
+  "fields.type.rating": "評価",
+  "task.load_error": "タスクを読み込めませんでした"
 }

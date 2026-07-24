@@ -269,5 +269,6 @@
   "fields.type.checkbox": "Құсбелгі",
   "fields.type.user": "Пайдаланушы",
   "fields.type.link": "Сілтеме",
-  "fields.type.rating": "Рейтинг"
+  "fields.type.rating": "Рейтинг",
+  "task.load_error": "Тапсырмаларды жүктеу мүмкін болмады"
 }

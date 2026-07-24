@@ -269,5 +269,6 @@
   "fields.type.checkbox": "Casilla",
   "fields.type.user": "Usuario",
   "fields.type.link": "Enlace",
-  "fields.type.rating": "Valoración"
+  "fields.type.rating": "Valoración",
+  "task.load_error": "No se pudieron cargar las tareas"
 }
