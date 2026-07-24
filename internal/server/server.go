@@ -5,12 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
-	"path/filepath"
+	"path"
 	"strings"
 
+	assets "github.com/DanMotive/Todorio"
 	"github.com/DanMotive/Todorio/internal/api"
 	"github.com/DanMotive/Todorio/internal/auth"
 	"github.com/DanMotive/Todorio/internal/config"
@@ -23,13 +25,16 @@ import (
 func Run(cfg config.Config, version string) error {
 	ctx := context.Background()
 
-	// --- DB and migrations ---
+	// --- DB and migrations (embedded in the binary — see assets.go) ---
 	database, err := db.Connect(ctx, cfg.DatabaseURL)
 	if err != nil {
 		return err
 	}
-	// demo space with quests — created once, after migrations (see below, after Migrate)
-	if err := database.Migrate(ctx, migrationsDir()); err != nil {
+	migrationsFS, err := fs.Sub(assets.Migrations, "migrations")
+	if err != nil {
+		return fmt.Errorf("embedded migrations: %w", err)
+	}
+	if err := database.Migrate(ctx, migrationsFS); err != nil {
 		return fmt.Errorf("migrations: %w", err)
 	}
 
@@ -81,7 +86,11 @@ func Run(cfg config.Config, version string) error {
 	})
 
 	// Frontend static assets + SPA fallback to index.html.
-	mux.Handle("/", spaHandler(webDistDir()))
+	dist, err := webFS()
+	if err != nil {
+		return err
+	}
+	mux.Handle("/", spaHandler(dist))
 
 	handler := securityHeaders(cfg.HTTPS)(auth.Middleware(database)(mux))
 
@@ -93,37 +102,47 @@ func Run(cfg config.Config, version string) error {
 	return http.ListenAndServe(addr, handler)
 }
 
-// webDistDir — the built frontend: next to the binary (dev) or in /usr/share/todorio (prod).
-func webDistDir() string {
-	if _, err := os.Stat("web/dist"); err == nil {
-		return "web/dist"
+// webFS resolves the frontend to serve. Preference order:
+//  1. The embedded build (assets.Web), if it's real — i.e. `npm run build` ran
+//     before `go build`, as the release pipeline does, so the binary is fully
+//     self-contained and needs no files alongside it.
+//  2. ./web/dist on disk (running from a source checkout without embedding).
+//  3. /usr/share/todorio/web/dist (older installs that copied files onto the
+//     server instead of using a self-contained binary).
+//
+// Returns an error only if none of the three actually has a built frontend —
+// a clear startup failure beats silently serving 404s for every page.
+func webFS() (fs.FS, error) {
+	embedded, err := fs.Sub(assets.Web, "web/dist")
+	if err == nil {
+		if _, err := fs.Stat(embedded, "index.html"); err == nil {
+			return embedded, nil // real embedded frontend
+		}
 	}
-	return "/usr/share/todorio/web/dist"
+	if _, err := os.Stat("web/dist/index.html"); err == nil {
+		return os.DirFS("web/dist"), nil
+	}
+	if _, err := os.Stat("/usr/share/todorio/web/dist/index.html"); err == nil {
+		return os.DirFS("/usr/share/todorio/web/dist"), nil
+	}
+	return nil, fmt.Errorf("no built frontend found (embedded in the binary, ./web/dist, or /usr/share/todorio/web/dist) — run `npm run build` in web/ before `go build`, or use a released binary")
 }
 
 // spaHandler serves files from dist, and for client-side routes (/space/5 etc.) falls back to index.html.
-func spaHandler(dist string) http.Handler {
-	fs := http.FileServer(http.Dir(dist))
+func spaHandler(dist fs.FS) http.Handler {
+	fileServer := http.FileServerFS(dist)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			http.NotFound(w, r)
 			return
 		}
-		path := filepath.Join(dist, filepath.Clean(r.URL.Path))
-		if st, err := os.Stat(path); err == nil && !st.IsDir() {
-			fs.ServeHTTP(w, r)
+		clean := path.Clean(strings.TrimPrefix(r.URL.Path, "/"))
+		if st, err := fs.Stat(dist, clean); err == nil && !st.IsDir() {
+			fileServer.ServeHTTP(w, r)
 			return
 		}
-		http.ServeFile(w, r, filepath.Join(dist, "index.html"))
+		http.ServeFileFS(w, r, dist, "index.html")
 	})
-}
-
-func migrationsDir() string {
-	// Next to the binary in prod (/usr/share/todorio/migrations), ./migrations in the repo.
-	if _, err := os.Stat("/usr/share/todorio/migrations"); err == nil {
-		return "/usr/share/todorio/migrations"
-	}
-	return "migrations"
 }
 
 func writeJSON(w http.ResponseWriter, v any) {

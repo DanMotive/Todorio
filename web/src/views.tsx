@@ -4,12 +4,13 @@ import {
   api, REACTIONS, DEFAULT_STATUSES,
   type List, type Me, type Pulse, type Space, type Task, type Workflow,
 } from "./api"
-import { AttachmentsBlock, StatsCard, FocusWidget, NotesPanel, ActivityPanel } from "./extras"
-import { tr, setLocale, getLocale, SUPPORTED } from "./i18n"
+import { AttachmentsBlock, StatsCard, FocusWidget, NotesPanel, ActivityPanel, ArchivePanel, ArchivedSpacesPanel, FieldsPanel, type FieldDef } from "./extras"
+import { tr, trFormal, setLocale, getLocale, getFormattingLocale, SUPPORTED } from "./i18n"
 import {
   IconStar, IconRefresh, IconLock, IconX, IconUser, IconPause, IconSlash, IconClock,
   IconGrid, IconArrowLeft, IconList, IconFileText, IconActivity, IconMenu, IconColumns,
-  IconTable, IconCheckCircle, IconMessage, IconPin, IconAlertCircle,
+  IconTable, IconCheckCircle, IconMessage, IconPin, IconAlertCircle, IconArchive, IconCalendar,
+  IconSliders,
 } from "./icons"
 
 // ---------- helpers ----------
@@ -25,7 +26,7 @@ function dueClass(due: string | null): string {
 
 function dueLabel(due: string | null): string {
   if (!due) return ""
-  return new Date(due).toLocaleDateString(undefined, { day: "numeric", month: "short" })
+  return new Date(due).toLocaleDateString(getFormattingLocale(), { day: "numeric", month: "short" })
 }
 
 // ---------- login / registration ----------
@@ -148,6 +149,8 @@ export function TaskModal({ task, me, spaceId, onClose, onChanged }: {
   const [comments, setComments] = useState<any[]>([])
   const [body, setBody] = useState("")
   const [error, setError] = useState("")
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const [editBody, setEditBody] = useState("")
   const [statuses, setStatuses] = useState<string[]>(DEFAULT_STATUSES)
 
   // Editable task states
@@ -159,13 +162,71 @@ export function TaskModal({ task, me, spaceId, onClose, onChanged }: {
   const [customFields, setCustomFields] = useState<Record<string, string>>(task.custom_fields || {})
   const [newKey, setNewKey] = useState("")
   const [newValue, setNewValue] = useState("")
+  const [fieldSchema, setFieldSchema] = useState<FieldDef[]>([])
 
   const load = () => api.get(`/api/tasks/${task.id}/comments`).then((r) => setComments(r.comments)).catch(() => {})
   useEffect(() => { load() }, [task.id])
   useEffect(() => {
-    if (!spaceId) return
+    if (!spaceId) { setFieldSchema([]); return }
     api.get(`/api/spaces/${spaceId}/workflow`).then((r: Workflow) => setStatuses(r.statuses)).catch(() => {})
+    // Typed field definitions the space owner configured (spec section 13) — when present, these
+    // drive proper controls below instead of the plain freeform key/value editor. Falls back to
+    // freeform when spaceId is unknown (e.g. opened from "My tasks", which spans many spaces).
+    api.get(`/api/spaces/${spaceId}/fields`).then((r) => setFieldSchema(r.fields || [])).catch(() => {})
   }, [spaceId])
+
+  async function setCustomField(k: string, v: string) {
+    const next = { ...customFields, [k]: v }
+    setCustomFields(next)
+    await updateTask({ custom_fields: next })
+  }
+
+  function renderFieldControl(f: FieldDef) {
+    const val = customFields[f.key] ?? ""
+    switch (f.type) {
+      case "checkbox":
+        return <input type="checkbox" checked={val === "true"} onChange={(e) => setCustomField(f.key, e.target.checked ? "true" : "false")} />
+      case "number":
+        return <input className="input" type="number" value={val} onChange={(e) => setCustomField(f.key, e.target.value)} />
+      case "date":
+        return <input className="input" type="date" value={val} onChange={(e) => setCustomField(f.key, e.target.value)} />
+      case "link":
+        return <input className="input" type="url" placeholder="https://" value={val} onChange={(e) => setCustomField(f.key, e.target.value)} />
+      case "rating":
+        return (
+          <select className="input" style={{ width: "auto" }} value={val} onChange={(e) => setCustomField(f.key, e.target.value)}>
+            <option value="">—</option>
+            {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
+        )
+      case "select":
+        return (
+          <select className="input" style={{ width: "auto" }} value={val} onChange={(e) => setCustomField(f.key, e.target.value)}>
+            <option value="">—</option>
+            {(f.options || []).map((o) => <option key={o} value={o}>{o}</option>)}
+          </select>
+        )
+      case "multiselect": {
+        const selected = val ? val.split(",") : []
+        return (
+          <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+            {(f.options || []).map((o) => (
+              <label key={o} className="row" style={{ gap: 3, fontSize: 13 }}>
+                <input type="checkbox" checked={selected.includes(o)} onChange={(e) => {
+                  const nextSel = e.target.checked ? [...selected, o] : selected.filter((s) => s !== o)
+                  setCustomField(f.key, nextSel.join(","))
+                }} /> {o}
+              </label>
+            ))}
+          </div>
+        )
+      }
+      case "user":
+        return <input className="input" placeholder={tr("fields.user_placeholder")} value={val} onChange={(e) => setCustomField(f.key, e.target.value)} />
+      default:
+        return <input className="input" value={val} onChange={(e) => setCustomField(f.key, e.target.value)} />
+    }
+  }
 
   async function updateTask(patch: any) {
     try {
@@ -232,6 +293,17 @@ export function TaskModal({ task, me, spaceId, onClose, onChanged }: {
     try {
       await api.post(`/api/tasks/${task.id}/comments`, { body })
       setBody("")
+      load()
+    } catch (err) { setError((err as Error).message) }
+  }
+
+  function startEdit(c: any) { setEditingId(c.id); setEditBody(c.body) }
+  function cancelEdit() { setEditingId(null); setEditBody("") }
+  async function saveEdit(id: number) {
+    if (!editBody.trim()) return
+    try {
+      await api.patch(`/api/comments/${id}`, { body: editBody })
+      setEditingId(null); setEditBody("")
       load()
     } catch (err) { setError((err as Error).message) }
   }
@@ -306,10 +378,17 @@ export function TaskModal({ task, me, spaceId, onClose, onChanged }: {
           </div>
         </div>
 
-        {/* Custom Fields section */}
+        {/* Custom Fields section: typed controls for the space's defined schema (if any), plus a
+            freeform key/value editor underneath for anything outside that schema. */}
         <div style={{ marginBottom: 16 }}>
           <div className="section-title" style={{ fontSize: 13, marginBottom: 6 }}>{tr("task.custom_fields")}</div>
-          {Object.entries(customFields).map(([k, v]) => (
+          {fieldSchema.map((f) => (
+            <div key={f.key} className="row" style={{ marginBottom: 6, fontSize: 13, gap: 8 }}>
+              <label style={{ minWidth: 100 }}>{f.label}</label>
+              {renderFieldControl(f)}
+            </div>
+          ))}
+          {Object.entries(customFields).filter(([k]) => !fieldSchema.some((f) => f.key === k)).map(([k, v]) => (
             <div key={k} className="row" style={{ marginBottom: 4, fontSize: 13 }}>
               <b>{k}:</b> <span>{v}</span>
               <button className="nav-btn" style={{ padding: "2px 6px" }} onClick={() => removeCustomField(k)}><IconX size={11} /></button>
@@ -330,9 +409,28 @@ export function TaskModal({ task, me, spaceId, onClose, onChanged }: {
           <div key={c.id} className="card" style={{ marginBottom: 8, padding: 12 }}>
             <div className="row">
               <b>@{c.author}</b>
-              <span className="muted">{new Date(c.created_at).toLocaleString()}</span>
+              <span className="muted">
+                {new Date(c.created_at).toLocaleString(getFormattingLocale())}
+                {c.edited_at ? ` · ${tr("task.comment_edited")}` : ""}
+              </span>
+              {c.author_id === me.id && editingId !== c.id && (
+                <button className="nav-btn" style={{ marginLeft: "auto", fontSize: 12 }} onClick={() => startEdit(c)}>
+                  {tr("task.comment_edit")}
+                </button>
+              )}
             </div>
-            <div>{c.body}</div>
+            {editingId === c.id ? (
+              <div>
+                <textarea className="input" style={{ width: "100%", minHeight: 60, marginTop: 4 }}
+                  value={editBody} onChange={(e) => setEditBody(e.target.value)} />
+                <div className="row" style={{ marginTop: 6, gap: 6 }}>
+                  <button className="btn" onClick={() => saveEdit(c.id)}>{tr("task.comment_save")}</button>
+                  <button className="nav-btn" onClick={cancelEdit}>{tr("task.comment_cancel")}</button>
+                </div>
+              </div>
+            ) : (
+              <div>{c.body}</div>
+            )}
             <div className="row" style={{ marginTop: 6, flexWrap: "wrap" }}>
               {REACTIONS.map((emoji) => {
                 const rx = (c.reactions as any[]).filter((r) => r.emoji === emoji)
@@ -411,7 +509,7 @@ function MyWeekView({ tasks, favorites, onOpen, onToggle, onToggleFavorite }: {
       <Section label={<><IconAlertCircle size={13} style={{ color: "var(--due-overdue)" }} /> {tr("my_week.overdue")}</>} list={overdue} />
       {days.map((d, i) => (
         <Section key={i} list={d.tasks}
-          label={d.date.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "short" })} />
+          label={d.date.toLocaleDateString(getFormattingLocale(), { weekday: "long", day: "numeric", month: "short" })} />
       ))}
       <Section label={tr("my_week.later")} list={later} />
       {total === 0 && <p className="muted">{tr("my.empty")}</p>}
@@ -419,10 +517,14 @@ function MyWeekView({ tasks, favorites, onOpen, onToggle, onToggleFavorite }: {
   )
 }
 
+type MySubTab = "all" | "today" | "overdue" | "review" | "no_deadline" | "mentions"
+
 export function MyTasksPage({ me }: { me: Me }) {
   const [tasks, setTasks] = useState<Task[]>([])
   const [open, setOpen] = useState<Task | null>(null)
   const [tab, setTab] = useState<"list" | "week">("list")
+  const [subTab, setSubTab] = useState<MySubTab>("all")
+  const [mentions, setMentions] = useState<any[]>([])
   const [favorites, setFavorites] = useState<Set<number>>(new Set())
   const load = () => api.get("/api/my/tasks").then((r) => setTasks(r.tasks)).catch(() => {})
   const loadFavorites = () => api.get("/api/favorites").then((r) => {
@@ -432,6 +534,12 @@ export function MyTasksPage({ me }: { me: Me }) {
     ))
   }).catch(() => {})
   useEffect(() => { load(); loadFavorites() }, [])
+  useEffect(() => {
+    if (subTab !== "mentions") return
+    api.get(`/api/search?q=${encodeURIComponent("@" + me.username)}`)
+      .then((r) => setMentions((r.results as any[]).filter((x) => x.type === "comment")))
+      .catch(() => {})
+  }, [subTab, me.username])
 
   async function toggle(task: Task) {
     await api.patch(`/api/tasks/${task.id}`, { status: task.completed_at ? "open" : "done" }).catch(() => {})
@@ -442,6 +550,21 @@ export function MyTasksPage({ me }: { me: Me }) {
     await api.post("/api/favorites", { target_type: "task", target_id: task.id }).catch(() => {})
     loadFavorites()
   }
+
+  async function openMentionedTask(taskID: number) {
+    const r = await api.get(`/api/tasks/${taskID}`).catch(() => null)
+    if (r?.task) setOpen(r.task)
+  }
+
+  const subFiltered = tasks.filter((t) => {
+    switch (subTab) {
+      case "today": return !t.completed_at && dueClass(t.due_at) === "today"
+      case "overdue": return !t.completed_at && dueClass(t.due_at) === "overdue"
+      case "review": return !t.completed_at && t.status === "review"
+      case "no_deadline": return !t.completed_at && !t.due_at
+      default: return true
+    }
+  })
 
   return (
     <div className="card">
@@ -454,11 +577,32 @@ export function MyTasksPage({ me }: { me: Me }) {
       </div>
       {tab === "list" && (
         <>
-          {tasks.length === 0 && <p className="muted">{tr("my.empty")}</p>}
-          {tasks.map((task) => (
-            <TaskRow key={task.id} task={task} onToggle={toggle} onOpen={setOpen}
-              favorite={favorites.has(task.id)} onToggleFavorite={toggleFavorite} />
-          ))}
+          <div className="row" style={{ gap: 4, marginBottom: 10, flexWrap: "wrap" }}>
+            {(["all", "today", "overdue", "review", "no_deadline", "mentions"] as MySubTab[]).map((s) => (
+              <button key={s} className={"nav-btn" + (subTab === s ? " active" : "")} onClick={() => setSubTab(s)}>
+                {tr("my.sub." + s)}
+              </button>
+            ))}
+          </div>
+          {subTab === "mentions" ? (
+            <>
+              {mentions.length === 0 && <p className="muted">{tr("my.empty")}</p>}
+              {mentions.map((m) => (
+                <div key={m.id} className="task-row" onClick={() => openMentionedTask(m.task_id)}>
+                  <span className="task-title row" style={{ gap: 6 }}><IconMessage size={14} /> «{m.task_title}»</span>
+                  <span className="muted" style={{ maxWidth: 320, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.snippet}</span>
+                </div>
+              ))}
+            </>
+          ) : (
+            <>
+              {subFiltered.length === 0 && <p className="muted">{tr("my.empty")}</p>}
+              {subFiltered.map((task) => (
+                <TaskRow key={task.id} task={task} onToggle={toggle} onOpen={setOpen}
+                  favorite={favorites.has(task.id)} onToggleFavorite={toggleFavorite} />
+              ))}
+            </>
+          )}
         </>
       )}
       {tab === "week" && (
@@ -475,6 +619,7 @@ export function SpacesPage({ me }: { me: Me }) {
   const [spaces, setSpaces] = useState<Space[]>([])
   const [current, setCurrent] = useState<Space | null>(null)
   const [name, setName] = useState("")
+  const [showArchived, setShowArchived] = useState(false)
   const load = () => api.get("/api/spaces").then((r) => setSpaces(r.spaces)).catch(() => {})
   useEffect(() => { load() }, [])
 
@@ -498,6 +643,10 @@ export function SpacesPage({ me }: { me: Me }) {
         <input className="input grow" placeholder={tr("spaces.new_placeholder")} value={name} onChange={(e) => setName(e.target.value)} />
         <button className="btn" type="submit">{tr("common.create")}</button>
       </form>
+      <button className="nav-btn row" style={{ gap: 5, marginTop: 14 }} onClick={() => setShowArchived((v) => !v)}>
+        <IconArchive size={13} /> {tr("archive.show_archived_spaces")}
+      </button>
+      {showArchived && <div style={{ marginTop: 8 }}><ArchivedSpacesPanel me={me} /></div>}
     </div>
   )
 }
@@ -507,7 +656,7 @@ function SpaceView({ me, space, onBack }: { me: Me; space: Space; onBack: () => 
   const [pulse, setPulse] = useState<Pulse | null>(null)
   const [currentList, setCurrentList] = useState<List | null>(null)
   const [name, setName] = useState("")
-  const [tab, setTab] = useState<"lists" | "notes" | "activity">("lists")
+  const [tab, setTab] = useState<"lists" | "notes" | "activity" | "archive" | "fields">("lists")
   const [templates, setTemplates] = useState<Array<{ id: number; name: string }>>([])
 
   const load = () => {
@@ -533,7 +682,7 @@ function SpaceView({ me, space, onBack }: { me: Me; space: Space; onBack: () => 
       </div>
 
       <StatsCard spaceId={space.id} />
-      {pulse && (
+      {pulse && pulse.enabled !== false && (
         <div className="card pulse-card" style={{ marginBottom: 12 }}>
           <div className="pulse-visual">
             <span className={"pulse-dot pulse-dot--" + pulse.mood} title={tr("pulse.title")} />
@@ -555,6 +704,8 @@ function SpaceView({ me, space, onBack }: { me: Me; space: Space; onBack: () => 
         <button className={"nav-btn row" + (tab === "lists" ? " active" : "")} style={{ gap: 5, display: "inline-flex" }} onClick={() => setTab("lists")}><IconList size={14} /> {tr("lists.title")}</button>
         <button className={"nav-btn row" + (tab === "notes" ? " active" : "")} style={{ gap: 5, display: "inline-flex" }} onClick={() => setTab("notes")}><IconFileText size={14} /> {tr("notes.title")}</button>
         <button className={"nav-btn row" + (tab === "activity" ? " active" : "")} style={{ gap: 5, display: "inline-flex" }} onClick={() => setTab("activity")}><IconActivity size={14} /> {tr("activity.title")}</button>
+        <button className={"nav-btn row" + (tab === "archive" ? " active" : "")} style={{ gap: 5, display: "inline-flex" }} onClick={() => setTab("archive")}><IconArchive size={14} /> {tr("archive.title")}</button>
+        <button className={"nav-btn row" + (tab === "fields" ? " active" : "")} style={{ gap: 5, display: "inline-flex" }} onClick={() => setTab("fields")}><IconSliders size={14} /> {tr("fields.title")}</button>
       </div>
 
       {tab === "lists" && (
@@ -587,6 +738,8 @@ function SpaceView({ me, space, onBack }: { me: Me; space: Space; onBack: () => 
       )}
       {tab === "notes" && <div className="card"><NotesPanel spaceId={space.id} /></div>}
       {tab === "activity" && <div className="card"><ActivityPanel spaceId={space.id} /></div>}
+      {tab === "archive" && <div className="card"><ArchivePanel me={me} spaceId={space.id} /></div>}
+      {tab === "fields" && <div className="card"><FieldsPanel spaceId={space.id} isOwner={space.my_role === "owner"} /></div>}
     </div>
   )
 }
@@ -663,13 +816,162 @@ function TableView({ tasks, onOpen, onToggle }: {
   )
 }
 
+// ---------- Calendar (month grid; tasks placed on their due date, spec section 12) ----------
+
+function CalendarView({ tasks, onOpen }: { tasks: Task[]; onOpen: (t: Task) => void }) {
+  const [cursor, setCursor] = useState(() => { const d = new Date(); d.setDate(1); return d })
+
+  const byDay = new Map<string, Task[]>()
+  for (const t of tasks) {
+    if (!t.due_at) continue
+    const key = new Date(t.due_at).toDateString()
+    if (!byDay.has(key)) byDay.set(key, [])
+    byDay.get(key)!.push(t)
+  }
+
+  const year = cursor.getFullYear()
+  const month = cursor.getMonth()
+  const startOffset = (new Date(year, month, 1).getDay() + 6) % 7 // week starts Monday
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+  const cells: (Date | null)[] = []
+  for (let i = 0; i < startOffset; i++) cells.push(null)
+  for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(year, month, d))
+  while (cells.length % 7 !== 0) cells.push(null)
+
+  const todayKey = new Date().toDateString()
+  const weekdayLabels = Array.from({ length: 7 }, (_, i) =>
+    new Date(2024, 0, 1 + i).toLocaleDateString(getFormattingLocale(), { weekday: "short" }))
+
+  return (
+    <div className="calendar-view">
+      <div className="row" style={{ justifyContent: "space-between", marginBottom: 8 }}>
+        <button className="nav-btn" onClick={() => setCursor(new Date(year, month - 1, 1))}>‹</button>
+        <b>{cursor.toLocaleDateString(getFormattingLocale(), { month: "long", year: "numeric" })}</b>
+        <button className="nav-btn" onClick={() => setCursor(new Date(year, month + 1, 1))}>›</button>
+      </div>
+      <div className="calendar-grid calendar-grid--head">
+        {weekdayLabels.map((w, i) => <div key={i} className="calendar-weekday">{w}</div>)}
+      </div>
+      <div className="calendar-grid">
+        {cells.map((d, i) => {
+          if (!d) return <div key={i} className="calendar-cell calendar-cell--pad" />
+          const dayTasks = byDay.get(d.toDateString()) || []
+          const visible = dayTasks.slice(0, 3)
+          return (
+            <div key={i} className={"calendar-cell" + (d.toDateString() === todayKey ? " calendar-cell--today" : "")}>
+              <div className="calendar-daynum">{d.getDate()}</div>
+              {visible.map((t) => (
+                <div key={t.id} className={"calendar-task " + dueClass(t.due_at)} title={t.title} onClick={() => onOpen(t)}>
+                  {t.title}
+                </div>
+              ))}
+              {dayTasks.length > visible.length && (
+                <div className="muted" style={{ fontSize: 11 }}>+{dayTasks.length - visible.length} {tr("view.calendar_more")}</div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ---------- saved filters (spec section 12; backend already existed in filters.go, unused until now) ----------
+
+type FilterQuery = { status?: string; priority?: string; overdue?: boolean }
+type SavedFilterT = { id: number; list_id: number | null; name: string; query: FilterQuery }
+
+function matchesFilter(t: Task, q: FilterQuery): boolean {
+  if (q.status && t.status !== q.status) return false
+  if (q.priority && t.priority !== q.priority) return false
+  if (q.overdue && !(t.due_at && !t.completed_at && new Date(t.due_at).getTime() < Date.now())) return false
+  return true
+}
+
+function FiltersBar({ listId, statuses, onFilter }: {
+  listId?: number | null; statuses: string[]; onFilter: (q: FilterQuery | null) => void
+}) {
+  const [filters, setFilters] = useState<SavedFilterT[]>([])
+  const [activeId, setActiveId] = useState<number | null>(null)
+  const [showForm, setShowForm] = useState(false)
+  const [name, setName] = useState("")
+  const [fStatus, setFStatus] = useState("")
+  const [fPriority, setFPriority] = useState("")
+  const [fOverdue, setFOverdue] = useState(false)
+
+  const load = () => {
+    const qs = listId ? `?list_id=${listId}` : ""
+    api.get(`/api/filters${qs}`).then((r) => setFilters(r.filters)).catch(() => {})
+  }
+  useEffect(() => { load() }, [listId])
+
+  function apply(f: SavedFilterT | null) {
+    setActiveId(f?.id ?? null)
+    onFilter(f?.query ?? null)
+  }
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault()
+    if (!name.trim()) return
+    const query: FilterQuery = {}
+    if (fStatus) query.status = fStatus
+    if (fPriority) query.priority = fPriority
+    if (fOverdue) query.overdue = true
+    await api.post("/api/filters", { name, list_id: listId ?? null, query }).catch(() => {})
+    setName(""); setFStatus(""); setFPriority(""); setFOverdue(false); setShowForm(false)
+    load()
+  }
+
+  async function remove(id: number) {
+    await api.del(`/api/filters/${id}`).catch(() => {})
+    if (activeId === id) apply(null)
+    load()
+  }
+
+  return (
+    <div className="row" style={{ gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+      <button className={"nav-btn row" + (activeId === null ? " active" : "")} style={{ gap: 4, display: "inline-flex" }} onClick={() => apply(null)}>
+        <IconSliders size={12} /> {tr("filters.all")}
+      </button>
+      {filters.map((f) => (
+        <span key={f.id} className={"nav-btn row" + (activeId === f.id ? " active" : "")} style={{ gap: 4 }}>
+          <span style={{ cursor: "pointer" }} onClick={() => apply(activeId === f.id ? null : f)}>{f.name}</span>
+          <IconX size={11} style={{ cursor: "pointer", opacity: 0.6 }} onClick={() => remove(f.id)} />
+        </span>
+      ))}
+      <button className="nav-btn row" style={{ gap: 4, display: "inline-flex" }} onClick={() => setShowForm((v) => !v)}>+ {tr("filters.new")}</button>
+      {showForm && (
+        <form className="row" style={{ gap: 6, width: "100%", marginTop: 4, flexWrap: "wrap" }} onSubmit={save}>
+          <input className="input" style={{ maxWidth: 160 }} placeholder={tr("filters.name_placeholder")} value={name} onChange={(e) => setName(e.target.value)} />
+          <select className="input" style={{ width: "auto" }} value={fStatus} onChange={(e) => setFStatus(e.target.value)}>
+            <option value="">{tr("task.status")}</option>
+            {statuses.map((s) => <option key={s} value={s}>{DEFAULT_STATUSES.includes(s) ? tr("task.status." + s) : s}</option>)}
+          </select>
+          <select className="input" style={{ width: "auto" }} value={fPriority} onChange={(e) => setFPriority(e.target.value)}>
+            <option value="">{tr("task.priority")}</option>
+            <option value="low">{tr("task.priority.low")}</option>
+            <option value="normal">{tr("task.priority.normal")}</option>
+            <option value="high">{tr("task.priority.high")}</option>
+            <option value="urgent">{tr("task.priority.urgent")}</option>
+          </select>
+          <label className="row" style={{ gap: 4, fontSize: 13 }}>
+            <input type="checkbox" checked={fOverdue} onChange={(e) => setFOverdue(e.target.checked)} /> {tr("my_week.overdue")}
+          </label>
+          <button className="btn" type="submit">{tr("common.create")}</button>
+        </form>
+      )}
+    </div>
+  )
+}
+
 function ListView({ me, list, spaceId, onBack }: { me: Me; list: List; spaceId: number; onBack: () => void }) {
   const [tasks, setTasks] = useState<Task[]>([])
   const [open, setOpen] = useState<Task | null>(null)
   const [title, setTitle] = useState("")
   const [due, setDue] = useState("")
-  const [viewMode, setViewMode] = useState<"list" | "kanban" | "table">("list")
+  const [viewMode, setViewMode] = useState<"list" | "kanban" | "table" | "calendar">("list")
   const [statuses, setStatuses] = useState<string[]>(DEFAULT_STATUSES)
+  const [filterQuery, setFilterQuery] = useState<FilterQuery | null>(null)
 
   const load = () => api.get(`/api/lists/${list.id}/tasks`).then((r) => setTasks(r.tasks)).catch(() => {})
   useEffect(() => { load() }, [list.id])
@@ -688,6 +990,7 @@ function ListView({ me, list, spaceId, onBack }: { me: Me; list: List; spaceId: 
   }
 
   const roots = tasks.filter((t) => !t.parent_id)
+  const filteredRoots = filterQuery ? roots.filter((t) => matchesFilter(t, filterQuery)) : roots
 
   return (
     <div className="card">
@@ -698,10 +1001,13 @@ function ListView({ me, list, spaceId, onBack }: { me: Me; list: List; spaceId: 
           <button className={"nav-btn row" + (viewMode === "list" ? " active" : "")} style={{ gap: 5, display: "inline-flex" }} onClick={() => setViewMode("list")}><IconMenu size={14} /> {tr("view.list")}</button>
           <button className={"nav-btn row" + (viewMode === "kanban" ? " active" : "")} style={{ gap: 5, display: "inline-flex" }} onClick={() => setViewMode("kanban")}><IconColumns size={14} /> {tr("view.kanban")}</button>
           <button className={"nav-btn row" + (viewMode === "table" ? " active" : "")} style={{ gap: 5, display: "inline-flex" }} onClick={() => setViewMode("table")}><IconTable size={14} /> {tr("view.table")}</button>
+          <button className={"nav-btn row" + (viewMode === "calendar" ? " active" : "")} style={{ gap: 5, display: "inline-flex" }} onClick={() => setViewMode("calendar")}><IconCalendar size={14} /> {tr("view.calendar")}</button>
         </div>
       </div>
 
-      {viewMode === "list" && roots.map((task) => (
+      <FiltersBar listId={list.id} statuses={statuses} onFilter={setFilterQuery} />
+
+      {viewMode === "list" && filteredRoots.map((task) => (
         <div key={task.id}>
           <TaskRow task={task} onToggle={toggle} onOpen={setOpen} />
           {tasks.filter((s) => s.parent_id === task.id).map((sub) => (
@@ -711,8 +1017,9 @@ function ListView({ me, list, spaceId, onBack }: { me: Me; list: List; spaceId: 
           ))}
         </div>
       ))}
-      {viewMode === "kanban" && <KanbanBoard tasks={roots} statuses={statuses} onOpen={setOpen} onDrop={moveToStatus} />}
-      {viewMode === "table" && <TableView tasks={roots} onOpen={setOpen} onToggle={toggle} />}
+      {viewMode === "kanban" && <KanbanBoard tasks={filteredRoots} statuses={statuses} onOpen={setOpen} onDrop={moveToStatus} />}
+      {viewMode === "table" && <TableView tasks={filteredRoots} onOpen={setOpen} onToggle={toggle} />}
+      {viewMode === "calendar" && <CalendarView tasks={filteredRoots} onOpen={setOpen} />}
 
       <form className="row" style={{ marginTop: 12 }} onSubmit={async (e) => {
         e.preventDefault()
@@ -739,6 +1046,7 @@ const KIND_ICON: Record<string, React.ReactNode> = {
   overdue: <IconClock size={15} />, space_added: <IconGrid size={15} />, list_shared: <IconList size={15} />,
   status_changed: <IconRefresh size={15} />, due_changed: <IconClock size={15} />,
   due_soon: <IconClock size={15} />, due_today: <IconAlertCircle size={15} />,
+  archive_expiring: <IconArchive size={15} />,
 }
 
 export function NotificationsPage({ onRead }: { onRead: () => void }) {
@@ -762,13 +1070,14 @@ export function NotificationsPage({ onRead }: { onRead: () => void }) {
             <span>
               {tr("notif.kind." + n.kind)}
               {n.kind === "due_soon" && n.payload?.days ? ` (${n.payload.days}d)` : ""}
+              {n.kind === "archive_expiring" && n.payload?.days_left ? ` (${n.payload.days_left}d)` : ""}
               {n.payload?.title ? ` · «${n.payload.title}»` : ""}
               {n.payload?.task_title ? ` · «${n.payload.task_title}»` : ""}
               {n.payload?.by ? ` · ${tr("notif.by")} @${n.payload.by}` : ""}
               {n.payload?.emoji ? ` ${n.payload.emoji}` : ""}
             </span>
           </span>
-          <span className="muted">{new Date(n.created_at).toLocaleString()}</span>
+          <span className="muted">{new Date(n.created_at).toLocaleString(getFormattingLocale())}</span>
         </div>
       ))}
     </div>
@@ -785,11 +1094,11 @@ export function AdminPage({ me }: { me: Me }) {
 
   return (
     <div className="card">
-      <h2>{tr("admin.users")}</h2>
+      <h2>{trFormal("admin.users")}</h2>
       {tempPass && (
         <div className="card" style={{ borderColor: "var(--accent)", marginBottom: 12 }}>
-          {tr("admin.temp_pass_for")} <b>@{tempPass.user}</b>: <code>{tempPass.pass}</code>
-          <div className="muted">{tr("admin.shown_once")}</div>
+          {trFormal("admin.temp_pass_for")} <b>@{tempPass.user}</b>: <code>{tempPass.pass}</code>
+          <div className="muted">{trFormal("admin.shown_once")}</div>
         </div>
       )}
       {users.map((u) => (
@@ -800,29 +1109,29 @@ export function AdminPage({ me }: { me: Me }) {
           {u.status === "pending" && (
             <>
               <button className="btn" onClick={async () => { await api.post(`/api/admin/users/${u.id}/approve`, { role: "user" }); load() }}>
-                {tr("admin.approve")}
+                {trFormal("admin.approve")}
               </button>
               <button className="nav-btn" onClick={async () => { await api.post(`/api/admin/users/${u.id}/status`, { status: "rejected" }); load() }}>
-                {tr("admin.reject")}
+                {trFormal("admin.reject")}
               </button>
             </>
           )}
           {u.status === "active" && u.role !== "root" && (
             <>
               <button className="nav-btn" onClick={async () => { await api.post(`/api/admin/users/${u.id}/status`, { status: "blocked" }); load() }}>
-                {tr("admin.block")}
+                {trFormal("admin.block")}
               </button>
               <button className="nav-btn" onClick={async () => {
                 const r = await api.post(`/api/admin/users/${u.id}/reset-password`)
                 setTempPass({ user: u.username, pass: r.temp_password })
               }}>
-                {tr("admin.reset_password")}
+                {trFormal("admin.reset_password")}
               </button>
             </>
           )}
           {u.status === "blocked" && (
             <button className="btn" onClick={async () => { await api.post(`/api/admin/users/${u.id}/status`, { status: "active" }); load() }}>
-              {tr("admin.unblock")}
+              {trFormal("admin.unblock")}
             </button>
           )}
         </div>

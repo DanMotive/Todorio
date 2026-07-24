@@ -1,0 +1,13 @@
+This directory is normally the output of `npm run build` (run from web/) and is
+gitignored — you're seeing this placeholder because that build hasn't happened
+in this checkout yet.
+
+It exists only so `//go:embed all:web/dist` in the root assets.go has at least
+one file to embed; a `go build` with only this placeholder present still
+compiles fine. At runtime, Todorio checks whether the embedded web/dist
+actually contains an index.html — if not (just this file), it falls back to
+serving from disk (./web/dist or /usr/share/todorio/web/dist) instead.
+
+To get a real, embedded frontend in your own build:
+  cd web && npm install && npm run build && cd ..
+  go build ./cmd/todorio

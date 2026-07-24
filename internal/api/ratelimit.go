@@ -1,6 +1,6 @@
 package api
 
-// Login rate limiting: in-memory, 10-minute window, keyed by IP + username.
+// Login rate limiting: in-memory, 15-minute window, keyed by IP + username.
 // Max attempts is configurable by root: limits.login.max_attempts (default 10).
 
 import (
@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-const loginWindow = 10 * time.Minute
+const loginWindow = 15 * time.Minute
 
 type rlEntry struct {
 	count       int

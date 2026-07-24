@@ -306,8 +306,65 @@ func (a *API) handleArchiveTask(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, http.StatusForbidden, "no permission")
 		return
 	}
-	_, _ = a.DB.Pool.Exec(r.Context(), `UPDATE tasks SET archived_at=now() WHERE id=$1 OR parent_id=$1`, id)
+	_, _ = a.DB.Pool.Exec(r.Context(), `UPDATE tasks SET archived_at=now(), archived_by=$2 WHERE id=$1 OR parent_id=$1`, id, u.ID)
 	a.publishToListMembers(r, listID, events.Event{Type: "task.archived", Data: map[string]any{"task_id": id, "list_id": listID}})
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// POST /api/tasks/{id}/restore — undoes an archive, resetting the 30-day auto-cleanup countdown
+// (cleanupArchive only ever looks at archived_at, so clearing it removes the task from
+// consideration entirely). Also restores any subtasks archived in the same action (mirrors the
+// OR parent_id=$1 cascade in handleArchiveTask above). Same permission as archiving.
+func (a *API) handleRestoreTask(w http.ResponseWriter, r *http.Request) {
+	u := a.requireUser(w, r)
+	if u == nil {
+		return
+	}
+	id, err := pathID(r)
+	if err != nil {
+		errJSON(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	var listID int64
+	if a.DB.Pool.QueryRow(r.Context(), `SELECT list_id FROM tasks WHERE id=$1`, id).Scan(&listID) != nil {
+		errJSON(w, http.StatusNotFound, "task not found")
+		return
+	}
+	if !permAtLeast(a.listPermission(r, u, listID), "editor") {
+		errJSON(w, http.StatusForbidden, "no permission")
+		return
+	}
+	_, _ = a.DB.Pool.Exec(r.Context(),
+		`UPDATE tasks SET archived_at=NULL, archived_by=NULL WHERE (id=$1 OR parent_id=$1) AND archived_at IS NOT NULL`, id)
+	a.publishToListMembers(r, listID, events.Event{Type: "task.restored", Data: map[string]any{"task_id": id, "list_id": listID}})
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// DELETE /api/tasks/{id}/permanent — irreversible, root only, and only for tasks already archived
+// (archive-then-purge, matching the same two-step safety net as lists/spaces below).
+func (a *API) handleDeleteTaskPermanent(w http.ResponseWriter, r *http.Request) {
+	u := a.requireAdmin(w, r)
+	if u == nil {
+		return
+	}
+	if u.Role != "root" {
+		errJSON(w, http.StatusForbidden, "root permission required")
+		return
+	}
+	id, err := pathID(r)
+	if err != nil {
+		errJSON(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	tag, err := a.DB.Pool.Exec(r.Context(), `DELETE FROM tasks WHERE id=$1 AND archived_at IS NOT NULL`, id)
+	if err != nil {
+		errJSON(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		errJSON(w, http.StatusNotFound, "task not found or not archived — archive it first")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 

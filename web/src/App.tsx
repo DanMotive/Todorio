@@ -3,7 +3,7 @@ import { api, type Me, type Profile } from "./api"
 import "./theme.css"
 import "./ui.css"
 import { AdminPage, AuthPage, MyTasksPage, NotificationsPage, PendingPage, SpacesPage } from "./views"
-import { AnnouncementsBanner, DigestModal, TotpCard, InvitesCard, SearchPage, ServerSettingsCard } from "./extras"
+import { AnnouncementsBanner, DigestModal, InvitesCard, SearchPage, ServerSettingsCard, TemplatesAdminCard, AnnouncementsAdminCard } from "./extras"
 import { Avatar, SettingsPage, ForcedPasswordChange } from "./settings"
 import { detectLocale, setLocale, tr } from "./i18n"
 import { IconDownload, IconKeyboard, IconSliders } from "./icons"
@@ -276,8 +276,9 @@ export default function App() {
         {view === "admin" && (
           <>
             <AdminPage me={me} />
-            <TotpCard me={me} />
             <InvitesCard me={me} />
+            <TemplatesAdminCard me={me} />
+            <AnnouncementsAdminCard me={me} />
             <ServerSettingsCard me={me} />
           </>
         )}

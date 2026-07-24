@@ -14,6 +14,10 @@ func (a *API) handlePulse(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, http.StatusForbidden, "no access to the space")
 		return
 	}
+	if a.DB.Setting(r.Context(), "pulse.enabled", "true") == "false" {
+		writeJSON(w, http.StatusOK, map[string]any{"enabled": false})
+		return
+	}
 	var (
 		total, open, done, overdue, unassigned, noDeadline, blocked, stale int
 	)
@@ -58,7 +62,8 @@ func (a *API) handlePulse(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"score": score, "mood": mood,
+		"enabled": true,
+		"score":   score, "mood": mood,
 		"total": total, "open": open, "done": done,
 		"signals": map[string]int{
 			"overdue": overdue, "unassigned": unassigned, "no_deadline": noDeadline,

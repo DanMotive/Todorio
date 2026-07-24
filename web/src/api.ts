@@ -23,6 +23,7 @@ export const api = {
   get: (url: string) => fetch(url, opts("GET")).then(handle),
   post: (url: string, body?: unknown) => fetch(url, opts("POST", body ?? {})).then(handle),
   patch: (url: string, body: unknown) => fetch(url, opts("PATCH", body)).then(handle),
+  put: (url: string, body: unknown) => fetch(url, opts("PUT", body)).then(handle),
   del: (url: string) => fetch(url, opts("DELETE")).then(handle),
 }
 
@@ -62,6 +63,7 @@ export type List = {
   task_count: number; done_count: number
 }
 export type Pulse = {
+  enabled?: boolean
   score: number; mood: string; total: number; open: number; done: number
   signals: { overdue: number; unassigned: number; no_deadline: number; blocked: number; stale: number }
 }

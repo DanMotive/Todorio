@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"flag"
 	"fmt"
+	"io/fs"
 	"math/big"
 	"os"
 	"os/exec"
@@ -14,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	assets "github.com/DanMotive/Todorio"
 	"github.com/DanMotive/Todorio/internal/auth"
 	"github.com/DanMotive/Todorio/internal/config"
 	"github.com/DanMotive/Todorio/internal/db"
@@ -131,7 +133,11 @@ func ensureRootUser(cfg config.Config, username, password string) (created bool,
 	}
 	defer database.Pool.Close()
 
-	if err := database.Migrate(ctx, migrationsDir()); err != nil {
+	migrationsFS, err := fs.Sub(assets.Migrations, "migrations")
+	if err != nil {
+		return false, fmt.Errorf("embedded migrations: %w", err)
+	}
+	if err := database.Migrate(ctx, migrationsFS); err != nil {
 		return false, fmt.Errorf("running migrations: %w", err)
 	}
 
@@ -153,15 +159,6 @@ func ensureRootUser(cfg config.Config, username, password string) (created bool,
 		return false, fmt.Errorf("creating the root admin account: %w", err)
 	}
 	return true, nil
-}
-
-// migrationsDir mirrors internal/server's lookup: next to the binary in prod
-// (/usr/share/todorio/migrations), ./migrations when run from the repo.
-func migrationsDir() string {
-	if _, err := os.Stat("/usr/share/todorio/migrations"); err == nil {
-		return "/usr/share/todorio/migrations"
-	}
-	return "migrations"
 }
 
 // Run parses `todorio setup` flags and either runs the interactive wizard or, with

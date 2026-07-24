@@ -6,9 +6,10 @@ import (
 	"github.com/DanMotive/Todorio/internal/auth"
 )
 
-// POST /api/me/totp/setup — generate a secret (root/admin only — 2FA for privileged accounts).
+// POST /api/me/totp/setup — generate a secret. Available to any active user: the spec calls TOTP
+// out as "especially important for root", not root/admin-exclusive, so any account can opt in.
 func (a *API) handleTOTPSetup(w http.ResponseWriter, r *http.Request) {
-	u := a.requireAdmin(w, r)
+	u := a.requireUser(w, r)
 	if u == nil {
 		return
 	}
@@ -32,7 +33,7 @@ func (a *API) handleTOTPSetup(w http.ResponseWriter, r *http.Request) {
 
 // POST /api/me/totp/enable {code} — confirm and enable.
 func (a *API) handleTOTPEnable(w http.ResponseWriter, r *http.Request) {
-	u := a.requireAdmin(w, r)
+	u := a.requireUser(w, r)
 	if u == nil {
 		return
 	}
@@ -58,7 +59,7 @@ func (a *API) handleTOTPEnable(w http.ResponseWriter, r *http.Request) {
 
 // POST /api/me/totp/disable {code}
 func (a *API) handleTOTPDisable(w http.ResponseWriter, r *http.Request) {
-	u := a.requireAdmin(w, r)
+	u := a.requireUser(w, r)
 	if u == nil {
 		return
 	}

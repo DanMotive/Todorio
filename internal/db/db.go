@@ -4,8 +4,7 @@ package db
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
+	"io/fs"
 	"sort"
 	"strings"
 
@@ -25,14 +24,18 @@ func Connect(ctx context.Context, url string) (*DB, error) {
 	return &DB{Pool: pool}, nil
 }
 
-// Migrate applies *.sql files from the directory in name order, each in its own transaction.
-func (d *DB) Migrate(ctx context.Context, dir string) error {
+// Migrate applies *.sql files from an fs.FS (normally the binary's embedded
+// migrations, see assets.Migrations) in name order, each in its own transaction.
+// Using fs.FS instead of a plain directory path lets the same code apply
+// migrations baked into the binary at build time as well as a plain disk
+// directory (os.DirFS) for tooling or tests that still want that.
+func (d *DB) Migrate(ctx context.Context, migrations fs.FS) error {
 	if _, err := d.Pool.Exec(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())`); err != nil {
 		return err
 	}
-	entries, err := os.ReadDir(dir)
+	entries, err := fs.ReadDir(migrations, ".")
 	if err != nil {
-		return fmt.Errorf("migrations directory %s: %w", dir, err)
+		return fmt.Errorf("reading migrations: %w", err)
 	}
 	var files []string
 	for _, e := range entries {
@@ -49,7 +52,7 @@ func (d *DB) Migrate(ctx context.Context, dir string) error {
 		if exists {
 			continue
 		}
-		sqlBytes, err := os.ReadFile(filepath.Join(dir, f))
+		sqlBytes, err := fs.ReadFile(migrations, f)
 		if err != nil {
 			return err
 		}

@@ -187,3 +187,52 @@
   border-color: var(--accent);
   transform: translateY(-2px);
 }
+
+/* Calendar View Styles */
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+}
+.calendar-grid--head { margin-bottom: 4px; }
+.calendar-weekday {
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  padding-bottom: 4px;
+}
+.calendar-cell {
+  min-height: 84px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  overflow: hidden;
+}
+.calendar-cell--pad { background: none; border-color: transparent; }
+.calendar-cell--today { border-color: var(--accent); border-width: 2px; }
+.calendar-daynum { font-size: 12px; font-weight: 600; opacity: 0.75; }
+.calendar-task {
+  font-size: 11px;
+  padding: 2px 5px;
+  border-radius: 5px;
+  background: var(--hover-bg, var(--surface));
+  border-left: 3px solid var(--due-later);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.calendar-task.overdue { border-left-color: var(--due-overdue); }
+.calendar-task.today   { border-left-color: var(--due-today); }
+.calendar-task.soon    { border-left-color: var(--due-soon); }
+.calendar-task.later   { border-left-color: var(--due-later); }
+@media (max-width: 768px) {
+  .calendar-cell { min-height: 56px; font-size: 11px; }
+  .calendar-weekday { font-size: 9px; }
+}

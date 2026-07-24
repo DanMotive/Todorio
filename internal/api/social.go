@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
+	"time"
 
 	"github.com/DanMotive/Todorio/internal/events"
 )
@@ -32,7 +33,7 @@ func (a *API) handleListComments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rows, err := a.DB.Pool.Query(r.Context(), `
-		SELECT c.id, c.author_id, u.username, c.body, c.created_at,
+		SELECT c.id, c.author_id, u.username, c.body, c.created_at, c.edited_at,
 			COALESCE((SELECT json_agg(json_build_object('emoji', rx.emoji, 'user_id', rx.user_id))
 				FROM reactions rx WHERE rx.target_type='comment' AND rx.target_id=c.id), '[]'::json)
 		FROM comments c JOIN users u ON u.id=c.author_id
@@ -48,10 +49,11 @@ func (a *API) handleListComments(w http.ResponseWriter, r *http.Request) {
 		var id, authorID int64
 		var username, body string
 		var createdAt, reactions any
-		if rows.Scan(&id, &authorID, &username, &body, &createdAt, &reactions) == nil {
+		var editedAt *time.Time
+		if rows.Scan(&id, &authorID, &username, &body, &createdAt, &editedAt, &reactions) == nil {
 			comments = append(comments, map[string]any{
 				"id": id, "author_id": authorID, "author": username, "body": body,
-				"created_at": createdAt, "reactions": reactions,
+				"created_at": createdAt, "edited_at": editedAt, "reactions": reactions,
 			})
 		}
 	}
@@ -125,6 +127,44 @@ func (a *API) handleCreateComment(w http.ResponseWriter, r *http.Request) {
 	}
 	a.publishToListMembers(r, listID, events.Event{Type: "comment.created", Data: map[string]any{"task_id": taskID, "comment_id": id}})
 	writeJSON(w, http.StatusCreated, map[string]any{"id": id})
+}
+
+// PATCH /api/comments/{id} {body} — author only (not admin: silently rewriting someone else's
+// words, even for moderation, is a different action from deleting them — that stays admin-capable
+// below). Sets edited_at so the UI can show an "(edited)" marker.
+func (a *API) handleUpdateComment(w http.ResponseWriter, r *http.Request) {
+	u := a.requireUser(w, r)
+	if u == nil {
+		return
+	}
+	id, err := pathID(r)
+	if err != nil {
+		errJSON(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	var in struct {
+		Body string `json:"body"`
+	}
+	if err := readJSON(r, &in); err != nil || in.Body == "" {
+		errJSON(w, http.StatusBadRequest, "comment cannot be empty")
+		return
+	}
+	maxLen := 4000
+	if n, err := strconv.Atoi(a.DB.Setting(r.Context(), "limits.content.comment_max_len", "4000")); err == nil && n > 0 {
+		maxLen = n
+	}
+	if len(in.Body) > maxLen {
+		errJSON(w, http.StatusBadRequest, fmt.Sprintf("comment is longer than %d characters", maxLen))
+		return
+	}
+	tag, err := a.DB.Pool.Exec(r.Context(),
+		`UPDATE comments SET body=$2, edited_at=now() WHERE id=$1 AND author_id=$3 AND deleted_at IS NULL`,
+		id, in.Body, u.ID)
+	if err != nil || tag.RowsAffected() == 0 {
+		errJSON(w, http.StatusForbidden, "you can only edit your own comments")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 // DELETE /api/comments/{id} — author or admin.

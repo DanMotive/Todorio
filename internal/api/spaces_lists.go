@@ -116,7 +116,7 @@ func (a *API) handleArchiveSpace(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, http.StatusForbidden, "space owner permission required")
 		return
 	}
-	_, _ = a.DB.Pool.Exec(r.Context(), `UPDATE spaces SET archived_at=now() WHERE id=$1`, id)
+	_, _ = a.DB.Pool.Exec(r.Context(), `UPDATE spaces SET archived_at=now(), archived_by=$2 WHERE id=$1`, id, u.ID)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -272,10 +272,10 @@ func (a *API) handleArchiveList(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, http.StatusForbidden, "list owner permission required")
 		return
 	}
-	_, _ = a.DB.Pool.Exec(r.Context(), `UPDATE lists SET archived_at=now() WHERE id=$1`, id)
+	_, _ = a.DB.Pool.Exec(r.Context(), `UPDATE lists SET archived_at=now(), archived_by=$2 WHERE id=$1`, id, u.ID)
 	// cascade: archiving a list archives its (still-live) tasks too, matching handleArchiveTask's
 	// subtask cascade — otherwise tasks stay reachable via GET /api/tasks/{id} and /api/my/tasks.
-	_, _ = a.DB.Pool.Exec(r.Context(), `UPDATE tasks SET archived_at=now() WHERE list_id=$1 AND archived_at IS NULL`, id)
+	_, _ = a.DB.Pool.Exec(r.Context(), `UPDATE tasks SET archived_at=now(), archived_by=$2 WHERE list_id=$1 AND archived_at IS NULL`, id, u.ID)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 

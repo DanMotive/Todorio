@@ -72,3 +72,25 @@ let current = detectLocale()
 export function setLocale(l: string) { current = l }
 export function getLocale(): string { return current }
 export function tr(key: string): string { return t(current, key) }
+
+// getFormattingLocale returns a locale string that's safe to pass to the browser's Intl API
+// (toLocaleDateString, toLocaleString, ...). getLocale() can return an IT-slang overlay id like
+// "ru-RU-it" — that's our own convention for picking a translation-string pack, not a real BCP-47
+// tag, and Intl throws `RangeError: Incorrect locale information provided` if you pass it
+// directly (verified: both "ru-RU-it" and "en-US-it" throw). Date/number formatting should follow
+// the base language's real regional convention regardless of slang style anyway, so this just
+// strips the "-it" suffix. Always use this (never getLocale() directly) when calling
+// toLocaleDateString/toLocaleString/Intl.*.
+export function getFormattingLocale(): string {
+  return current.endsWith("-it") ? current.slice(0, -3) : current
+}
+
+// trFormal renders `key` in the user's current base language but always skips the IT-slang
+// overlay, even if they have it selected — spec section 9: the admin panel should stay in the
+// "normal style to avoid ambiguity", since slangy phrasing ("Задеплоено", "Хотфикс", ...) could
+// read as unclear or unintentionally ironic in an administrative context. Use this instead of
+// tr() inside admin-only screens (AdminPage, InvitesCard, ServerSettingsCard).
+export function trFormal(key: string): string {
+  const base = current.endsWith("-it") ? current.slice(0, -3) : current
+  return t(base, key)
+}

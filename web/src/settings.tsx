@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react"
 import { api, type Me, type Profile, type NotifyPrefs } from "./api"
 import { tr, setLocale, SUPPORTED } from "./i18n"
 import { IconCamera, IconTrash, IconGlobe, IconBell, IconClock, IconShield, IconCheckCircle, IconAlertCircle, IconSliders } from "./icons"
+import { TotpCard } from "./extras"
 
 const IT_STYLE_LOCALES = ["ru-RU", "en-US"]
 const NOTIFY_TYPES = ["comment", "reaction", "task_assigned", "due_changed", "status_changed", "overdue"]
@@ -346,6 +347,7 @@ export function SettingsPage({ me, theme, onUpdateTheme, onProfileSaved }: {
           {pwMsg.ok ? <IconCheckCircle size={13} /> : <IconAlertCircle size={13} />} {pwMsg.text}
         </div>
       )}
+      <TotpCard />
 
       {msg && (
         <div className="row" style={{ gap: 5, marginTop: 8, color: msg.ok ? "var(--pulse-ok)" : "var(--due-overdue)" }}>

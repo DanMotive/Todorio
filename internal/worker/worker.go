@@ -4,6 +4,7 @@ package worker
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"time"
 
@@ -29,6 +30,7 @@ func Run(ctx context.Context, d *db.DB, bus *events.Bus) {
 		case <-hourly.C:
 			reminderSweep(ctx, d, bus)
 		case <-daily.C:
+			warnPendingCleanup(ctx, d, bus)
 			cleanupArchive(ctx, d)
 			cleanupSessions(ctx, d)
 		}
@@ -186,6 +188,58 @@ func notifyRows(ctx context.Context, d *db.DB, bus *events.Bus, rows pgx.Rows, u
 		b, _ := json.Marshal(payload)
 		_, _ = d.Pool.Exec(ctx, `INSERT INTO notifications(user_id, kind, payload) VALUES($1,$2,$3)`, userID, kind, string(b))
 		bus.Publish([]int64{userID}, events.Event{Type: "notification", Data: map[string]any{"kind": kind, "payload": payload}})
+	}
+}
+
+// warnPendingCleanup notifies whoever archived a task/list/space 3 days before cleanupArchive
+// would permanently delete it (spec section 11: "warning 3 days before"). Only items with
+// archived_by set get a warning — items archived before that column existed simply have no one
+// specific to notify and are cleaned up silently, same as always. This intentionally does not
+// consult notify_prefs/DND like the interactive API's notify() helper does: it's a one-time
+// heads-up about irreversible data loss, not a routine update, so it isn't made optional.
+func warnPendingCleanup(ctx context.Context, d *db.DB, bus *events.Bus) {
+	days := d.Setting(ctx, "policy.archive.retention_days", "30")
+	warnArchiveExpiring(ctx, d, bus, "tasks", "title", days)
+	warnArchiveExpiring(ctx, d, bus, "lists", "name", days)
+	warnArchiveExpiring(ctx, d, bus, "spaces", "name", days)
+}
+
+// warnArchiveExpiring is shared by the three archivable entity types. `table` and `titleCol` are
+// always one of the three literal strings above (never user input), so building the query with
+// fmt.Sprintf is safe here — there is no SQL-injection surface.
+func warnArchiveExpiring(ctx context.Context, d *db.DB, bus *events.Bus, table, titleCol, retentionDays string) {
+	query := fmt.Sprintf(`
+		SELECT e.id, e.%s, e.archived_by FROM %s e
+		WHERE e.archived_at IS NOT NULL AND e.archived_by IS NOT NULL
+			AND e.archived_at::date = CURRENT_DATE - GREATEST($1::int - 3, 0)
+			AND NOT EXISTS (
+				SELECT 1 FROM notifications n
+				WHERE n.user_id = e.archived_by AND n.kind = 'archive_expiring'
+					AND n.payload->>'entity_type' = $2 AND (n.payload->>'entity_id')::bigint = e.id)`,
+		titleCol, table)
+	rows, err := d.Pool.Query(ctx, query, retentionDays, table)
+	if err != nil {
+		log.Printf("worker: warnArchiveExpiring(%s): %v", table, err)
+		return
+	}
+	type item struct {
+		id         int64
+		title      string
+		archivedBy int64
+	}
+	var items []item
+	for rows.Next() {
+		var it item
+		if rows.Scan(&it.id, &it.title, &it.archivedBy) == nil {
+			items = append(items, it)
+		}
+	}
+	rows.Close()
+	for _, it := range items {
+		payload := map[string]any{"entity_type": table, "entity_id": it.id, "title": it.title, "days_left": 3}
+		b, _ := json.Marshal(payload)
+		_, _ = d.Pool.Exec(ctx, `INSERT INTO notifications(user_id, kind, payload) VALUES($1,'archive_expiring',$2)`, it.archivedBy, string(b))
+		bus.Publish([]int64{it.archivedBy}, events.Event{Type: "notification", Data: map[string]any{"kind": "archive_expiring", "payload": payload}})
 	}
 }
 

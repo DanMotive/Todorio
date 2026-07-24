@@ -1,0 +1,86 @@
+name: Release
+
+# Builds a fully self-contained todorio binary (frontend + migrations embedded,
+# see /assets.go) for each supported platform and publishes them to a GitHub
+# Release whenever a version tag is pushed. scripts/install.sh and
+# `todorio update` both download these exact assets — the binary name and
+# checksums.txt format here must keep matching internal/ops/ops.go's Update().
+#
+# Cut a release with:  git tag v1.2.3 && git push origin v1.2.3
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build and publish (must already exist), e.g. v1.2.3"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Resolve version
+        id: version
+        run: echo "version=${{ inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          # No package-lock.json is committed yet, so `npm ci` (and its cache
+          # keyed on the lockfile) isn't usable. Once one exists, switch this
+          # to `npm ci` and add `cache: npm` / `cache-dependency-path` above
+          # for faster, reproducible builds.
+
+      - name: Build frontend
+        working-directory: web
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: Build binaries (frontend + migrations embedded, see assets.go)
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          mkdir -p dist-release
+          for pair in "linux amd64" "linux arm64"; do
+            set -- $pair
+            GOOS=$1 GOARCH=$2 go build \
+              -ldflags "-s -w -X main.version=${{ steps.version.outputs.version }}" \
+              -o "dist-release/todorio_${1}_${2}" \
+              ./cmd/todorio
+            echo "built dist-release/todorio_${1}_${2}"
+          done
+
+      - name: Checksums
+        working-directory: dist-release
+        run: sha256sum todorio_* > checksums.txt
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.version.outputs.version }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist-release/* --clobber
+          else
+            gh release create "$TAG" dist-release/* \
+              --title "Todorio $TAG" \
+              --generate-notes
+          fi

@@ -2,11 +2,12 @@
 // activity feed, focus timer, search, server settings.
 import { useEffect, useRef, useState } from "react"
 import { api, type Me, type Note, type ActivityEvent, type SearchResult, type SettingDef } from "./api"
-import { tr } from "./i18n"
+import { tr, trFormal, getFormattingLocale } from "./i18n"
 import {
   IconAlertTriangle, IconAlertCircle, IconInfo, IconPin, IconMessage, IconCheckCircle,
   IconBarChart, IconAward, IconPaperclip, IconLock, IconUserPlus, IconCircle, IconFileText,
-  IconSliders, IconPlay, IconPause, IconClock,
+  IconSliders, IconPlay, IconPause, IconClock, IconArchive, IconRefresh, IconTrash, IconList,
+  IconX,
 } from "./icons"
 
 // ---------- root announcements ----------
@@ -79,7 +80,7 @@ export function DigestModal() {
   return (
     <div className="card" style={{ padding: 16, marginBottom: 12, borderLeft: "4px solid var(--accent)" }}>
       <div className="row" style={{ justifyContent: "space-between" }}>
-        <b>{tr("digest.title")} ({d.since ? new Date(d.since).toLocaleString() : ""})</b>
+        <b>{tr("digest.title")} ({d.since ? new Date(d.since).toLocaleString(getFormattingLocale()) : ""})</b>
         <button className="nav-btn" onClick={close}>{tr("digest.ok")}</button>
       </div>
       <div style={{ marginTop: 8, display: "flex", gap: 16, flexWrap: "wrap" }}>
@@ -194,13 +195,13 @@ export function AttachmentsBlock({ taskId }: { taskId: number }) {
   )
 }
 
-// ---------- TOTP (two-factor auth for root/admins) ----------
+// ---------- TOTP (two-factor auth — available to every account, spec calls it out as
+// "especially important for root", not root/admin-exclusive) ----------
 
-export function TotpCard({ me }: { me: Me }) {
+export function TotpCard() {
   const [setup, setSetup] = useState<{ secret: string; otpauth: string } | null>(null)
   const [code, setCode] = useState("")
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
-  if (me.role !== "root" && me.role !== "admin") return null
 
   const start = async () => {
     try { setSetup(await api.post("/api/me/totp/setup")); setMsg(null) } catch (e: any) { setMsg({ ok: false, text: e.message }) }
@@ -292,22 +293,22 @@ export function InvitesCard({ me }: { me: Me }) {
 
   return (
     <div className="card" style={{ marginTop: 12 }}>
-      <h3 className="row" style={{ marginTop: 0, gap: 6 }}><IconUserPlus size={17} /> {tr("invites.title")}</h3>
+      <h3 className="row" style={{ marginTop: 0, gap: 6 }}><IconUserPlus size={17} /> {trFormal("invites.title")}</h3>
       <p style={{ opacity: 0.7, fontSize: 13 }}>
-        {tr("invites.hint")} <code>todorio server policy set users.can_invite true</code>
+        {trFormal("invites.hint")} <code>todorio server policy set users.can_invite true</code>
       </p>
-      <button className="btn" onClick={create}>{tr("invites.create")}</button>
+      <button className="btn" onClick={create}>{trFormal("invites.create")}</button>
       {lastCode && (
         <p>
-          {tr("invites.new_code")} <code>{lastCode}</code>
+          {trFormal("invites.new_code")} <code>{lastCode}</code>
         </p>
       )}
       {invites.map((i) => (
         <div key={i.id} className="row" style={{ justifyContent: "space-between", padding: "4px 0" }}>
           <span>
-            <code>{i.code}</code> · {i.role} · {i.used_count}/{i.max_uses} · {tr("invites.by")} {i.created_by}
+            <code>{i.code}</code> · {i.role} · {i.used_count}/{i.max_uses} · {trFormal("invites.by")} {i.created_by}
           </span>
-          <button className="nav-btn" onClick={() => remove(i.id)}>{tr("invites.delete")}</button>
+          <button className="nav-btn" onClick={() => remove(i.id)}>{trFormal("invites.delete")}</button>
         </div>
       ))}
     </div>
@@ -352,7 +353,7 @@ export function PublicListPage({ token }: { token: string }) {
               </span>
               <span style={{ textDecoration: t.completed_at ? "line-through" : "none" }}>{t.title}</span>
               <span style={{ marginLeft: "auto", opacity: 0.6, fontSize: 12 }}>
-                {t.due_at ? new Date(t.due_at).toLocaleDateString() : ""}
+                {t.due_at ? new Date(t.due_at).toLocaleDateString(getFormattingLocale()) : ""}
               </span>
             </div>
           ))}
@@ -423,7 +424,7 @@ export function NotesPanel({ spaceId }: { spaceId: number }) {
       {notes.map((n) => (
         <div key={n.id} className="task-row" onClick={() => openNote(n)}>
           <span className="task-title row" style={{ gap: 6 }}><IconFileText size={14} /> {n.title}</span>
-          <span className="muted">{new Date(n.updated_at).toLocaleDateString()}</span>
+          <span className="muted">{new Date(n.updated_at).toLocaleDateString(getFormattingLocale())}</span>
         </div>
       ))}
       {notes.length === 0 && <p className="muted">{tr("notes.empty")}</p>}
@@ -458,7 +459,113 @@ export function ActivityPanel({ spaceId }: { spaceId: number }) {
           <span className="task-title row" style={{ gap: 6 }}>
             {ICON[e.type] || <IconCircle size={14} />} {tr("activity." + e.type)} · «{e.title}» · @{e.by}
           </span>
-          <span className="muted">{new Date(e.at).toLocaleString()}</span>
+          <span className="muted">{new Date(e.at).toLocaleString(getFormattingLocale())}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ---------- archive (spec section 11: restore + a 3-day warning before auto-cleanup) ----------
+
+type ArchivedList = { id: number; name: string; archived_at: string; archived_by: number | null }
+type ArchivedTask = { id: number; title: string; list_id: number; list_name: string; archived_at: string; archived_by: number | null }
+
+// daysLeft computes how many days remain before the worker's cleanupArchive would permanently
+// delete something archived at `archivedAt`, given the space/server's retention_days policy.
+function daysLeft(archivedAt: string, retentionDays: string): number {
+  const archived = new Date(archivedAt).getTime()
+  const deadline = archived + Number(retentionDays) * 86400000
+  return Math.max(0, Math.ceil((deadline - Date.now()) / 86400000))
+}
+
+export function ArchivePanel({ me, spaceId }: { me: Me; spaceId: number }) {
+  const [lists, setLists] = useState<ArchivedList[]>([])
+  const [tasks, setTasks] = useState<ArchivedTask[]>([])
+  const [retentionDays, setRetentionDays] = useState("30")
+
+  const load = () => api.get(`/api/spaces/${spaceId}/archive`).then((r) => {
+    setLists(r.lists); setTasks(r.tasks); setRetentionDays(String(r.retention_days))
+  }).catch(() => {})
+  useEffect(() => { load() }, [spaceId])
+
+  async function restoreList(id: number) { await api.post(`/api/lists/${id}/restore`).catch(() => {}); load() }
+  async function restoreTask(id: number) { await api.post(`/api/tasks/${id}/restore`).catch(() => {}); load() }
+  async function deleteListForever(id: number, name: string) {
+    if (!window.confirm(tr("archive.confirm_delete").replace("{name}", name))) return
+    await api.del(`/api/lists/${id}/permanent`).catch(() => {}); load()
+  }
+  async function deleteTaskForever(id: number, title: string) {
+    if (!window.confirm(tr("archive.confirm_delete").replace("{name}", title))) return
+    await api.del(`/api/tasks/${id}/permanent`).catch(() => {}); load()
+  }
+
+  if (lists.length === 0 && tasks.length === 0) {
+    return <p className="muted row" style={{ gap: 6 }}><IconArchive size={14} /> {tr("archive.empty")}</p>
+  }
+  return (
+    <div>
+      <p className="muted" style={{ marginTop: 0, fontSize: 12 }}>{tr("archive.hint").replace("{days}", retentionDays)}</p>
+      {lists.map((l) => (
+        <div key={"list-" + l.id} className="task-row" style={{ cursor: "default" }}>
+          <span className="task-title row" style={{ gap: 6 }}><IconList size={14} /> {l.name}</span>
+          <span className="muted">{tr("archive.days_left").replace("{n}", String(daysLeft(l.archived_at, retentionDays)))}</span>
+          <button className="nav-btn row" style={{ gap: 4 }} onClick={() => restoreList(l.id)}><IconRefresh size={13} /> {tr("archive.restore")}</button>
+          {me.role === "root" && (
+            <button className="nav-btn row" style={{ gap: 4, color: "var(--due-overdue)" }} onClick={() => deleteListForever(l.id, l.name)}>
+              <IconTrash size={13} /> {tr("archive.delete_forever")}
+            </button>
+          )}
+        </div>
+      ))}
+      {tasks.map((t) => (
+        <div key={"task-" + t.id} className="task-row" style={{ cursor: "default" }}>
+          <span className="task-title row" style={{ gap: 6 }}><IconPin size={14} /> {t.title} <span className="muted">· {t.list_name}</span></span>
+          <span className="muted">{tr("archive.days_left").replace("{n}", String(daysLeft(t.archived_at, retentionDays)))}</span>
+          <button className="nav-btn row" style={{ gap: 4 }} onClick={() => restoreTask(t.id)}><IconRefresh size={13} /> {tr("archive.restore")}</button>
+          {me.role === "root" && (
+            <button className="nav-btn row" style={{ gap: 4, color: "var(--due-overdue)" }} onClick={() => deleteTaskForever(t.id, t.title)}>
+              <IconTrash size={13} /> {tr("archive.delete_forever")}
+            </button>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ---------- archived spaces (top-level — a space's own archive isn't scoped to another space) ----------
+
+type ArchivedSpace = { id: number; name: string; archived_at: string; archived_by: number | null }
+
+export function ArchivedSpacesPanel({ me }: { me: Me }) {
+  const [spaces, setSpaces] = useState<ArchivedSpace[]>([])
+  const [retentionDays, setRetentionDays] = useState("30")
+
+  const load = () => api.get("/api/archive/spaces").then((r) => {
+    setSpaces(r.spaces); setRetentionDays(String(r.retention_days))
+  }).catch(() => {})
+  useEffect(() => { load() }, [])
+
+  async function restore(id: number) { await api.post(`/api/spaces/${id}/restore`).catch(() => {}); load() }
+  async function deleteForever(id: number, name: string) {
+    if (!window.confirm(tr("archive.confirm_delete").replace("{name}", name))) return
+    await api.del(`/api/spaces/${id}/permanent`).catch(() => {}); load()
+  }
+
+  if (spaces.length === 0) return <p className="muted row" style={{ gap: 6 }}><IconArchive size={14} /> {tr("archive.empty")}</p>
+  return (
+    <div>
+      {spaces.map((s) => (
+        <div key={s.id} className="task-row" style={{ cursor: "default" }}>
+          <span className="task-title row" style={{ gap: 6 }}><IconArchive size={14} /> {s.name}</span>
+          <span className="muted">{tr("archive.days_left").replace("{n}", String(daysLeft(s.archived_at, retentionDays)))}</span>
+          <button className="nav-btn row" style={{ gap: 4 }} onClick={() => restore(s.id)}><IconRefresh size={13} /> {tr("archive.restore")}</button>
+          {me.role === "root" && (
+            <button className="nav-btn row" style={{ gap: 4, color: "var(--due-overdue)" }} onClick={() => deleteForever(s.id, s.name)}>
+              <IconTrash size={13} /> {tr("archive.delete_forever")}
+            </button>
+          )}
         </div>
       ))}
     </div>
@@ -577,8 +684,8 @@ export function ServerSettingsCard({ me }: { me: Me }) {
 
   return (
     <div className="card" style={{ marginTop: 12 }}>
-      <h3 className="row" style={{ marginTop: 0, gap: 6 }}><IconSliders size={17} /> {tr("settings.title")}</h3>
-      <p className="muted">{tr("settings.hint")}</p>
+      <h3 className="row" style={{ marginTop: 0, gap: 6 }}><IconSliders size={17} /> {trFormal("settings.title")}</h3>
+      <p className="muted">{trFormal("settings.hint")}</p>
       {settings.map((s) => (
         <div key={s.key} className="row" style={{ margin: "8px 0", flexWrap: "wrap" }}>
           <label style={{ width: 260 }}>{s.label}</label>
@@ -589,8 +696,8 @@ export function ServerSettingsCard({ me }: { me: Me }) {
           )}
           {s.type === "bool" && (
             <select className="input" style={{ width: "auto" }} defaultValue={s.value} onChange={(e) => save(s.key, e.target.value)}>
-              <option value="true">{tr("common.on")}</option>
-              <option value="false">{tr("common.off")}</option>
+              <option value="true">{trFormal("common.on")}</option>
+              <option value="false">{trFormal("common.off")}</option>
             </select>
           )}
           {(s.type === "text" || s.type === "number") && (
@@ -599,7 +706,7 @@ export function ServerSettingsCard({ me }: { me: Me }) {
           )}
         </div>
       ))}
-      <div className="section-title" style={{ fontSize: 13 }}>{tr("settings.locales")}</div>
+      <div className="section-title" style={{ fontSize: 13 }}>{trFormal("settings.locales")}</div>
       <div className="row" style={{ flexWrap: "wrap", gap: 10 }}>
         {allLocales.map((l) => (
           <label key={l} className="row" style={{ gap: 4, fontSize: 13 }}>
@@ -614,6 +721,223 @@ export function ServerSettingsCard({ me }: { me: Me }) {
           {msg.ok ? <IconCheckCircle size={13} /> : <IconAlertCircle size={13} />} {msg.text}
         </div>
       )}
+    </div>
+  )
+}
+
+// ---------- admin: template management (backend existed in templates.go, no UI until now) ----------
+
+type TemplateTaskDraft = { title: string; description: string; priority: string; due_in_days: string }
+const blankTemplateTask = (): TemplateTaskDraft => ({ title: "", description: "", priority: "normal", due_in_days: "" })
+
+export function TemplatesAdminCard({ me }: { me: Me }) {
+  const [templates, setTemplates] = useState<any[]>([])
+  const [name, setName] = useState("")
+  const [listName, setListName] = useState("")
+  const [autoApply, setAutoApply] = useState(false)
+  const [taskDrafts, setTaskDrafts] = useState<TemplateTaskDraft[]>([blankTemplateTask()])
+  const [error, setError] = useState("")
+
+  const load = () => api.get("/api/templates").then((r) => setTemplates(r.templates)).catch(() => {})
+  useEffect(() => { load() }, [])
+  if (me.role !== "root") return null
+
+  function updateDraft(i: number, patch: Partial<TemplateTaskDraft>) {
+    setTaskDrafts((prev) => prev.map((d, idx) => (idx === i ? { ...d, ...patch } : d)))
+  }
+  function addDraftRow() { setTaskDrafts((prev) => [...prev, blankTemplateTask()]) }
+  function removeDraftRow(i: number) { setTaskDrafts((prev) => (prev.length > 1 ? prev.filter((_, idx) => idx !== i) : prev)) }
+
+  async function create(e: React.FormEvent) {
+    e.preventDefault()
+    setError("")
+    if (!name.trim() || !listName.trim()) { setError(trFormal("templates.name_required")); return }
+    const tasks = taskDrafts.filter((d) => d.title.trim()).map((d) => ({
+      title: d.title, description: d.description, priority: d.priority,
+      due_in_days: d.due_in_days ? Number(d.due_in_days) : null,
+    }))
+    if (tasks.length === 0) { setError(trFormal("templates.task_required")); return }
+    try {
+      await api.post("/api/admin/templates", {
+        name, auto_apply: autoApply,
+        body: JSON.stringify({ list_name: listName, tasks }),
+      })
+      setName(""); setListName(""); setAutoApply(false); setTaskDrafts([blankTemplateTask()])
+      load()
+    } catch (err) { setError((err as Error).message) }
+  }
+
+  async function remove(id: number) {
+    await api.del(`/api/admin/templates/${id}`).catch(() => {})
+    load()
+  }
+
+  return (
+    <div className="card" style={{ padding: 14, marginTop: 12 }}>
+      <b className="row" style={{ gap: 5 }}><IconFileText size={15} /> {trFormal("templates.admin_title")}</b>
+      {templates.map((t) => (
+        <div key={t.id} className="task-row" style={{ cursor: "default" }}>
+          <span className="task-title row" style={{ gap: 6 }}>
+            {t.name} {t.auto_apply && <span className="muted">· {trFormal("templates.auto_apply_badge")}</span>}
+          </span>
+          <button className="nav-btn" onClick={() => remove(t.id)}>{trFormal("templates.delete")}</button>
+        </div>
+      ))}
+      <form onSubmit={create} style={{ marginTop: 10 }}>
+        <div className="row" style={{ gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+          <input className="input" style={{ maxWidth: 220 }} placeholder={trFormal("templates.name_placeholder")}
+            value={name} onChange={(e) => setName(e.target.value)} />
+          <input className="input" style={{ maxWidth: 220 }} placeholder={trFormal("templates.list_name_placeholder")}
+            value={listName} onChange={(e) => setListName(e.target.value)} />
+          <label className="row" style={{ gap: 4, fontSize: 13 }}>
+            <input type="checkbox" checked={autoApply} onChange={(e) => setAutoApply(e.target.checked)} /> {trFormal("templates.auto_apply")}
+          </label>
+        </div>
+        {taskDrafts.map((d, i) => (
+          <div key={i} className="row" style={{ gap: 6, marginBottom: 6, flexWrap: "wrap" }}>
+            <input className="input grow" style={{ minWidth: 140 }} placeholder={trFormal("templates.task_title_placeholder")}
+              value={d.title} onChange={(e) => updateDraft(i, { title: e.target.value })} />
+            <select className="input" style={{ width: "auto" }} value={d.priority} onChange={(e) => updateDraft(i, { priority: e.target.value })}>
+              <option value="low">{trFormal("task.priority.low")}</option>
+              <option value="normal">{trFormal("task.priority.normal")}</option>
+              <option value="high">{trFormal("task.priority.high")}</option>
+              <option value="urgent">{trFormal("task.priority.urgent")}</option>
+            </select>
+            <input className="input" style={{ width: 130 }} type="number" min={0} placeholder={trFormal("templates.due_in_days_placeholder")}
+              value={d.due_in_days} onChange={(e) => updateDraft(i, { due_in_days: e.target.value })} />
+            <button type="button" className="nav-btn" style={{ padding: "2px 6px" }} onClick={() => removeDraftRow(i)}><IconX size={11} /></button>
+          </div>
+        ))}
+        <button type="button" className="nav-btn row" style={{ gap: 4, marginBottom: 8, display: "inline-flex" }} onClick={addDraftRow}>
+          + {trFormal("templates.add_task")}
+        </button>
+        {error && <div className="error-text">{error}</div>}
+        <div><button className="btn" type="submit">{trFormal("templates.create")}</button></div>
+      </form>
+    </div>
+  )
+}
+
+// ---------- admin: create announcements (backend existed in announcements.go, no UI until now) ----------
+
+export function AnnouncementsAdminCard({ me }: { me: Me }) {
+  const [level, setLevel] = useState("normal")
+  const [body, setBody] = useState("")
+  const [requiresAck, setRequiresAck] = useState(false)
+  const [expiresDays, setExpiresDays] = useState("")
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  if (me.role !== "root") return null
+
+  async function create(e: React.FormEvent) {
+    e.preventDefault()
+    if (!body.trim()) return
+    try {
+      await api.post("/api/announcements", {
+        level, body, requires_ack: requiresAck,
+        expires_days: expiresDays ? Number(expiresDays) : null,
+      })
+      setBody(""); setRequiresAck(false); setExpiresDays("")
+      setMsg({ ok: true, text: trFormal("announce.created") })
+    } catch (err) { setMsg({ ok: false, text: (err as Error).message }) }
+  }
+
+  return (
+    <div className="card" style={{ padding: 14, marginTop: 12 }}>
+      <b className="row" style={{ gap: 5 }}><IconAlertTriangle size={15} /> {trFormal("announce.admin_title")}</b>
+      <form onSubmit={create} style={{ marginTop: 8 }}>
+        <div className="row" style={{ gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+          <select className="input" style={{ width: "auto" }} value={level} onChange={(e) => setLevel(e.target.value)}>
+            <option value="normal">{trFormal("announce.level.normal")}</option>
+            <option value="important">{trFormal("announce.level.important")}</option>
+            <option value="emergency">{trFormal("announce.level.emergency")}</option>
+          </select>
+          <input className="input" style={{ width: 150 }} type="number" min={0} placeholder={trFormal("announce.expires_days_placeholder")}
+            value={expiresDays} onChange={(e) => setExpiresDays(e.target.value)} />
+          <label className="row" style={{ gap: 4, fontSize: 13 }}>
+            <input type="checkbox" checked={requiresAck} onChange={(e) => setRequiresAck(e.target.checked)} /> {trFormal("announce.requires_ack")}
+          </label>
+        </div>
+        <textarea className="input" style={{ width: "100%", minHeight: 70, marginBottom: 8 }}
+          placeholder={trFormal("announce.body_placeholder")} value={body} onChange={(e) => setBody(e.target.value)} />
+        {msg && (
+          <div className="row" style={{ gap: 5, marginBottom: 8, color: msg.ok ? "var(--pulse-ok)" : "var(--due-overdue)" }}>
+            {msg.ok ? <IconCheckCircle size={13} /> : <IconAlertCircle size={13} />} {msg.text}
+          </div>
+        )}
+        <button className="btn" type="submit">{trFormal("announce.publish")}</button>
+      </form>
+    </div>
+  )
+}
+
+// ---------- custom field schema (spec section 13; backend existed in fields.go, TaskModal used a
+// freeform key/value editor only — this defines the per-space typed schema that drives it) ----------
+
+export type FieldDef = { key: string; label: string; type: string; options?: string[]; color?: string }
+export const FIELD_TYPES = ["text", "number", "date", "select", "multiselect", "checkbox", "user", "link", "rating"]
+
+export function FieldsPanel({ spaceId, isOwner }: { spaceId: number; isOwner: boolean }) {
+  const [fields, setFields] = useState<FieldDef[]>([])
+  const [key, setKey] = useState("")
+  const [label, setLabel] = useState("")
+  const [type, setType] = useState("text")
+  const [optionsInput, setOptionsInput] = useState("")
+  const [error, setError] = useState("")
+
+  const load = () => api.get(`/api/spaces/${spaceId}/fields`).then((r) => setFields(r.fields || [])).catch(() => {})
+  useEffect(() => { load() }, [spaceId])
+
+  async function save(next: FieldDef[]) {
+    setError("")
+    try {
+      await api.put(`/api/spaces/${spaceId}/fields`, { fields: next })
+      setFields(next)
+    } catch (err) { setError((err as Error).message) }
+  }
+
+  async function addField(e: React.FormEvent) {
+    e.preventDefault()
+    if (!key.trim() || !label.trim()) return
+    if (fields.some((f) => f.key === key.trim())) { setError(tr("fields.key_taken")); return }
+    const field: FieldDef = { key: key.trim(), label: label.trim(), type }
+    if (type === "select" || type === "multiselect") {
+      field.options = optionsInput.split(",").map((s) => s.trim()).filter(Boolean)
+    }
+    await save([...fields, field])
+    setKey(""); setLabel(""); setType("text"); setOptionsInput("")
+  }
+
+  async function removeField(k: string) {
+    await save(fields.filter((f) => f.key !== k))
+  }
+
+  return (
+    <div>
+      <p className="muted" style={{ marginTop: 0, fontSize: 12 }}>{tr("fields.hint")}</p>
+      {fields.length === 0 && <p className="muted">{tr("fields.empty")}</p>}
+      {fields.map((f) => (
+        <div key={f.key} className="task-row" style={{ cursor: "default" }}>
+          <span className="task-title row" style={{ gap: 6 }}>
+            {f.label} <span className="muted">· {tr("fields.type." + f.type)}{f.options ? `: ${f.options.join(", ")}` : ""}</span>
+          </span>
+          {isOwner && <button className="nav-btn" onClick={() => removeField(f.key)}><IconTrash size={13} /></button>}
+        </div>
+      ))}
+      {isOwner && (
+        <form className="row" style={{ gap: 6, marginTop: 10, flexWrap: "wrap" }} onSubmit={addField}>
+          <input className="input" style={{ maxWidth: 130 }} placeholder={tr("fields.key_placeholder")} value={key} onChange={(e) => setKey(e.target.value)} />
+          <input className="input" style={{ maxWidth: 160 }} placeholder={tr("fields.label_placeholder")} value={label} onChange={(e) => setLabel(e.target.value)} />
+          <select className="input" style={{ width: "auto" }} value={type} onChange={(e) => setType(e.target.value)}>
+            {FIELD_TYPES.map((t) => <option key={t} value={t}>{tr("fields.type." + t)}</option>)}
+          </select>
+          {(type === "select" || type === "multiselect") && (
+            <input className="input grow" style={{ minWidth: 160 }} placeholder={tr("fields.options_placeholder")}
+              value={optionsInput} onChange={(e) => setOptionsInput(e.target.value)} />
+          )}
+          <button className="btn" type="submit">+ {tr("fields.add")}</button>
+        </form>
+      )}
+      {error && <div className="error-text">{error}</div>}
     </div>
   )
 }
