@@ -42,7 +42,7 @@
   justify-content: center;
   border-radius: 9px;
   background: var(--accent, #3b82f6);
-  color: #fff;
+  color: var(--accent-contrast, #fff);
   font-size: 11px;
   padding: 0 5px;
   margin-left: 4px;
@@ -61,10 +61,10 @@
 .task-title { flex: 1; }
 
 .due { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--surface, #171e2e); }
-.due.overdue { color: #e5484d; border: 1px solid #e5484d; }
-.due.today   { color: #f76b15; border: 1px solid #f76b15; }
-.due.soon    { color: #f5b301; border: 1px solid #f5b301; }
-.due.later   { color: #8b8d98; border: 1px solid #8b8d98; }
+.due.overdue { color: var(--due-overdue); border: 1px solid var(--due-overdue); }
+.due.today   { color: var(--due-today); border: 1px solid var(--due-today); }
+.due.soon    { color: var(--due-soon); border: 1px solid var(--due-soon); }
+.due.later   { color: var(--due-later); border: 1px solid var(--due-later); }
 
 .modal-backdrop {
   position: fixed; inset: 0;
@@ -93,8 +93,33 @@
 .reaction.mine { border-color: var(--accent, #3b82f6); background: color-mix(in srgb, var(--accent, #3b82f6) 18%, transparent); }
 
 .pulse-card { display: flex; gap: 16px; align-items: center; }
-.pulse-score { font-size: 40px; font-weight: 700; }
-.signal { display: inline-block; margin-right: 12px; font-size: 13px; opacity: 0.85; }
+
+/* Space Pulse indicator: a plain colored dot instead of an emoji. It pulses (glow ring +
+   slight scale) only in the "rich" visual mode; in "lite" mode it's just a static colored
+   circle — no animation, per the lite-mode design goal of staying cheap on slower devices. */
+.pulse-visual { display: flex; flex-direction: column; align-items: center; gap: 6px; flex-shrink: 0; }
+.pulse-dot {
+  --pulse-color: var(--pulse-ok);
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--pulse-color);
+}
+.pulse-dot--yellow { --pulse-color: var(--pulse-warn); }
+.pulse-dot--red { --pulse-color: var(--pulse-bad); }
+:root[data-visual="rich"] .pulse-dot { animation: pulse-ring 2s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .pulse-dot { animation: none !important; }
+}
+@keyframes pulse-ring {
+  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--pulse-color) 55%, transparent); transform: scale(1); }
+  50%  { transform: scale(1.06); }
+  70%  { box-shadow: 0 0 0 14px color-mix(in srgb, var(--pulse-color) 0%, transparent); }
+  100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--pulse-color) 0%, transparent); transform: scale(1); }
+}
+.pulse-score-num { font-size: 18px; font-weight: 700; }
+
+.signal { display: inline-flex; align-items: center; gap: 4px; margin-right: 14px; font-size: 13px; opacity: 0.85; }
 
 .center-page {
   min-height: 100vh;
@@ -111,7 +136,7 @@
   font-size: 12px;
   border-radius: 8px;
 }
-.error-text { color: #e5484d; font-size: 13px; min-height: 16px; }
+.error-text { color: var(--due-overdue); font-size: 13px; min-height: 16px; }
 .muted { opacity: 0.65; font-size: 13px; }
 .row { display: flex; gap: 8px; align-items: center; }
 .grow { flex: 1; }

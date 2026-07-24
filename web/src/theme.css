@@ -6,32 +6,45 @@
    overflow past their parent's edge instead of respecting it. */
 *, *::before, *::after { box-sizing: border-box; }
 
-/* —— Акцентные цвета —— */
-:root[data-color="red"]    { --accent: #E5484D; --accent-soft: #E5484D22; }
-:root[data-color="blue"]   { --accent: #3B82F6; --accent-soft: #3B82F622; }
-:root[data-color="green"]  { --accent: #30A46C; --accent-soft: #30A46C22; }
-:root[data-color="yellow"] { --accent: #F5B301; --accent-soft: #F5B30122; }
-:root[data-color="gray"]   { --accent: #8B8D98; --accent-soft: #8B8D9822; }
+/* —— Акцентные цвета ——
+   --accent-contrast is the text/icon color to put ON TOP of a solid --accent fill (.btn,
+   .badge, .sidebar-btn.active). White-on-accent looks fine for red/blue/green, but white
+   text on the yellow accent is ~1.9:1 contrast (essentially unreadable) — it needs dark
+   text instead. Gray's default shade was also darkened slightly (8B8D98 -> 71737C) since
+   white-on-8B8D98 was a marginal ~3.3:1, below the 4.5:1 normal-text AA threshold. */
+:root[data-color="red"]    { --accent: #E5484D; --accent-soft: #E5484D22; --accent-contrast: #fff; }
+:root[data-color="blue"]   { --accent: #3B82F6; --accent-soft: #3B82F622; --accent-contrast: #fff; }
+:root[data-color="green"]  { --accent: #30A46C; --accent-soft: #30A46C22; --accent-contrast: #fff; }
+:root[data-color="yellow"] { --accent: #F5B301; --accent-soft: #F5B30122; --accent-contrast: #1A1400; }
+:root[data-color="gray"]   { --accent: #71737C; --accent-soft: #71737C22; --accent-contrast: #fff; }
 
 /* —— Светлая / тёмная —— */
+/* Due-date badge colors are scheme-specific, not fixed: the dark-mode shades (bright red/
+   orange/amber) read as low-contrast pastel-on-white when reused as-is in light mode — e.g.
+   #F5B301 amber or #8B8D98 gray against a white card falls below WCAG AA (4.5:1) for normal
+   text. Light mode gets darker/more saturated variants of the same hues instead. */
 :root[data-scheme="light"] {
   --bg: #F7F7F9; --surface: #FFFFFF; --border: #E4E4EA;
   --text: #17181C; --text-muted: #6E7079;
+  --due-overdue: #B42318;  /* просрочено */
+  --due-today:   #9A3412;  /* сегодня */
+  --due-soon:    #854D0E;  /* скоро (1–3 дня) */
+  --due-later:   #6E7079;  /* дальше */
 }
 :root[data-scheme="dark"] {
   --bg: #0F1420; --surface: #171E2E; --border: #262F44;
   --text: #E8E7FF; --text-muted: #8D93AB;
+  --due-overdue: #E5484D;  /* просрочено */
+  --due-today:   #F76B15;  /* сегодня */
+  --due-soon:    #F5B301;  /* скоро (1–3 дня) */
+  --due-later:   #8B8D98;  /* дальше */
 }
 
-/* —— Семантика статусов и дедлайн-плашек —— */
+/* —— Семантика Пульса и радиусы —— */
 :root {
-  --due-overdue: #E5484D;  /* 🔴 просрочено */
-  --due-today:   #F76B15;  /* 🟠 сегодня */
-  --due-soon:    #F5B301;  /* 🟡 скоро (1–3 дня) */
-  --due-later:   #8B8D98;  /* ⚪ дальше */
-  --pulse-ok:    #30A46C;  /* 🟢 */
-  --pulse-warn:  #F5B301;  /* 🟡 */
-  --pulse-bad:   #E5484D;  /* 🔴 */
+  --pulse-ok:    #30A46C;  /* здоровое пространство */
+  --pulse-warn:  #F5B301;  /* есть на что обратить внимание */
+  --pulse-bad:   #E5484D;  /* требует внимания */
   --radius: 10px;
 }
 
@@ -57,39 +70,117 @@
 
 body {
   margin: 0;
-  background: var(--bg);\n  color: var(--text);\n  font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;\n}
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
 
 /* Layout with Sidebar */
 .app-layout {
-  display: flex;\n  min-height: 100vh;\n}
+  display: flex;
+  min-height: 100vh;
+}
 .sidebar {
-  width: 260px;\n  background: var(--glass);\n  backdrop-filter: var(--blur);\n  border-right: 1px solid var(--border);\n  display: flex;\n  flex-direction: column;\n  padding: 20px 16px;\n  position: sticky;\n  top: 0;\n  height: 100vh;\n  z-index: 10;\n  box-shadow: var(--shadow);\n}
+  /* The sidebar is the site's persistent header/nav — always dark, regardless of the
+     light/dark scheme toggle (that toggle only affects the main content area). Redeclaring
+     the base tokens here cascades into every var(--surface)/var(--border)/var(--text) and
+     var(--glass) (glass is derived from --surface) used by anything inside the sidebar,
+     including the theme <select> in the footer. */
+  --bg: #0F1420;
+  --surface: #171E2E;
+  --border: #262F44;
+  --text: #E8E7FF;
+  --text-muted: #8D93AB;
+
+  width: 260px;
+  background: var(--glass);
+  backdrop-filter: var(--blur);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  padding: 20px 16px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  z-index: 10;
+  box-shadow: var(--shadow);
+}
 .sidebar-header {
-  display: flex;\n  align-items: center;\n  gap: 12px;\n  margin-bottom: 28px;\n  padding-left: 4px;\n}
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 28px;
+  padding-left: 4px;
+}
 .sidebar-header img { width: 32px; height: 32px; }
 .sidebar-header b { font-size: 18px; letter-spacing: -0.3px; }
 
 .sidebar-nav {
-  display: flex;\n  flex-direction: column;\n  gap: 6px;\n  flex: 1;\n}
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+}
 .sidebar-btn {
-  display: flex;\n  align-items: center;\n  gap: 12px;\n  width: 100%;\n  padding: 10px 14px;\n  background: transparent;\n  border: none;\n  border-radius: var(--radius);\n  color: var(--text-muted);\n  font-size: 14px;\n  font-weight: 500;\n  cursor: pointer;\n  text-align: left;\n  transition: background var(--transition), color var(--transition);\n}
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 14px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--transition), color var(--transition);
+}
 .sidebar-btn:hover {
-  background: var(--accent-soft);\n  color: var(--text);\n}
+  background: var(--accent-soft);
+  color: var(--text);
+}
 .sidebar-btn.active {
-  background: var(--accent);\n  color: #fff;\n  box-shadow: 0 4px 14px var(--accent-soft);\n}
+  background: var(--accent);
+  color: var(--accent-contrast);
+  box-shadow: 0 4px 14px var(--accent-soft);
+}
 .sidebar-btn svg { width: 18px; height: 18px; flex-shrink: 0; }
 
 .sidebar-footer {
-  border-top: 1px solid var(--border);\n  padding-top: 16px;\n  display: flex;\n  flex-direction: column;\n  gap: 10px;\n}
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
 .sidebar-controls {
-  display: grid;\n  grid-template-columns: repeat(4, 1fr);\n  gap: 6px;\n}
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
 .ctrl-btn {
-  padding: 8px;\n  background: var(--surface);\n  border: 1px solid var(--border);\n  border-radius: var(--radius);\n  color: var(--text);\n  cursor: pointer;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  transition: background var(--transition);\n}
+  padding: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--transition);
+}
 .ctrl-btn:hover { background: var(--accent-soft); border-color: var(--accent); }
 .ctrl-btn svg { width: 16px; height: 16px; }
 
 .main-content {
-  flex: 1;\n  max-width: 900px;\n  padding: 32px 40px;\n  overflow-y: auto;\n}
+  flex: 1;
+  max-width: 900px;
+  padding: 32px 40px;
+  overflow-y: auto;
+}
 
 .card {
   background: var(--glass);
@@ -103,7 +194,7 @@ body {
 
 .btn {
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-contrast);
   border: none;
   border-radius: var(--radius);
   padding: 8px 14px;
@@ -113,15 +204,21 @@ body {
 .btn:hover { filter: brightness(1.1); }
 .btn.secondary { background: var(--accent-soft); color: var(--accent); }
 
+/* <progress> is a native form element — styling its fill requires the vendor pseudo-elements
+   below (a plain "background" on the element itself only paints its own box, not the browser's
+   built-in track/value rendering, which otherwise stays the OS/browser default and ignores the
+   theme's accent color entirely). */
 .progress {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  width: 100%;
   height: 6px;
+  border: none;
   border-radius: 3px;
-  background: var(--border);
   overflow: hidden;
+  background: var(--border);
 }
-.progress > span {
-  display: block;
-  height: 100%;
-  background: var(--accent);
-  transition: width var(--transition);
-}
+.progress::-webkit-progress-bar { background: var(--border); border-radius: 3px; }
+.progress::-webkit-progress-value { background: var(--accent); border-radius: 3px; transition: width var(--transition); }
+.progress::-moz-progress-bar { background: var(--accent); border-radius: 3px; }

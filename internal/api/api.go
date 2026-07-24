@@ -141,6 +141,16 @@ func (a *API) Routes(mux *http.ServeMux) {
 	// --- custom fields ---
 	mux.HandleFunc("GET /api/spaces/{id}/fields", a.handleGetFields)
 	mux.HandleFunc("PUT /api/spaces/{id}/fields", a.handleSetFields)
+
+	// --- invite codes ---
+	mux.HandleFunc("GET /api/invites", a.handleListInvites)
+	mux.HandleFunc("POST /api/invites", a.handleCreateInvite)
+	mux.HandleFunc("DELETE /api/invites/{id}", a.handleDeleteInvite)
+
+	// --- server settings (root panel + CLI share the same system_settings table) ---
+	mux.HandleFunc("GET /api/admin/settings", a.handleGetSettings)
+	mux.HandleFunc("POST /api/admin/settings", a.handleSetSetting)
+	mux.HandleFunc("POST /api/admin/locales", a.handleSetLocale)
 }
 
 // ---------- helpers ----------

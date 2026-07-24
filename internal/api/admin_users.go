@@ -24,9 +24,9 @@ func (a *API) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 	users := []map[string]any{}
 	for rows.Next() {
 		var (
-			id int64
-			username, role, st string
-			displayName *string
+			id                  int64
+			username, role, st  string
+			displayName         *string
 			createdAt, lastSeen any
 		)
 		if err := rows.Scan(&id, &username, &role, &st, &displayName, &createdAt, &lastSeen); err == nil {
@@ -65,8 +65,12 @@ func (a *API) handleApproveUser(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, http.StatusForbidden, "there can be only one root")
 		return
 	}
+	if in.Permissions == nil {
+		in.Permissions = map[string]any{}
+	}
 	_, err = a.DB.Pool.Exec(r.Context(),
-		`UPDATE users SET status='active', role=$2 WHERE id=$1 AND status='pending'`, id, in.Role)
+		`UPDATE users SET status='active', role=$2, permissions=$3 WHERE id=$1 AND status='pending'`,
+		id, in.Role, in.Permissions)
 	if err != nil {
 		errJSON(w, http.StatusInternalServerError, "database error")
 		return

@@ -3,14 +3,17 @@ import { api, type Me } from "./api"
 import "./theme.css"
 import "./ui.css"
 import { AdminPage, AuthPage, MyTasksPage, NotificationsPage, PendingPage, SpacesPage } from "./views"
-import { AnnouncementsBanner, DigestModal, TotpCard, InvitesCard } from "./extras"
+import { AnnouncementsBanner, DigestModal, TotpCard, InvitesCard, SearchPage, ServerSettingsCard } from "./extras"
 import { detectLocale, setLocale, tr } from "./i18n"
+import { IconDownload, IconKeyboard } from "./icons"
 
 type Bootstrap = {
   site_name: string
   browser_title: string
   developer_name: string
+  footer_text?: string
   default_locale: string
+  locales_enabled?: string[]
   theme: { color: string; scheme: string; visual: string }
 }
 
@@ -42,10 +45,11 @@ export default function App() {
   const [boot, setBoot] = useState<Bootstrap | null>(null)
   const [me, setMe] = useState<Me | null>(null)
   const [loaded, setLoaded] = useState(false)
-  const [view, setView] = useState<"my" | "spaces" | "notifications" | "admin">("my")
+  const [view, setView] = useState<"my" | "spaces" | "search" | "notifications" | "admin">("my")
   const [unread, setUnread] = useState(0)
   const [soundOn, setSoundOn] = useState(localStorage.getItem("todorio.sound") === "1")
   const [installEvt, setInstallEvt] = useState<any>(null)
+  const [showHelp, setShowHelp] = useState(false)
   const esRef = useRef<EventSource | null>(null)
 
   // theme: server default <- personal override (localStorage + profile)
@@ -85,6 +89,28 @@ export default function App() {
     return () => es.close()
   }, [me?.id, me?.status])
 
+  // Hotkeys: single keys only, ignored while typing in a field or with a modifier held, and
+  // disableable via localStorage (per spec: work outside inputs, no single-key destructive actions).
+  useEffect(() => {
+    if (!me || me.status !== "active") return
+    function onKeyDown(e: KeyboardEvent) {
+      if (localStorage.getItem("todorio.hotkeys") === "0") return
+      if (e.ctrlKey || e.metaKey || e.altKey) return
+      const t = e.target as HTMLElement
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return
+      switch (e.key) {
+        case "?": setShowHelp((v) => !v); break
+        case "m": setView("my"); break
+        case "s": setView("spaces"); break
+        case "/": setView("search"); break
+        case "n": setView("notifications"); break
+        case "Escape": setShowHelp(false); break
+      }
+    }
+    window.addEventListener("keydown", onKeyDown)
+    return () => window.removeEventListener("keydown", onKeyDown)
+  }, [me?.status])
+
   function updateTheme(patch: Partial<typeof theme>) {
     const next = { ...theme, ...patch }
     setTheme(next)
@@ -105,7 +131,7 @@ export default function App() {
   if (!loaded) return null
   const siteName = boot?.site_name || "Todorio"
 
-  if (!me) return <AuthPage siteName={siteName} onLogin={(u) => { setMe(u); setView("my") }} />
+  if (!me) return <AuthPage siteName={siteName} locales={boot?.locales_enabled} onLogin={(u) => { setMe(u); setView("my") }} />
   if (me.status !== "active") return <PendingPage onLogout={logout} />
 
   return (
@@ -127,6 +153,11 @@ export default function App() {
             {tr("nav.spaces")}
           </button>
           
+          <button className={"sidebar-btn" + (view === "search" ? " active" : "")} onClick={() => setView("search")}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            {tr("nav.search")}
+          </button>
+
           <button className={"sidebar-btn" + (view === "notifications" ? " active" : "")} onClick={() => setView("notifications")}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
             {tr("nav.notifications")}
@@ -181,6 +212,19 @@ export default function App() {
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
             </button>
           </div>
+
+          {installEvt && (
+            <button className="btn secondary row" style={{ marginTop: 8, gap: 6, justifyContent: "center" }} onClick={async () => {
+              installEvt.prompt()
+              await installEvt.userChoice.catch(() => {})
+              setInstallEvt(null)
+            }}>
+              <IconDownload size={14} /> {tr("pwa.install")}
+            </button>
+          )}
+          <button className="nav-btn row" style={{ marginTop: 4, fontSize: 12, gap: 5 }} onClick={() => setShowHelp(true)}>
+            <IconKeyboard size={14} /> {tr("help.shortcuts")}
+          </button>
         </div>
       </aside>
 
@@ -189,13 +233,44 @@ export default function App() {
         <DigestModal />
         {view === "my" && <MyTasksPage me={me} />}
         {view === "spaces" && <SpacesPage me={me} />}
+        {view === "search" && <SearchPage />}
         {view === "notifications" && <NotificationsPage onRead={() => setUnread(0)} />}
-        {view === "admin" && <><AdminPage me={me} /><TotpCard me={me} /><InvitesCard me={me} /></>}
+        {view === "admin" && (
+          <>
+            <AdminPage me={me} />
+            <TotpCard me={me} />
+            <InvitesCard me={me} />
+            <ServerSettingsCard me={me} />
+          </>
+        )}
 
         <footer className="muted" style={{ marginTop: 60, textAlign: "center", fontSize: 13 }}>
-          {siteName} · {tr("footer.developed_by")} {boot?.developer_name || "Vlad"}
+          {siteName} · {tr("footer.developed_by")} {boot?.developer_name || "DanMotive"}
+          {boot?.footer_text ? ` · ${boot.footer_text}` : ""}
         </footer>
       </main>
+
+      {showHelp && (
+        <div className="modal-backdrop" onClick={() => setShowHelp(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420 }}>
+            <h3 className="row" style={{ marginTop: 0, gap: 6 }}><IconKeyboard size={17} /> {tr("help.shortcuts")}</h3>
+            <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "6px 14px", fontSize: 14 }}>
+              <code>?</code><span>{tr("help.toggle")}</span>
+              <code>m</code><span>{tr("nav.my")}</span>
+              <code>s</code><span>{tr("nav.spaces")}</span>
+              <code>/</code><span>{tr("nav.search")}</span>
+              <code>n</code><span>{tr("nav.notifications")}</span>
+              <code>Esc</code><span>{tr("help.close")}</span>
+            </div>
+            <label className="row" style={{ marginTop: 14, gap: 6, fontSize: 13 }}>
+              <input type="checkbox" defaultChecked={localStorage.getItem("todorio.hotkeys") !== "0"}
+                onChange={(e) => localStorage.setItem("todorio.hotkeys", e.target.checked ? "1" : "0")} />
+              {tr("help.enable_hotkeys")}
+            </label>
+            <button className="btn" style={{ marginTop: 14 }} onClick={() => setShowHelp(false)}>{tr("digest.ok")}</button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

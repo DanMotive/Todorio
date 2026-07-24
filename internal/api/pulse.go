@@ -46,12 +46,15 @@ func (a *API) handlePulse(w http.ResponseWriter, r *http.Request) {
 	if score < 0 {
 		score = 0
 	}
-	mood := "\U0001F7E2" // green
+	// mood is a plain color keyword (not an emoji) — the frontend draws its own pulsing/static
+	// indicator dot from it, so rendering is consistent across platforms instead of depending
+	// on the OS/browser's emoji font.
+	mood := "green"
 	if score < 70 {
-		mood = "\U0001F7E1"
+		mood = "yellow"
 	}
 	if score < 40 {
-		mood = "\U0001F534"
+		mood = "red"
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{

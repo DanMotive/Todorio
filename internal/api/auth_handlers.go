@@ -3,14 +3,20 @@ package api
 import (
 	"net/http"
 	"regexp"
+	"strings"
 
 	"github.com/DanMotive/Todorio/internal/auth"
 )
 
 var usernameRe = regexp.MustCompile(`^[a-zA-Z0-9_]{3,32}$`)
 
-// POST /api/register — open registration with pending status (manual approval).
-// The first registered user becomes root (covers a dev bootstrap without setup).
+// POST /api/register — registration, gated by policy.registration.mode:
+//   - closed         — no self-registration at all (an admin must create/invite users another way).
+//   - invite_only     — a valid invite code is required.
+//   - open_approval  — anyone can request an account; it stays "pending" until an admin approves it
+//     (the default). A valid invite code always skips the pending queue, in any non-closed mode.
+//
+// The first registered user becomes root (covers a dev bootstrap without running `todorio setup`).
 func (a *API) handleRegister(w http.ResponseWriter, r *http.Request) {
 	mode := a.DB.Setting(r.Context(), "policy.registration.mode", "open_approval")
 	if mode == "closed" {
@@ -18,8 +24,9 @@ func (a *API) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
+		Username   string `json:"username"`
+		Password   string `json:"password"`
+		InviteCode string `json:"invite_code"`
 	}
 	if err := readJSON(r, &in); err != nil {
 		errJSON(w, http.StatusBadRequest, "invalid request")
@@ -33,6 +40,22 @@ func (a *API) handleRegister(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, http.StatusBadRequest, "password must be at least 8 characters")
 		return
 	}
+
+	// Resolve the invite code (if any) up front: a wrong/expired code fails loudly here instead of
+	// silently falling back to "pending" and leaving the user confused about why nothing happened.
+	var invite *inviteRow
+	if code := strings.TrimSpace(in.InviteCode); code != "" {
+		iv, err := a.lookupInvite(r.Context(), code)
+		if err != nil {
+			errJSON(w, http.StatusBadRequest, "invalid or expired invite code")
+			return
+		}
+		invite = iv
+	} else if mode == "invite_only" {
+		errJSON(w, http.StatusForbidden, "an invite code is required to register")
+		return
+	}
+
 	hash, err := auth.HashPassword(in.Password)
 	if err != nil {
 		errJSON(w, http.StatusInternalServerError, "server error")
@@ -42,8 +65,11 @@ func (a *API) handleRegister(w http.ResponseWriter, r *http.Request) {
 	var total int
 	_ = a.DB.Pool.QueryRow(r.Context(), `SELECT count(*) FROM users`).Scan(&total)
 	role, status := "user", "pending"
-	if total == 0 {
-		role, status = "root", "active" // dev bootstrap
+	switch {
+	case total == 0:
+		role, status = "root", "active" // dev bootstrap: the very first account on the server
+	case invite != nil:
+		role, status = invite.Role, "active" // invite codes activate instantly, no manual approval
 	}
 
 	var id int64
@@ -54,6 +80,12 @@ func (a *API) handleRegister(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		errJSON(w, http.StatusConflict, "username is already taken")
 		return
+	}
+	if invite != nil {
+		a.consumeInvite(r.Context(), invite.ID)
+	}
+	if status == "active" && total != 0 {
+		a.postApprove(r.Context(), id, in.Username)
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{"id": id, "status": status})
 }
@@ -69,17 +101,25 @@ func (a *API) handleLogin(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, http.StatusBadRequest, "invalid request")
 		return
 	}
+	// Rate limit by IP+username so a lockout on one account can't be used to lock out everyone
+	// sharing an IP, while still stopping a brute-force attempt against a single account.
+	limitKey := clientIP(r) + ":" + in.Username
+	if !loginLimiter.allow(limitKey, a.maxLoginAttempts(r)) {
+		errJSON(w, http.StatusTooManyRequests, "too many failed login attempts — try again in a few minutes")
+		return
+	}
 	var (
-		id     int64
-		hash, role, status string
+		id                      int64
+		hash, role, status      string
 		mustChange, totpEnabled bool
-		totpSecret *string
+		totpSecret              *string
 	)
 	err := a.DB.Pool.QueryRow(r.Context(),
 		`SELECT id, password_hash, role, status, must_change_password, totp_secret, totp_enabled
 		 FROM users WHERE username=$1 AND archived_at IS NULL`,
 		in.Username).Scan(&id, &hash, &role, &status, &mustChange, &totpSecret, &totpEnabled)
 	if err != nil || !auth.VerifyPassword(in.Password, hash) {
+		loginLimiter.fail(limitKey)
 		errJSON(w, http.StatusUnauthorized, "invalid username or password")
 		return
 	}
@@ -89,6 +129,7 @@ func (a *API) handleLogin(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if totpSecret == nil || !auth.VerifyTOTP(*totpSecret, in.TOTPCode) {
+			loginLimiter.fail(limitKey)
 			errJSON(w, http.StatusUnauthorized, "invalid two-factor code")
 			return
 		}
@@ -101,6 +142,7 @@ func (a *API) handleLogin(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, http.StatusInternalServerError, "session error")
 		return
 	}
+	loginLimiter.reset(limitKey)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"id": id, "username": in.Username, "role": role, "status": status,
 		"must_change_password": mustChange,
@@ -133,11 +175,11 @@ func (a *API) handleUpdateMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in struct {
-		DisplayName *string `json:"display_name"`
-		Locale      *string `json:"locale"`
-		ThemeColor  *string `json:"theme_color"`
-		ThemeScheme *string `json:"theme_scheme"`
-		ThemeVisual *string `json:"theme_visual"`
+		DisplayName *string         `json:"display_name"`
+		Locale      *string         `json:"locale"`
+		ThemeColor  *string         `json:"theme_color"`
+		ThemeScheme *string         `json:"theme_scheme"`
+		ThemeVisual *string         `json:"theme_visual"`
 		NotifyPrefs *map[string]any `json:"notify_prefs"`
 	}
 	if err := readJSON(r, &in); err != nil {

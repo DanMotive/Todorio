@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"strconv"
 
 	"github.com/DanMotive/Todorio/internal/events"
 )
@@ -88,7 +89,10 @@ func (a *API) handleCreateComment(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, http.StatusBadRequest, "comment cannot be empty")
 		return
 	}
-	maxLen := 4000 // TODO: read from policy.limits.comment_max_len
+	maxLen := 4000
+	if n, err := strconv.Atoi(a.DB.Setting(r.Context(), "limits.content.comment_max_len", "4000")); err == nil && n > 0 {
+		maxLen = n
+	}
 	if len(in.Body) > maxLen {
 		errJSON(w, http.StatusBadRequest, fmt.Sprintf("comment is longer than %d characters", maxLen))
 		return
@@ -160,6 +164,23 @@ func (a *API) handleToggleReaction(w http.ResponseWriter, r *http.Request) {
 	}
 	if !AllowedReactions[in.Emoji] {
 		errJSON(w, http.StatusBadRequest, "invalid reaction")
+		return
+	}
+	// resolve the target's list to check access — matches the permission check comments use.
+	var listID int64
+	var lookupErr error
+	if in.TargetType == "task" {
+		lookupErr = a.DB.Pool.QueryRow(r.Context(), `SELECT list_id FROM tasks WHERE id=$1`, in.TargetID).Scan(&listID)
+	} else {
+		lookupErr = a.DB.Pool.QueryRow(r.Context(),
+			`SELECT t.list_id FROM comments c JOIN tasks t ON t.id=c.task_id WHERE c.id=$1`, in.TargetID).Scan(&listID)
+	}
+	if lookupErr != nil {
+		errJSON(w, http.StatusNotFound, "target not found")
+		return
+	}
+	if !permAtLeast(a.listPermission(r, u, listID), "viewer") {
+		errJSON(w, http.StatusForbidden, "no access")
 		return
 	}
 	tag, err := a.DB.Pool.Exec(r.Context(),
