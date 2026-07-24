@@ -270,5 +270,19 @@
   "fields.type.user": "Usuário",
   "fields.type.link": "Link",
   "fields.type.rating": "Avaliação",
-  "task.load_error": "Não foi possível carregar as tarefas"
+  "task.load_error": "Não foi possível carregar as tarefas",
+  "task.system.status_changed": "alterou o status: {from} → {to}",
+  "task.system.due_changed": "alterou o prazo",
+  "task.system.assignee_changed": "alterou o responsável",
+  "mystats.title": "Estatísticas",
+  "mystats.done": "Concluídas",
+  "mystats.on_time": "No prazo",
+  "mystats.overdue": "Atrasadas",
+  "mystats.most_active_list": "Lista mais ativa",
+  "mystats.focus_time": "Minutos de foco",
+  "task.history": "Histórico",
+  "task.history_empty": "Não há versões anteriores.",
+  "task.history_restore": "Restaurar",
+  "task.history_confirm_restore": "Restaurar esta versão? Os valores atuais serão substituídos (e também salvos no histórico).",
+  "mystats.disabled": "As estatísticas estão desativadas neste servidor."
 }

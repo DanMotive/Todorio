@@ -117,8 +117,15 @@ WantedBy=multi-user.target
 EOF
 systemctl daemon-reload
 
-# --- 5. Interactive setup (works even via curl | bash, thanks to /dev/tty) ---
-if [ -e /dev/tty ] && [ -r /dev/tty ]; then
+# --- 5. First-time setup — skipped if this machine is already configured, so re-running this
+# script (e.g. to fetch an updated binary) never re-prompts an already-set-up instance. Setup
+# only runs automatically on a genuinely fresh install; afterwards it's opt-in via `sudo todorio
+# setup` (works even via curl | bash, thanks to /dev/tty for the fresh-install case).
+if [ -f /etc/todorio/config.json ]; then
+  say "Existing installation detected (/etc/todorio/config.json) — skipping setup."
+  systemctl restart todorio
+  say "Done! todorio restarted with this binary. Check: todorio status"
+elif [ -e /dev/tty ] && [ -r /dev/tty ]; then
   say "Running first-time setup..."
   "$BIN" setup < /dev/tty
   systemctl enable --now todorio
@@ -127,3 +134,4 @@ else
   say "Done! Next: sudo todorio setup && sudo systemctl enable --now todorio"
 fi
 say "To remove Todorio later: sudo todorio uninstall (add --purge to also delete application data and the database, --saveconfig to keep /etc/todorio)"
+say "Day-to-day service control: sudo todorio start / stop / restart"

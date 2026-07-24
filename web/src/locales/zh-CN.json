@@ -270,5 +270,19 @@
   "fields.type.user": "用户",
   "fields.type.link": "链接",
   "fields.type.rating": "评分",
-  "task.load_error": "无法加载任务"
+  "task.load_error": "无法加载任务",
+  "task.system.status_changed": "更改了状态：{from} → {to}",
+  "task.system.due_changed": "更改了截止日期",
+  "task.system.assignee_changed": "更改了负责人",
+  "mystats.title": "统计",
+  "mystats.done": "已完成",
+  "mystats.on_time": "按时完成",
+  "mystats.overdue": "已逾期",
+  "mystats.most_active_list": "最活跃的清单",
+  "mystats.focus_time": "专注分钟数",
+  "task.history": "历史记录",
+  "task.history_empty": "没有之前的版本。",
+  "task.history_restore": "恢复",
+  "task.history_confirm_restore": "恢复此版本？当前的值将被替换（同时也会保存到历史记录中）。",
+  "mystats.disabled": "此服务器上的统计功能已禁用。"
 }

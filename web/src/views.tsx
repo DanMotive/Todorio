@@ -29,6 +29,28 @@ function dueLabel(due: string | null): string {
   return new Date(due).toLocaleDateString(getFormattingLocale(), { day: "numeric", month: "short" })
 }
 
+// formatSystemComment renders an is_system comment's small structured JSON body (written by
+// insertSystemComment on the backend) as localized text, rather than trusting a frozen sentence
+// in whatever language the editor happened to be using when the change happened.
+function formatSystemComment(body: string): string {
+  try {
+    const data = JSON.parse(body)
+    const statusLabel = (s: string) => (DEFAULT_STATUSES.includes(s) ? tr("task.status." + s) : s)
+    switch (data.type) {
+      case "status_changed":
+        return tr("task.system.status_changed").replace("{from}", statusLabel(data.from)).replace("{to}", statusLabel(data.to))
+      case "due_changed":
+        return tr("task.system.due_changed")
+      case "assignee_changed":
+        return tr("task.system.assignee_changed")
+      default:
+        return ""
+    }
+  } catch {
+    return ""
+  }
+}
+
 // ---------- login / registration ----------
 
 export function AuthPage({ siteName, locales, onLogin }: { siteName: string; locales?: string[]; onLogin: (me: Me) => void }) {
@@ -138,6 +160,41 @@ function TaskRow({ task, onToggle, onOpen, favorite, onToggleFavorite }: {
           onClick={(e) => { e.stopPropagation(); onToggleFavorite(task) }}>
           <IconStar size={14} filled={favorite} />
         </button>
+      )}
+    </div>
+  )
+}
+
+// ---------- task version history (spec section 11 — task_versions was write-only until now) ----------
+
+function TaskHistorySection({ taskId, onRestored }: { taskId: number; onRestored: () => void }) {
+  const [show, setShow] = useState(false)
+  const [versions, setVersions] = useState<any[]>([])
+  const load = () => api.get(`/api/tasks/${taskId}/versions`).then((r) => setVersions(r.versions)).catch(() => {})
+  useEffect(() => { if (show) load() }, [show])
+
+  async function restore(versionId: number) {
+    if (!window.confirm(tr("task.history_confirm_restore"))) return
+    await api.post(`/api/tasks/${taskId}/versions/${versionId}/restore`).catch(() => {})
+    onRestored()
+    load()
+  }
+
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <button className="nav-btn row" style={{ gap: 5, display: "inline-flex" }} onClick={() => setShow((v) => !v)}>
+        <IconClock size={13} /> {tr("task.history")}
+      </button>
+      {show && (
+        <div style={{ marginTop: 8 }}>
+          {versions.length === 0 && <p className="muted" style={{ fontSize: 12 }}>{tr("task.history_empty")}</p>}
+          {versions.map((v) => (
+            <div key={v.id} className="row" style={{ fontSize: 12, marginBottom: 4, gap: 6 }}>
+              <span className="muted">{new Date(v.changed_at).toLocaleString(getFormattingLocale())} · @{v.editor}</span>
+              <button className="nav-btn" style={{ padding: "1px 6px", fontSize: 11 }} onClick={() => restore(v.id)}>{tr("task.history_restore")}</button>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   )
@@ -401,11 +458,18 @@ export function TaskModal({ task, me, spaceId, onClose, onChanged }: {
           </div>
         </div>
 
+        <TaskHistorySection taskId={task.id} onRestored={onChanged} />
+
         <FocusWidget taskId={task.id} />
 
         <div className="section-title">{tr("task.comments")}</div>
         <AttachmentsBlock taskId={task.id} />
-        {comments.map((c) => (
+        {comments.map((c) => c.is_system ? (
+          <div key={c.id} className="row muted" style={{ gap: 6, fontSize: 12, padding: "4px 0" }}>
+            <IconRefresh size={12} />
+            <span>@{c.author} {formatSystemComment(c.body)} · {new Date(c.created_at).toLocaleString(getFormattingLocale())}</span>
+          </div>
+        ) : (
           <div key={c.id} className="card" style={{ marginBottom: 8, padding: 12 }}>
             <div className="row">
               <b>@{c.author}</b>
@@ -517,12 +581,40 @@ function MyWeekView({ tasks, favorites, onOpen, onToggle, onToggleFavorite }: {
   )
 }
 
+// ---------- personal stats (spec section 14 — distinct from the per-space leaderboard) ----------
+
+function MyStatsPanel() {
+  const [period, setPeriod] = useState<"week" | "month">("week")
+  const [stats, setStats] = useState<any | null>(null)
+  useEffect(() => { api.get(`/api/my/stats?period=${period}`).then(setStats).catch(() => {}) }, [period])
+
+  return (
+    <div>
+      <div className="row" style={{ gap: 4, marginBottom: 12 }}>
+        <button className={"nav-btn" + (period === "week" ? " active" : "")} onClick={() => setPeriod("week")}>{tr("stats.week")}</button>
+        <button className={"nav-btn" + (period === "month" ? " active" : "")} onClick={() => setPeriod("month")}>{tr("stats.month")}</button>
+      </div>
+      {!stats ? <p className="muted">{tr("search.searching")}</p> : stats.enabled === false ? (
+        <p className="muted">{tr("mystats.disabled")}</p>
+      ) : (
+        <div className="card" style={{ padding: 14, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+          <div><b style={{ fontSize: 20 }}>{stats.done}</b><div className="muted" style={{ fontSize: 12 }}>{tr("mystats.done")}</div></div>
+          <div><b style={{ fontSize: 20 }}>{stats.on_time_pct}%</b><div className="muted" style={{ fontSize: 12 }}>{tr("mystats.on_time")}</div></div>
+          <div><b style={{ fontSize: 20 }}>{stats.overdue}</b><div className="muted" style={{ fontSize: 12 }}>{tr("mystats.overdue")}</div></div>
+          <div><b style={{ fontSize: 20 }}>{stats.most_active_list || "—"}</b><div className="muted" style={{ fontSize: 12 }}>{tr("mystats.most_active_list")}</div></div>
+          <div><b style={{ fontSize: 20 }}>{Math.round(stats.focus_seconds / 60)}</b><div className="muted" style={{ fontSize: 12 }}>{tr("mystats.focus_time")}</div></div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 type MySubTab = "all" | "today" | "overdue" | "review" | "no_deadline" | "mentions"
 
 export function MyTasksPage({ me }: { me: Me }) {
   const [tasks, setTasks] = useState<Task[]>([])
   const [open, setOpen] = useState<Task | null>(null)
-  const [tab, setTab] = useState<"list" | "week">("list")
+  const [tab, setTab] = useState<"list" | "week" | "stats">("list")
   const [subTab, setSubTab] = useState<MySubTab>("all")
   const [mentions, setMentions] = useState<any[]>([])
   const [favorites, setFavorites] = useState<Set<number>>(new Set())
@@ -573,6 +665,7 @@ export function MyTasksPage({ me }: { me: Me }) {
         <div className="row" style={{ gap: 4 }}>
           <button className={"nav-btn" + (tab === "list" ? " active" : "")} onClick={() => setTab("list")}>{tr("view.list")}</button>
           <button className={"nav-btn" + (tab === "week" ? " active" : "")} onClick={() => setTab("week")}>{tr("view.my_week")}</button>
+          <button className={"nav-btn" + (tab === "stats" ? " active" : "")} onClick={() => setTab("stats")}>{tr("mystats.title")}</button>
         </div>
       </div>
       {tab === "list" && (
@@ -608,6 +701,7 @@ export function MyTasksPage({ me }: { me: Me }) {
       {tab === "week" && (
         <MyWeekView tasks={tasks} favorites={favorites} onOpen={setOpen} onToggle={toggle} onToggleFavorite={toggleFavorite} />
       )}
+      {tab === "stats" && <MyStatsPanel />}
       {open && <TaskModal task={open} me={me} onClose={() => setOpen(null)} onChanged={load} />}
     </div>
   )

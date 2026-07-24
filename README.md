@@ -38,7 +38,9 @@ That's the whole install — one command. `todorio` ships as a single self-conta
 
 If the environment has no attachable terminal (no `/dev/tty` — rare, e.g. some automated pipelines), the script stops short and tells you to finish manually with `sudo todorio setup && sudo systemctl enable --now todorio`. You'd also run `sudo todorio setup` by hand if you ever want to redo setup later (new port, HTTPS, etc.); to just reset the root password use `sudo todorio resetroot` instead.
 
-`sudo todorio update` later fetches the newest release the same way (download + checksum verify) and replaces the running binary in place — since migrations are embedded, any new ones ship and apply automatically on the next start, no separate file sync needed.
+Re-running `install.sh` on a machine that's already set up (`/etc/todorio/config.json` exists) skips setup entirely and just restarts the service with whatever binary is currently installed — it's safe to run again, e.g. right after building a new binary yourself. Setup only ever runs automatically on a genuinely fresh install; the only other way to trigger it is the explicit `sudo todorio setup`.
+
+`sudo todorio update` later fetches the newest release the same way (download + checksum verify) and replaces the running binary in place — since migrations are embedded, any new ones ship and apply automatically on the next start, no separate file sync needed. Day-to-day service control doesn't need bare `systemctl`: `sudo todorio start` / `stop` / `restart` wrap the same systemd unit.
 
 To remove Todorio later, run `sudo todorio uninstall`. By default this removes the binary, service, and config; add `--saveconfig` to keep the config, or `--purge` to also delete application data and the database.
 

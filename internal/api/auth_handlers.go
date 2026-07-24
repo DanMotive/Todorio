@@ -139,6 +139,7 @@ func (a *API) handleLogin(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, http.StatusForbidden, "access disabled by the administrator")
 		return
 	}
+	a.enforceSessionLimit(r.Context(), id)
 	if err := auth.CreateSession(r.Context(), a.DB, w, id, r.UserAgent(), a.Cfg.HTTPS); err != nil {
 		errJSON(w, http.StatusInternalServerError, "session error")
 		return

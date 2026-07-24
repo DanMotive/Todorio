@@ -270,5 +270,19 @@
   "fields.type.user": "ユーザー",
   "fields.type.link": "リンク",
   "fields.type.rating": "評価",
-  "task.load_error": "タスクを読み込めませんでした"
+  "task.load_error": "タスクを読み込めませんでした",
+  "task.system.status_changed": "ステータスを変更: {from} → {to}",
+  "task.system.due_changed": "期限を変更しました",
+  "task.system.assignee_changed": "担当者を変更しました",
+  "mystats.title": "統計",
+  "mystats.done": "完了",
+  "mystats.on_time": "期限内",
+  "mystats.overdue": "期限切れ",
+  "mystats.most_active_list": "最も活発なリスト",
+  "mystats.focus_time": "フォーカス時間（分）",
+  "task.history": "履歴",
+  "task.history_empty": "以前のバージョンはありません。",
+  "task.history_restore": "復元",
+  "task.history_confirm_restore": "このバージョンを復元しますか？現在の値は置き換えられます（履歴にも保存されます）。",
+  "mystats.disabled": "このサーバーでは統計が無効になっています。"
 }

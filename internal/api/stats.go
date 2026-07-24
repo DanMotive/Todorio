@@ -17,6 +17,10 @@ func (a *API) handleStats(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, http.StatusForbidden, "no access to the space")
 		return
 	}
+	if !a.featureEnabled(r.Context(), "stats") {
+		writeJSON(w, http.StatusOK, map[string]any{"enabled": false})
+		return
+	}
 	interval := "7 days"
 	if r.URL.Query().Get("period") == "month" {
 		interval = "30 days"

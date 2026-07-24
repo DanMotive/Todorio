@@ -23,21 +23,24 @@ func (a *API) handleUploadAvatar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	maxMB, _ := strconv.Atoi(a.DB.Setting(r.Context(), "limits.uploads.max_file_size_mb", "10"))
-	if maxMB <= 0 {
-		maxMB = 10
+	maxMB := a.intSetting(r.Context(), "limits.uploads.max_file_size_mb", 10)
+	if maxMB > 0 {
+		r.Body = http.MaxBytesReader(w, r.Body, int64(maxMB)<<20)
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, int64(maxMB)<<20)
-	if err := r.ParseMultipartForm(int64(maxMB) << 20); err != nil {
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
 		errJSON(w, http.StatusRequestEntityTooLarge, "file is too large")
 		return
 	}
-	file, _, err := r.FormFile("file")
+	file, header, err := r.FormFile("file")
 	if err != nil {
 		errJSON(w, http.StatusBadRequest, "expected a file field")
 		return
 	}
 	defer file.Close()
+	if err := a.checkStorageQuota(r.Context(), header.Size); err != nil {
+		errJSON(w, http.StatusInsufficientStorage, err.Error())
+		return
+	}
 
 	head := make([]byte, 512)
 	n, _ := io.ReadFull(file, head)

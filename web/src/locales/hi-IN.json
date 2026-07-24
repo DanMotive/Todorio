@@ -270,5 +270,19 @@
   "fields.type.user": "उपयोगकर्ता",
   "fields.type.link": "लिंक",
   "fields.type.rating": "रेटिंग",
-  "task.load_error": "कार्य लोड नहीं हो सके"
+  "task.load_error": "कार्य लोड नहीं हो सके",
+  "task.system.status_changed": "स्थिति बदली: {from} → {to}",
+  "task.system.due_changed": "समय-सीमा बदली",
+  "task.system.assignee_changed": "असाइनी बदला",
+  "mystats.title": "आँकड़े",
+  "mystats.done": "पूर्ण",
+  "mystats.on_time": "समय पर",
+  "mystats.overdue": "समय-सीमा पार",
+  "mystats.most_active_list": "सबसे सक्रिय सूची",
+  "mystats.focus_time": "फ़ोकस मिनट",
+  "task.history": "इतिहास",
+  "task.history_empty": "कोई पिछला संस्करण नहीं है।",
+  "task.history_restore": "पुनर्स्थापित करें",
+  "task.history_confirm_restore": "यह संस्करण पुनर्स्थापित करें? मौजूदा मान बदल दिए जाएंगे (और इतिहास में भी सहेजे जाएंगे)।",
+  "mystats.disabled": "इस सर्वर पर आँकड़े अक्षम हैं।"
 }

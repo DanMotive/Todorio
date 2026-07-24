@@ -270,5 +270,19 @@
   "fields.type.user": "사용자",
   "fields.type.link": "링크",
   "fields.type.rating": "평점",
-  "task.load_error": "작업을 불러올 수 없습니다"
+  "task.load_error": "작업을 불러올 수 없습니다",
+  "task.system.status_changed": "상태를 변경함: {from} → {to}",
+  "task.system.due_changed": "마감일을 변경함",
+  "task.system.assignee_changed": "담당자를 변경함",
+  "mystats.title": "통계",
+  "mystats.done": "완료",
+  "mystats.on_time": "제시간에",
+  "mystats.overdue": "기한 초과",
+  "mystats.most_active_list": "가장 활발한 목록",
+  "mystats.focus_time": "포커스 시간(분)",
+  "task.history": "기록",
+  "task.history_empty": "이전 버전이 없습니다.",
+  "task.history_restore": "복원",
+  "task.history_confirm_restore": "이 버전을 복원하시겠습니까? 현재 값이 교체됩니다(이 또한 기록에 저장됩니다).",
+  "mystats.disabled": "이 서버에서는 통계가 비활성화되어 있습니다."
 }

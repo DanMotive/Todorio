@@ -270,5 +270,19 @@
   "fields.type.user": "Користувач",
   "fields.type.link": "Посилання",
   "fields.type.rating": "Рейтинг",
-  "task.load_error": "Не вдалося завантажити задачі"
+  "task.load_error": "Не вдалося завантажити задачі",
+  "task.system.status_changed": "змінив(ла) статус: {from} → {to}",
+  "task.system.due_changed": "змінив(ла) дедлайн",
+  "task.system.assignee_changed": "змінив(ла) виконавця",
+  "mystats.title": "Статистика",
+  "mystats.done": "Закрито",
+  "mystats.on_time": "Вчасно",
+  "mystats.overdue": "Прострочено",
+  "mystats.most_active_list": "Найактивніший список",
+  "mystats.focus_time": "Хвилин у фокусі",
+  "task.history": "Історія",
+  "task.history_empty": "Попередніх версій немає.",
+  "task.history_restore": "Відновити",
+  "task.history_confirm_restore": "Відновити цю версію? Поточні значення будуть замінені (і теж збережуться в історії).",
+  "mystats.disabled": "Статистику вимкнено на цьому сервері."
 }

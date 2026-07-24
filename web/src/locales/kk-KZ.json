@@ -270,5 +270,19 @@
   "fields.type.user": "Пайдаланушы",
   "fields.type.link": "Сілтеме",
   "fields.type.rating": "Рейтинг",
-  "task.load_error": "Тапсырмаларды жүктеу мүмкін болмады"
+  "task.load_error": "Тапсырмаларды жүктеу мүмкін болмады",
+  "task.system.status_changed": "мәртебені өзгертті: {from} → {to}",
+  "task.system.due_changed": "мерзімді өзгертті",
+  "task.system.assignee_changed": "орындаушыны өзгертті",
+  "mystats.title": "Статистика",
+  "mystats.done": "Жабылды",
+  "mystats.on_time": "Уақытылы",
+  "mystats.overdue": "Мерзімі өткен",
+  "mystats.most_active_list": "Ең белсенді тізім",
+  "mystats.focus_time": "Фокус минуттары",
+  "task.history": "Тарих",
+  "task.history_empty": "Алдыңғы нұсқалар жоқ.",
+  "task.history_restore": "Қалпына келтіру",
+  "task.history_confirm_restore": "Осы нұсқаны қалпына келтіру керек пе? Ағымдағы мәндер ауыстырылады (олар да тарихта сақталады).",
+  "mystats.disabled": "Бұл серверде статистика өшірілген."
 }

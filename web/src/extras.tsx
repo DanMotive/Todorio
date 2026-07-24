@@ -96,9 +96,10 @@ export function DigestModal() {
 
 type StatsMember = { id: number; username: string; name: string; done: number; done_weight: number; overdue: number }
 type Stats = {
-  period: string
-  members: StatsMember[]
-  caption: { part1: string; part2: string; category: string }
+  enabled?: boolean
+  period?: string
+  members?: StatsMember[]
+  caption?: { part1: string; part2: string; category: string }
   best?: StatsMember
 }
 
@@ -108,8 +109,9 @@ export function StatsCard({ spaceId }: { spaceId: number }) {
   useEffect(() => {
     api.get(`/api/spaces/${spaceId}/stats?period=${period}`).then(setStats).catch(() => {})
   }, [spaceId, period])
-  if (!stats || !stats.members.length) return null
-  const max = Math.max(...stats.members.map((m) => m.done_weight), 1)
+  if (!stats || stats.enabled === false || !stats.members?.length) return null
+  const members = stats.members
+  const max = Math.max(...members.map((m) => m.done_weight), 1)
   return (
     <div className="card" style={{ padding: 14, marginBottom: 12 }}>
       <div className="row" style={{ justifyContent: "space-between" }}>
@@ -119,9 +121,9 @@ export function StatsCard({ spaceId }: { spaceId: number }) {
           <button className={"nav-btn" + (period === "month" ? " active" : "")} onClick={() => setPeriod("month")}>{tr("stats.month")}</button>
         </span>
       </div>
-      {(stats.caption.part1 || stats.caption.part2) && (
+      {(stats.caption?.part1 || stats.caption?.part2) && (
         <div className="muted" style={{ margin: "6px 0 10px" }}>
-          {stats.caption.part1} {stats.caption.part2}
+          {stats.caption?.part1} {stats.caption?.part2}
         </div>
       )}
       {stats.best && (
@@ -129,7 +131,7 @@ export function StatsCard({ spaceId }: { spaceId: number }) {
           <IconAward size={15} /> {tr("stats.best")}: <b>@{stats.best.username}</b> · <IconCheckCircle size={13} /> {stats.best.done}
         </div>
       )}
-      {stats.members.map((m) => (
+      {members.map((m) => (
         <div key={m.id} style={{ marginBottom: 6 }}>
           <div className="row" style={{ justifyContent: "space-between", fontSize: 13 }}>
             <span>@{m.username}</span>

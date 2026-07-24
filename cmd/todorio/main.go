@@ -69,6 +69,9 @@ func usage() {
 
 	fmt.Println(term.Bold("Maintenance"))
 	cmdLine("todorio status", "Diagnostics (service, DB, disk, SSL, backups) + server URL")
+	cmdLine("todorio start", "Start the systemd service")
+	cmdLine("todorio stop", "Stop the systemd service")
+	cmdLine("todorio restart", "Restart the systemd service")
 	cmdLine("todorio resetroot [flags]", "Reset the root admin's username and password")
 	subLine("--username <name>", "New root admin username (default: keep current)")
 	subLine("--yes", "Skip the confirmation prompt")
@@ -118,6 +121,10 @@ func main() {
 	case "status", "doctor": // "doctor" kept as a hidden alias for backward compatibility
 		cfg, _ := config.Load() // status also works without a config — it will show what's missing
 		if err := ops.Status(cfg, version); err != nil {
+			fail(err)
+		}
+	case "start", "stop", "restart":
+		if err := ops.ServiceControl(os.Args[1]); err != nil {
 			fail(err)
 		}
 	case "resetroot":

@@ -5,7 +5,10 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"io/fs"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -76,7 +79,10 @@ func (a *API) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/tasks/{id}", a.handleArchiveTask)
 	mux.HandleFunc("POST /api/tasks/{id}/restore", a.handleRestoreTask)
 	mux.HandleFunc("DELETE /api/tasks/{id}/permanent", a.handleDeleteTaskPermanent)
+	mux.HandleFunc("GET /api/tasks/{id}/versions", a.handleListTaskVersions)
+	mux.HandleFunc("POST /api/tasks/{id}/versions/{version_id}/restore", a.handleRestoreTaskVersion)
 	mux.HandleFunc("GET /api/my/tasks", a.handleMyTasks)
+	mux.HandleFunc("GET /api/my/stats", a.handleMyStats)
 
 	// --- social interactions ---
 	mux.HandleFunc("GET /api/tasks/{id}/comments", a.handleListComments)
@@ -185,6 +191,102 @@ func readJSON(r *http.Request, dst any) error {
 
 func pathID(r *http.Request) (int64, error) {
 	return strconv.ParseInt(r.PathValue("id"), 10, 64)
+}
+
+// pathIDNamed reads a specific {name} path parameter — for routes with more than one ID segment,
+// e.g. /api/tasks/{id}/versions/{version_id}/restore, where plain pathID's hardcoded "id" only
+// gets the first one.
+func pathIDNamed(r *http.Request, name string) (int64, error) {
+	return strconv.ParseInt(r.PathValue(name), 10, 64)
+}
+
+// intSetting reads a numeric limit setting. Per spec section 10, "0 = no limit" is a real,
+// deliberate admin choice distinct from "not configured" — a naive `strconv.Atoi` + `if n > 0`
+// check (the pattern this replaces at every limit call site) can't tell those apart and silently
+// falls back to a hardcoded default for both, so an admin explicitly setting 0 never actually got
+// "unlimited". This returns `def` only when the key has no stored value or an unparseable one;
+// an explicitly stored 0 is returned as 0, and callers are expected to treat 0 as "no limit".
+// enforceSessionLimit evicts the oldest active sessions for userID until creating one more
+// session would land exactly at the configured limit (spec section 10 example: "10 sessions per
+// user"). Rejecting the login outright would be a worse experience than quietly signing the
+// oldest device out — the same tradeoff most apps with a "log out other devices" limit make.
+// limit <= 0 (including the "not configured" default) means unlimited: nothing to do.
+func (a *API) enforceSessionLimit(ctx context.Context, userID int64) {
+	limit := a.intSetting(ctx, "limits.login.max_sessions_per_user", 0)
+	if limit <= 0 {
+		return
+	}
+	var count int
+	_ = a.DB.Pool.QueryRow(ctx, `SELECT count(*) FROM sessions WHERE user_id=$1 AND expires_at > now()`, userID).Scan(&count)
+	if count < limit {
+		return
+	}
+	toEvict := count - limit + 1
+	_, _ = a.DB.Pool.Exec(ctx, `
+		DELETE FROM sessions WHERE id IN (
+			SELECT id FROM sessions WHERE user_id=$1 AND expires_at > now()
+			ORDER BY created_at ASC LIMIT $2)`, userID, toEvict)
+}
+
+// dirSize walks root and sums the size of every regular file in it — used for the total server
+// storage quota below (spec section 10 example: "20 GB total"). A plain recursive walk rather
+// than a DB-tracked running counter: a self-hosted instance realistically has at most a few
+// thousand uploaded files, so a walk is fast, and unlike a counter it can never drift from what's
+// actually on disk (crashes, manual file deletions, or a bug in the bookkeeping can't desync it).
+func dirSize(root string) (int64, error) {
+	var total int64
+	err := filepath.WalkDir(root, func(_ string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil // skip entries we can't stat (e.g. a race with a concurrent delete) instead of failing the whole walk
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if info, ierr := d.Info(); ierr == nil {
+			total += info.Size()
+		}
+		return nil
+	})
+	return total, err
+}
+
+// checkStorageQuota returns a user-facing error if accepting `incoming` more bytes would push the
+// whole uploads directory (every task attachment and avatar — everything under cfg.UploadsDir)
+// past limits.uploads.max_total_storage_mb. 0 (the default) means unlimited — the whole check is
+// skipped, so upgrading never suddenly caps an existing instance.
+func (a *API) checkStorageQuota(ctx context.Context, incoming int64) error {
+	maxMB := a.intSetting(ctx, "limits.uploads.max_total_storage_mb", 0)
+	if maxMB <= 0 {
+		return nil
+	}
+	used, err := dirSize(a.Cfg.UploadsDir)
+	if err != nil {
+		return nil // fail open: a storage hiccup shouldn't block every upload
+	}
+	if used+incoming > int64(maxMB)<<20 {
+		return fmt.Errorf("server storage limit reached (%d MB total) — ask an admin to free up space or raise the limit", maxMB)
+	}
+	return nil
+}
+
+// featureEnabled reads a global policy.features.<name> on/off toggle (spec section 10: comments,
+// reactions, attachments, versions, and stats can each be switched off instance-wide). Every
+// feature defaults to enabled — these are opt-out, not opt-in, so upgrading never silently turns
+// something off that was already in use.
+func (a *API) featureEnabled(ctx context.Context, name string) bool {
+	return a.DB.Setting(ctx, "policy.features."+name, "true") != "false"
+}
+
+func (a *API) intSetting(ctx context.Context, key string, def int) int {
+	raw := a.DB.Setting(ctx, key, "")
+	if raw == "" {
+		return def
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil {
+		return def
+	}
+	return n
 }
 
 // requireUser — active users only. A pending user can only reach /api/me and password change.

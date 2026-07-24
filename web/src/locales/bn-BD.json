@@ -270,5 +270,19 @@
   "fields.type.user": "ব্যবহারকারী",
   "fields.type.link": "লিংক",
   "fields.type.rating": "রেটিং",
-  "task.load_error": "কাজ লোড করা যায়নি"
+  "task.load_error": "কাজ লোড করা যায়নি",
+  "task.system.status_changed": "স্ট্যাটাস পরিবর্তন করেছেন: {from} → {to}",
+  "task.system.due_changed": "সময়সীমা পরিবর্তন করেছেন",
+  "task.system.assignee_changed": "দায়িত্বপ্রাপ্ত ব্যক্তি পরিবর্তন করেছেন",
+  "mystats.title": "পরিসংখ্যান",
+  "mystats.done": "সম্পন্ন",
+  "mystats.on_time": "সময়মতো",
+  "mystats.overdue": "মেয়াদোত্তীর্ণ",
+  "mystats.most_active_list": "সবচেয়ে সক্রিয় তালিকা",
+  "mystats.focus_time": "ফোকাস মিনিট",
+  "task.history": "ইতিহাস",
+  "task.history_empty": "কোনো পূর্ববর্তী সংস্করণ নেই।",
+  "task.history_restore": "পুনরুদ্ধার করুন",
+  "task.history_confirm_restore": "এই সংস্করণটি পুনরুদ্ধার করবেন? বর্তমান মানগুলো প্রতিস্থাপিত হবে (এবং ইতিহাসেও সংরক্ষিত হবে)।",
+  "mystats.disabled": "এই সার্ভারে পরিসংখ্যান নিষ্ক্রিয় করা আছে।"
 }

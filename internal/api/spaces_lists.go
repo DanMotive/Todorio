@@ -211,6 +211,16 @@ func (a *API) handleCreateList(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, http.StatusForbidden, "no permission to create a list")
 		return
 	}
+	if limit := a.intSetting(r.Context(), "limits.content.lists_per_user", 0); limit > 0 {
+		var count int
+		_ = a.DB.Pool.QueryRow(r.Context(), `
+			SELECT count(*) FROM lists l JOIN list_members lm ON lm.list_id=l.id
+			WHERE lm.user_id=$1 AND lm.permission='owner' AND l.archived_at IS NULL`, u.ID).Scan(&count)
+		if count >= limit {
+			errJSON(w, http.StatusForbidden, "you've reached the maximum number of lists")
+			return
+		}
+	}
 	var in struct {
 		Name      string `json:"name"`
 		IsPrivate bool   `json:"is_private"`

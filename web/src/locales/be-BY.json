@@ -270,5 +270,19 @@
   "fields.type.user": "Карыстальнік",
   "fields.type.link": "Спасылка",
   "fields.type.rating": "Рэйтынг",
-  "task.load_error": "Не ўдалося загрузіць задачы"
+  "task.load_error": "Не ўдалося загрузіць задачы",
+  "task.system.status_changed": "змяніў(ла) статус: {from} → {to}",
+  "task.system.due_changed": "змяніў(ла) дэдлайн",
+  "task.system.assignee_changed": "змяніў(ла) выканаўцу",
+  "mystats.title": "Статыстыка",
+  "mystats.done": "Закрыта",
+  "mystats.on_time": "Своечасова",
+  "mystats.overdue": "Пратэрмінавана",
+  "mystats.most_active_list": "Самы актыўны спіс",
+  "mystats.focus_time": "Хвілін у фокусе",
+  "task.history": "Гісторыя",
+  "task.history_empty": "Папярэдніх версій няма.",
+  "task.history_restore": "Аднавіць",
+  "task.history_confirm_restore": "Аднавіць гэтую версію? Бягучыя значэнні будуць заменены (і таксама захаваюцца ў гісторыі).",
+  "mystats.disabled": "Статыстыка адключана на гэтым серверы."
 }

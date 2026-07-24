@@ -11,6 +11,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"os/exec"
@@ -34,6 +35,47 @@ const repo = "DanMotive/Todorio"
 func ok(msg string)   { fmt.Println(" ", term.Green("[OK]"), msg) }
 func bad(msg string)  { fmt.Println(" ", term.Red("[FAIL]"), msg) }
 func warn(msg string) { fmt.Println(" ", term.Yellow("[WARN]"), msg) }
+
+// dirSize walks root and sums the size of every regular file — mirrors internal/api's own
+// dirSize (used there to enforce limits.uploads.max_total_storage_mb); duplicated rather than
+// shared across packages for a helper this small.
+func dirSize(root string) (int64, error) {
+	var total int64
+	err := filepath.WalkDir(root, func(_ string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if info, ierr := d.Info(); ierr == nil {
+			total += info.Size()
+		}
+		return nil
+	})
+	return total, err
+}
+
+// ServiceControl runs `systemctl <action> todorio` — the same unit install.sh creates — so
+// day-to-day service management doesn't require remembering the unit name or typing out
+// `systemctl ... todorio` by hand. `action` is one of "start", "stop", "restart".
+func ServiceControl(action string) error {
+	if _, err := exec.LookPath("systemctl"); err != nil {
+		return fmt.Errorf("systemctl not found — this command only supports systemd installs (see scripts/install.sh)")
+	}
+	if _, err := os.Stat("/etc/systemd/system/todorio.service"); err != nil {
+		return fmt.Errorf("todorio.service not found — run `sudo todorio setup` first, or check that install.sh completed")
+	}
+	cmd := exec.Command("systemctl", action, "todorio")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("systemctl %s todorio: %w", action, err)
+	}
+	verbs := map[string]string{"start": "started", "stop": "stopped", "restart": "restarted"}
+	ok("todorio " + verbs[action])
+	return nil
+}
 
 // certExpiry reads a PEM certificate file and returns its NotAfter (expiry) date.
 func certExpiry(certFile string) (time.Time, error) {
@@ -81,7 +123,11 @@ func Status(cfg config.Config, version string) error {
 		probe := filepath.Join(cfg.UploadsDir, ".doctor_probe")
 		if err := os.WriteFile(probe, []byte("ok"), 0o600); err == nil {
 			_ = os.Remove(probe)
-			ok("storage is writable: " + cfg.UploadsDir)
+			if size, serr := dirSize(cfg.UploadsDir); serr == nil {
+				ok(fmt.Sprintf("storage is writable: %s (%.1f MB used)", cfg.UploadsDir, float64(size)/(1<<20)))
+			} else {
+				ok("storage is writable: " + cfg.UploadsDir)
+			}
 		} else {
 			bad("storage is not writable: " + cfg.UploadsDir)
 		}

@@ -270,5 +270,19 @@
   "fields.type.user": "Kullanıcı",
   "fields.type.link": "Bağlantı",
   "fields.type.rating": "Değerlendirme",
-  "task.load_error": "Görevler yüklenemedi"
+  "task.load_error": "Görevler yüklenemedi",
+  "task.system.status_changed": "durumu değiştirdi: {from} → {to}",
+  "task.system.due_changed": "son tarihi değiştirdi",
+  "task.system.assignee_changed": "atananı değiştirdi",
+  "mystats.title": "İstatistikler",
+  "mystats.done": "Tamamlanan",
+  "mystats.on_time": "Zamanında",
+  "mystats.overdue": "Gecikmiş",
+  "mystats.most_active_list": "En aktif liste",
+  "mystats.focus_time": "Odak dakikası",
+  "task.history": "Geçmiş",
+  "task.history_empty": "Önceki sürüm yok.",
+  "task.history_restore": "Geri yükle",
+  "task.history_confirm_restore": "Bu sürüm geri yüklensin mi? Mevcut değerler değiştirilecek (bu da geçmişe kaydedilecek).",
+  "mystats.disabled": "Bu sunucuda istatistikler devre dışı."
 }

@@ -132,6 +132,15 @@ func (a *API) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, http.StatusForbidden, "no permission to create tasks")
 		return
 	}
+	if limit := a.intSetting(r.Context(), "limits.content.tasks_per_list", 0); limit > 0 {
+		var count int
+		_ = a.DB.Pool.QueryRow(r.Context(),
+			`SELECT count(*) FROM tasks WHERE list_id=$1 AND archived_at IS NULL`, listID).Scan(&count)
+		if count >= limit {
+			errJSON(w, http.StatusForbidden, "this list has reached its maximum number of tasks")
+			return
+		}
+	}
 	var in struct {
 		Title       string     `json:"title"`
 		Description *string    `json:"description"`
@@ -222,10 +231,12 @@ func (a *API) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// snapshot of the version before the change
-	_, _ = a.DB.Pool.Exec(r.Context(), `
-		INSERT INTO task_versions(task_id, editor_id, snapshot)
-		SELECT id, $2, to_jsonb(t) FROM tasks t WHERE id=$1`, id, u.ID)
+	// snapshot of the version before the change (unless versioning is disabled instance-wide)
+	if a.featureEnabled(r.Context(), "versions") {
+		_, _ = a.DB.Pool.Exec(r.Context(), `
+			INSERT INTO task_versions(task_id, editor_id, snapshot)
+			SELECT id, $2, to_jsonb(t) FROM tasks t WHERE id=$1`, id, u.ID)
+	}
 
 	_, err = a.DB.Pool.Exec(r.Context(), `
 		UPDATE tasks SET
@@ -273,17 +284,45 @@ func (a *API) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 	} else if in.AssigneeID != nil {
 		notifyAssignee = in.AssigneeID
 	}
+	statusChanged := in.Status != nil && *in.Status != oldStatus
+	dueChanged := (in.ClearDueAt && oldDueAt != nil) || (in.DueAt != nil && (oldDueAt == nil || !in.DueAt.Equal(*oldDueAt)))
+	assigneeChanged := (in.ClearAssignee && oldAssignee != nil) || (in.AssigneeID != nil && (oldAssignee == nil || *oldAssignee != *in.AssigneeID))
 	if notifyAssignee != nil && *notifyAssignee != u.ID {
-		if in.Status != nil && *in.Status != oldStatus {
+		if statusChanged {
 			a.notify(r, *notifyAssignee, "status_changed", map[string]any{"task_id": id, "title": title, "status": *in.Status, "by": u.Username})
 		}
-		dueChanged := (in.ClearDueAt && oldDueAt != nil) || (in.DueAt != nil && (oldDueAt == nil || !in.DueAt.Equal(*oldDueAt)))
 		if dueChanged {
 			a.notify(r, *notifyAssignee, "due_changed", map[string]any{"task_id": id, "title": title, "by": u.Username})
 		}
 	}
+	// Same three changes also land as system records in the task's own comment feed (spec section
+	// 7: "системные записи в ленте"), visible to everyone looking at the task, independent of who
+	// is or isn't assigned/notified above. Body is small structured JSON, not a frozen sentence in
+	// whichever language the editor happened to be using — the frontend formats it with tr().
+	if statusChanged {
+		a.insertSystemComment(r, id, u.ID, "status_changed", map[string]any{"from": oldStatus, "to": *in.Status})
+	}
+	if dueChanged {
+		a.insertSystemComment(r, id, u.ID, "due_changed", nil)
+	}
+	if assigneeChanged {
+		a.insertSystemComment(r, id, u.ID, "assignee_changed", nil)
+	}
 	a.publishToListMembers(r, listID, events.Event{Type: "task.updated", Data: map[string]any{"task_id": id, "list_id": listID}})
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// insertSystemComment records a system event (status/due/assignee change, ...) as an is_system
+// comment row, so it shows up inline in the task's own comment feed for everyone looking at it —
+// distinct from notify(), which pings one specific recipient.
+func (a *API) insertSystemComment(r *http.Request, taskID, authorID int64, kind string, extra map[string]any) {
+	body := map[string]any{"type": kind}
+	for k, v := range extra {
+		body[k] = v
+	}
+	b, _ := json.Marshal(body)
+	_, _ = a.DB.Pool.Exec(r.Context(),
+		`INSERT INTO comments(task_id, author_id, body, is_system) VALUES($1,$2,$3,true)`, taskID, authorID, string(b))
 }
 
 // DELETE /api/tasks/{id} — moves to archive.

@@ -25,6 +25,10 @@ func (a *API) handleUploadAttachment(w http.ResponseWriter, r *http.Request) {
 	if u == nil {
 		return
 	}
+	if !a.featureEnabled(r.Context(), "attachments") {
+		errJSON(w, http.StatusForbidden, "attachments are disabled on this server")
+		return
+	}
 	taskID, err := pathID(r)
 	if err != nil {
 		errJSON(w, http.StatusBadRequest, "invalid id")
@@ -40,21 +44,28 @@ func (a *API) handleUploadAttachment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	maxMB, _ := strconv.Atoi(a.DB.Setting(r.Context(), "limits.uploads.max_file_size_mb", "10"))
-	if maxMB <= 0 {
-		maxMB = 10
+	maxMB := a.intSetting(r.Context(), "limits.uploads.max_file_size_mb", 10)
+	if maxMB > 0 {
+		r.Body = http.MaxBytesReader(w, r.Body, int64(maxMB)<<20)
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, int64(maxMB)<<20)
-	if err := r.ParseMultipartForm(int64(maxMB) << 20); err != nil {
-		errJSON(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("file is larger than %d MB", maxMB))
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		msg := "file is too large"
+		if maxMB > 0 {
+			msg = fmt.Sprintf("file is larger than %d MB", maxMB)
+		}
+		errJSON(w, http.StatusRequestEntityTooLarge, msg)
 		return
 	}
-	file, _, err := r.FormFile("file")
+	file, header, err := r.FormFile("file")
 	if err != nil {
 		errJSON(w, http.StatusBadRequest, "expected a file field")
 		return
 	}
 	defer file.Close()
+	if err := a.checkStorageQuota(r.Context(), header.Size); err != nil {
+		errJSON(w, http.StatusInsufficientStorage, err.Error())
+		return
+	}
 
 	// Sniff the real file type — we don't trust the extension or Content-Type.
 	head := make([]byte, 512)

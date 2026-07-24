@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
-	"strconv"
 	"time"
 
 	"github.com/DanMotive/Todorio/internal/events"
@@ -33,7 +32,7 @@ func (a *API) handleListComments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rows, err := a.DB.Pool.Query(r.Context(), `
-		SELECT c.id, c.author_id, u.username, c.body, c.created_at, c.edited_at,
+		SELECT c.id, c.author_id, u.username, c.body, c.created_at, c.edited_at, c.is_system,
 			COALESCE((SELECT json_agg(json_build_object('emoji', rx.emoji, 'user_id', rx.user_id))
 				FROM reactions rx WHERE rx.target_type='comment' AND rx.target_id=c.id), '[]'::json)
 		FROM comments c JOIN users u ON u.id=c.author_id
@@ -50,10 +49,11 @@ func (a *API) handleListComments(w http.ResponseWriter, r *http.Request) {
 		var username, body string
 		var createdAt, reactions any
 		var editedAt *time.Time
-		if rows.Scan(&id, &authorID, &username, &body, &createdAt, &editedAt, &reactions) == nil {
+		var isSystem bool
+		if rows.Scan(&id, &authorID, &username, &body, &createdAt, &editedAt, &isSystem, &reactions) == nil {
 			comments = append(comments, map[string]any{
 				"id": id, "author_id": authorID, "author": username, "body": body,
-				"created_at": createdAt, "edited_at": editedAt, "reactions": reactions,
+				"created_at": createdAt, "edited_at": editedAt, "is_system": isSystem, "reactions": reactions,
 			})
 		}
 	}
@@ -64,6 +64,10 @@ func (a *API) handleListComments(w http.ResponseWriter, r *http.Request) {
 func (a *API) handleCreateComment(w http.ResponseWriter, r *http.Request) {
 	u := a.requireUser(w, r)
 	if u == nil {
+		return
+	}
+	if !a.featureEnabled(r.Context(), "comments") {
+		errJSON(w, http.StatusForbidden, "comments are disabled on this server")
 		return
 	}
 	taskID, err := pathID(r)
@@ -84,6 +88,15 @@ func (a *API) handleCreateComment(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, http.StatusForbidden, "no access")
 		return
 	}
+	if limit := a.intSetting(r.Context(), "limits.content.comments_per_task", 0); limit > 0 {
+		var count int
+		_ = a.DB.Pool.QueryRow(r.Context(),
+			`SELECT count(*) FROM comments WHERE task_id=$1 AND deleted_at IS NULL`, taskID).Scan(&count)
+		if count >= limit {
+			errJSON(w, http.StatusForbidden, "this task has reached its maximum number of comments")
+			return
+		}
+	}
 	var in struct {
 		Body string `json:"body"`
 	}
@@ -91,11 +104,8 @@ func (a *API) handleCreateComment(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, http.StatusBadRequest, "comment cannot be empty")
 		return
 	}
-	maxLen := 4000
-	if n, err := strconv.Atoi(a.DB.Setting(r.Context(), "limits.content.comment_max_len", "4000")); err == nil && n > 0 {
-		maxLen = n
-	}
-	if len(in.Body) > maxLen {
+	maxLen := a.intSetting(r.Context(), "limits.content.comment_max_len", 4000)
+	if maxLen > 0 && len(in.Body) > maxLen {
 		errJSON(w, http.StatusBadRequest, fmt.Sprintf("comment is longer than %d characters", maxLen))
 		return
 	}
@@ -149,16 +159,13 @@ func (a *API) handleUpdateComment(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, http.StatusBadRequest, "comment cannot be empty")
 		return
 	}
-	maxLen := 4000
-	if n, err := strconv.Atoi(a.DB.Setting(r.Context(), "limits.content.comment_max_len", "4000")); err == nil && n > 0 {
-		maxLen = n
-	}
-	if len(in.Body) > maxLen {
+	maxLen := a.intSetting(r.Context(), "limits.content.comment_max_len", 4000)
+	if maxLen > 0 && len(in.Body) > maxLen {
 		errJSON(w, http.StatusBadRequest, fmt.Sprintf("comment is longer than %d characters", maxLen))
 		return
 	}
 	tag, err := a.DB.Pool.Exec(r.Context(),
-		`UPDATE comments SET body=$2, edited_at=now() WHERE id=$1 AND author_id=$3 AND deleted_at IS NULL`,
+		`UPDATE comments SET body=$2, edited_at=now() WHERE id=$1 AND author_id=$3 AND deleted_at IS NULL AND is_system=false`,
 		id, in.Body, u.ID)
 	if err != nil || tag.RowsAffected() == 0 {
 		errJSON(w, http.StatusForbidden, "you can only edit your own comments")
@@ -179,7 +186,7 @@ func (a *API) handleDeleteComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tag, err := a.DB.Pool.Exec(r.Context(),
-		`UPDATE comments SET deleted_at=now() WHERE id=$1 AND ($2 OR author_id=$3)`, id, u.IsAdmin(), u.ID)
+		`UPDATE comments SET deleted_at=now() WHERE id=$1 AND ($2 OR author_id=$3) AND is_system=false`, id, u.IsAdmin(), u.ID)
 	if err != nil || tag.RowsAffected() == 0 {
 		errJSON(w, http.StatusForbidden, "you can only delete your own comments")
 		return
@@ -191,6 +198,10 @@ func (a *API) handleDeleteComment(w http.ResponseWriter, r *http.Request) {
 func (a *API) handleToggleReaction(w http.ResponseWriter, r *http.Request) {
 	u := a.requireUser(w, r)
 	if u == nil {
+		return
+	}
+	if !a.featureEnabled(r.Context(), "reactions") {
+		errJSON(w, http.StatusForbidden, "reactions are disabled on this server")
 		return
 	}
 	var in struct {

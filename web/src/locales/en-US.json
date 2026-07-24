@@ -270,5 +270,19 @@
   "fields.type.user": "User",
   "fields.type.link": "Link",
   "fields.type.rating": "Rating",
-  "task.load_error": "Couldn't load tasks"
+  "task.load_error": "Couldn't load tasks",
+  "task.system.status_changed": "changed status: {from} → {to}",
+  "task.system.due_changed": "changed the deadline",
+  "task.system.assignee_changed": "changed the assignee",
+  "mystats.title": "Stats",
+  "mystats.done": "Completed",
+  "mystats.on_time": "On time",
+  "mystats.overdue": "Overdue",
+  "mystats.most_active_list": "Most active list",
+  "mystats.focus_time": "Focus minutes",
+  "task.history": "History",
+  "task.history_empty": "No previous versions.",
+  "task.history_restore": "Restore",
+  "task.history_confirm_restore": "Restore this version? Current values will be replaced (and saved to history too).",
+  "mystats.disabled": "Statistics are disabled on this server."
 }

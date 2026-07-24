@@ -270,5 +270,19 @@
   "fields.type.user": "Пользователь",
   "fields.type.link": "Ссылка",
   "fields.type.rating": "Рейтинг",
-  "task.load_error": "Не удалось загрузить задачи"
+  "task.load_error": "Не удалось загрузить задачи",
+  "task.system.status_changed": "изменил(а) статус: {from} → {to}",
+  "task.system.due_changed": "изменил(а) дедлайн",
+  "task.system.assignee_changed": "изменил(а) исполнителя",
+  "mystats.title": "Статистика",
+  "mystats.done": "Закрыто",
+  "mystats.on_time": "Вовремя",
+  "mystats.overdue": "Просрочено",
+  "mystats.most_active_list": "Самый активный список",
+  "mystats.focus_time": "Минут в фокусе",
+  "task.history": "История",
+  "task.history_empty": "Предыдущих версий нет.",
+  "task.history_restore": "Восстановить",
+  "task.history_confirm_restore": "Восстановить эту версию? Текущие значения будут заменены (и тоже сохранятся в истории).",
+  "mystats.disabled": "Статистика отключена на этом сервере."
 }

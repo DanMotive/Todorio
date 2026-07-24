@@ -89,6 +89,63 @@ and a bugfix bundle). No `.git` history was touched — only source files, per u
   to `AdminPage`/`InvitesCard`/`ServerSettingsCard`. Comment editing (`comments.edited_at` existed in
   the schema, unused) is now wired end-to-end with an "(edited)" marker.
 
+### Fixed — follow-up round (user-reported)
+
+- **`toLocaleDateString`/`toLocaleString` crashed whenever IT-slang style was active.** The above
+  "dates follow the app language" fix passed `getLocale()` straight into the browser's Intl API, but
+  `getLocale()` can return `"ru-RU-it"`/`"en-US-it"` — our own convention for picking the slang
+  translation pack, not a real BCP-47 tag — which throws `RangeError: Incorrect locale information
+  provided` (reproduced directly in Node). This broke rendering on any page showing a date while
+  IT-style was selected. Added `getFormattingLocale()` (i18n.ts), which strips the `-it` suffix
+  before any Intl call; replaced all 10 call sites.
+- **Task creation silently "failed"**: the new-task form ignored errors (`.catch(() => {})`) and
+  unconditionally cleared its inputs regardless of whether the request actually succeeded, so a
+  failed `POST` looked identical to "it worked" — no task appeared, no error, no clue why. Same
+  failure shape as an earlier, real bug in this project (a missing DB column reported as "tasks
+  aren't created"). `ListView` now surfaces the actual server error under the form (and under the
+  list, if loading tasks fails) instead of swallowing it.
+- **`todorio start` / `stop` / `restart`**: new commands wrapping `systemctl <action> todorio`, so
+  day-to-day service control doesn't require remembering the unit name.
+- **`install.sh` no longer re-prompts setup on an already-configured machine.** It used to run
+  `todorio setup` unconditionally every time, including when re-run just to pick up a freshly built
+  binary. It now skips straight to restarting the service if `/etc/todorio/config.json` already
+  exists; setup only runs automatically on a genuinely fresh install, or explicitly via
+  `sudo todorio setup`.
+
+### Added — more spec sections closed out
+
+- **Personal statistics** (spec section 14): `GET /api/my/stats` aggregates completed/on-time/
+  overdue counts, most-active list, and focus time across *all* of a user's spaces (not just one),
+  surfaced as a new "Stats" tab on the "My tasks" page. `/api/focus/stats` existed before with no
+  UI; this supersedes it for that purpose.
+- **Task version history** (spec section 11): `task_versions` has recorded a snapshot on every
+  edit since early on, but nothing ever read it back. Added `GET /api/tasks/{id}/versions` and
+  `POST .../versions/{id}/restore` (itself undoable — restoring snapshots the pre-restore state
+  too), plus a "History" section in the task modal.
+- **System records in the task feed** (spec section 7): status/deadline/assignee changes were
+  previously only ever a notification to the assignee. `comments.is_system` existed but was never
+  written; `handleUpdateTask` now also inserts a small structured system comment for each of these
+  three change types, visible to everyone looking at the task (not just whoever's assigned), and
+  rendered by the frontend with `tr()` so it's never frozen in one editor's language.
+- **`0 = unlimited` actually means unlimited now** (spec section 10): every existing limit
+  (attachment size, login attempts, comment length) previously treated an explicitly-configured `0`
+  identically to "not configured" and silently fell back to the hardcoded default. Added a shared
+  `intSetting()` helper that tells the two apart; `0` now truly disables each check.
+- **Four more configurable limits** (spec section 10 examples): max lists per user, max tasks per
+  list, max comments per task, max concurrent sessions per user (oldest session is evicted rather
+  than rejecting the login outright). All default to `0` (unlimited) so upgrading never suddenly
+  caps an existing instance.
+- **Global feature toggles** (spec section 10): `policy.features.{comments,reactions,attachments,
+  versions,stats}` — each independently switchable off instance-wide from the root settings panel.
+  All default to `true` (opt-out, not opt-in).
+- **Total storage quota** (spec section 10 example: "20 GB total"): a new
+  `limits.uploads.max_total_storage_mb` setting (0 = unlimited, the default) caps the combined size
+  of every task attachment and avatar under the uploads directory — once the whole folder would
+  exceed it, further uploads are rejected with `507 Insufficient Storage` instead of silently
+  filling the disk. Checked with a plain recursive directory walk rather than a DB-tracked running
+  total, so it can't drift from what's actually on disk. `todorio status` now also reports current
+  uploads usage in MB.
+
 ### Verification
 
 - `go build ./...`, `go vet ./...`, `gofmt -l .`, and `go test ./...` (including a new
