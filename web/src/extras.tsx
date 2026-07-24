@@ -1,13 +1,14 @@
 // Additional Todorio blocks: announcements, digest, statistics, attachments, TOTP, notes,
 // activity feed, focus timer, search, server settings.
 import { useEffect, useRef, useState } from "react"
-import { api, type Me, type Note, type ActivityEvent, type SearchResult, type SettingDef, type ActiveFocus } from "./api"
+import { createPortal } from "react-dom"
+import { api, type Me, type Note, type ActivityEvent, type SearchResult, type SettingDef, type ActiveFocus, type Inbox, type InboxItem } from "./api"
 import { tr, trFormal, getFormattingLocale } from "./i18n"
 import {
   IconAlertTriangle, IconAlertCircle, IconInfo, IconPin, IconMessage, IconCheckCircle,
   IconBarChart, IconAward, IconPaperclip, IconLock, IconUserPlus, IconCircle, IconFileText,
   IconSliders, IconPlay, IconPause, IconClock, IconArchive, IconRefresh, IconTrash, IconList,
-  IconX,
+  IconX, IconArrowLeft, IconInbox,
 } from "./icons"
 
 // ---------- root announcements ----------
@@ -101,24 +102,52 @@ type Stats = {
   members?: StatsMember[]
   caption?: { part1: string; part2: string; category: string }
   best?: StatsMember
+  // Leaderboard visibility (spec section 14). members[] is already trimmed server-side to
+  // match; my_rank/total_ranked are computed before trimming so "your place" stays truthful
+  // even when the table itself is hidden.
+  visibility?: "full" | "top3" | "own" | "owner_only"
+  my_rank?: number
+  total_ranked?: number
 }
 
-export function StatsCard({ spaceId }: { spaceId: number }) {
+export function StatsCard({ spaceId, canEdit }: { spaceId: number; canEdit?: boolean }) {
   const [stats, setStats] = useState<Stats | null>(null)
   const [period, setPeriod] = useState<"week" | "month">("week")
+  const [rev, setRev] = useState(0)
   useEffect(() => {
     api.get(`/api/spaces/${spaceId}/stats?period=${period}`).then(setStats).catch(() => {})
-  }, [spaceId, period])
-  if (!stats || stats.enabled === false || !stats.members?.length) return null
-  const members = stats.members
+  }, [spaceId, period, rev])
+  // An empty member list no longer hides the card outright: with visibility "owner_only" a
+  // non-owner legitimately receives zero rows, and the caption plus their own rank are still
+  // worth showing. The card only disappears when stats are switched off server-wide.
+  if (!stats || stats.enabled === false) return null
+  const members = stats.members ?? []
   const max = Math.max(...members.map((m) => m.done_weight), 1)
+  // "Your place: 3 of 8" — the useful part of a leaderboard when the table itself is hidden.
+  const rankLine = stats.my_rank
+    ? tr("stats.my_rank").replace("{rank}", String(stats.my_rank)).replace("{total}", String(stats.total_ranked ?? 0))
+    : ""
   return (
     <div className="card" style={{ padding: 14, marginBottom: 12 }}>
       <div className="row" style={{ justifyContent: "space-between" }}>
         <b className="row" style={{ gap: 5 }}><IconBarChart size={15} /> {tr("stats.title")}</b>
-        <span>
+        <span className="row" style={{ gap: 4 }}>
           <button className={"nav-btn" + (period === "week" ? " active" : "")} onClick={() => setPeriod("week")}>{tr("stats.week")}</button>
           <button className={"nav-btn" + (period === "month" ? " active" : "")} onClick={() => setPeriod("month")}>{tr("stats.month")}</button>
+          {canEdit && (
+            <select className="input" style={{ width: "auto", padding: "2px 6px", fontSize: 12 }}
+              value={stats.visibility ?? "full"}
+              title={tr("stats.visibility")}
+              onChange={async (e) => {
+                await api.patch(`/api/spaces/${spaceId}`, { settings: { stats: { visibility: e.target.value } } }).catch(() => {})
+                setRev((v) => v + 1)
+              }}>
+              <option value="full">{tr("stats.vis_full")}</option>
+              <option value="top3">{tr("stats.vis_top3")}</option>
+              <option value="own">{tr("stats.vis_own")}</option>
+              <option value="owner_only">{tr("stats.vis_owner")}</option>
+            </select>
+          )}
         </span>
       </div>
       {(stats.caption?.part1 || stats.caption?.part2) && (
@@ -131,6 +160,7 @@ export function StatsCard({ spaceId }: { spaceId: number }) {
           <IconAward size={15} /> {tr("stats.best")}: <b>@{stats.best.username}</b> · <IconCheckCircle size={13} /> {stats.best.done}
         </div>
       )}
+      {rankLine && <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>{rankLine}</div>}
       {members.map((m) => (
         <div key={m.id} style={{ marginBottom: 6 }}>
           <div className="row" style={{ justifyContent: "space-between", fontSize: 13 }}>
@@ -153,20 +183,27 @@ export function StatsCard({ spaceId }: { spaceId: number }) {
 
 type Attachment = { id: number; mime_type: string; size_bytes: number }
 
-export function AttachmentsBlock({ taskId }: { taskId: number }) {
+// Attachments hang off either a task or a comment (spec section 7). Both use the same
+// endpoint shape — /api/{tasks|comments}/{id}/attachments — so one component serves both;
+// `target` picks which. Rendering is compact for comments, where the images sit inline
+// under the comment body rather than in a section of their own.
+export function AttachmentsBlock({ taskId, commentId, compact }: {
+  taskId?: number; commentId?: number; compact?: boolean
+}) {
   const [items, setItems] = useState<Attachment[]>([])
   const [busy, setBusy] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+  const base = commentId !== undefined ? `/api/comments/${commentId}` : `/api/tasks/${taskId}`
   const load = () =>
-    api.get(`/api/tasks/${taskId}/attachments`).then((r) => setItems(r.attachments)).catch(() => {})
-  useEffect(() => { load() }, [taskId])
+    api.get(`${base}/attachments`).then((r) => setItems(r.attachments)).catch(() => {})
+  useEffect(() => { load() }, [taskId, commentId])
 
   const upload = async (f: File) => {
     setBusy(true)
     try {
       const fd = new FormData()
       fd.append("file", f)
-      const r = await fetch(`/api/tasks/${taskId}/attachments`, { method: "POST", body: fd, credentials: "same-origin" })
+      const r = await fetch(`${base}/attachments`, { method: "POST", body: fd, credentials: "same-origin" })
       if (!r.ok) {
         const e = await r.json().catch(() => null)
         alert(e?.error ?? tr("attach.failed"))
@@ -178,18 +215,20 @@ export function AttachmentsBlock({ taskId }: { taskId: number }) {
     }
   }
 
+  const thumb = compact ? 56 : 84
   return (
-    <div style={{ margin: "8px 0 12px" }}>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+    <div style={{ margin: compact ? "4px 0" : "8px 0 12px" }}>
+      <div style={{ display: "flex", gap: compact ? 6 : 8, flexWrap: "wrap" }}>
         {items.map((a) => (
           <a key={a.id} href={`/api/attachments/${a.id}`} target="_blank" rel="noreferrer">
             <img src={`/api/attachments/${a.id}`} alt={`#${a.id}`}
-              style={{ width: 84, height: 84, objectFit: "cover", borderRadius: 8 }} />
+              style={{ width: thumb, height: thumb, objectFit: "cover", borderRadius: 8 }} />
           </a>
         ))}
       </div>
-      <label className="nav-btn row" style={{ display: "inline-flex", gap: 5, marginTop: 6, cursor: "pointer" }}>
-        {busy ? tr("attach.uploading") : <><IconPaperclip size={14} /> {tr("attach.add")}</>}
+      <label className="nav-btn row"
+        style={{ display: "inline-flex", gap: 5, marginTop: compact ? 4 : 6, cursor: "pointer", fontSize: compact ? 12 : undefined }}>
+        {busy ? tr("attach.uploading") : <><IconPaperclip size={compact ? 12 : 14} /> {tr("attach.add")}</>}
         <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }}
           onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
       </label>
@@ -384,8 +423,7 @@ function NoteModal({ note, onClose, onChanged }: { note: Note; onClose: () => vo
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 640 }}>
+    <ModalShell onClose={onClose} maxWidth={640}>
         <input className="input" style={{ fontSize: 18, fontWeight: 600, marginBottom: 10 }}
           value={title} onChange={(e) => { setTitle(e.target.value); setSaved(false) }} />
         <textarea className="input" style={{ minHeight: 260, fontFamily: "inherit", resize: "vertical" }}
@@ -398,8 +436,7 @@ function NoteModal({ note, onClose, onChanged }: { note: Note; onClose: () => vo
             <button className="nav-btn" onClick={onClose}>{tr("common.back")}</button>
           </div>
         </div>
-      </div>
-    </div>
+    </ModalShell>
   )
 }
 
@@ -696,6 +733,65 @@ export function SearchPage() {
 
 // ---------- server settings (root only) ----------
 
+// Root replaces the bundled logo with an uploaded image (spec section 18). Kept separate from
+// the generic settings rows above because it's a file upload, not a key/value pair — the path
+// itself is written server-side by the upload handler.
+function LogoSettingRow() {
+  // Cache-buster: the logo URL is fixed (/api/logo), so after replacing the file the browser
+  // would otherwise keep showing the cached previous image.
+  const [rev, setRev] = useState(0)
+  const [hasLogo, setHasLogo] = useState<boolean | null>(null)
+  const [busy, setBusy] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    api.get("/api/bootstrap").then((b) => setHasLogo(!!b.logo_path)).catch(() => setHasLogo(false))
+  }, [rev])
+
+  async function upload(f: File) {
+    setBusy(true)
+    try {
+      const fd = new FormData()
+      fd.append("file", f)
+      const r = await fetch("/api/admin/logo", { method: "POST", body: fd, credentials: "same-origin" })
+      if (!r.ok) {
+        const e = await r.json().catch(() => null)
+        alert(e?.error ?? trFormal("attach.failed"))
+      }
+      setRev((v) => v + 1)
+    } finally {
+      setBusy(false)
+      if (fileRef.current) fileRef.current.value = ""
+    }
+  }
+
+  async function remove() {
+    await api.del("/api/admin/logo").catch(() => {})
+    setRev((v) => v + 1)
+  }
+
+  return (
+    <div className="row" style={{ margin: "8px 0", flexWrap: "wrap" }}>
+      <label style={{ width: 260 }}>{trFormal("branding.logo")}</label>
+      <div className="row" style={{ gap: 8 }}>
+        <img src={hasLogo ? `/api/logo?v=${rev}` : "/icons/logo.svg"} alt=""
+          style={{ width: 32, height: 32, objectFit: "contain" }}
+          onError={(e) => { (e.currentTarget as HTMLImageElement).src = "/icons/logo.svg" }} />
+        <label className="nav-btn row" style={{ display: "inline-flex", gap: 5, cursor: "pointer" }}>
+          {busy ? trFormal("attach.uploading") : <><IconPaperclip size={14} /> {trFormal("branding.logo_upload")}</>}
+          <input ref={fileRef} type="file" accept="image/*,.svg" style={{ display: "none" }}
+            onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
+        </label>
+        {hasLogo && (
+          <button className="nav-btn row" style={{ gap: 5, display: "inline-flex" }} onClick={remove}>
+            <IconTrash size={13} /> {trFormal("branding.logo_remove")}
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export function ServerSettingsCard({ me }: { me: Me }) {
   const [settings, setSettings] = useState<SettingDef[]>([])
   const [allLocales, setAllLocales] = useState<string[]>([])
@@ -729,6 +825,7 @@ export function ServerSettingsCard({ me }: { me: Me }) {
     <div className="card" style={{ marginTop: 12 }}>
       <h3 className="row" style={{ marginTop: 0, gap: 6 }}><IconSliders size={17} /> {trFormal("settings.title")}</h3>
       <p className="muted">{trFormal("settings.hint")}</p>
+      <LogoSettingRow />
       {settings.map((s) => (
         <div key={s.key} className="row" style={{ margin: "8px 0", flexWrap: "wrap" }}>
           <label style={{ width: 260 }}>{s.label}</label>
@@ -778,6 +875,9 @@ export function TemplatesAdminCard({ me }: { me: Me }) {
   const [name, setName] = useState("")
   const [listName, setListName] = useState("")
   const [autoApply, setAutoApply] = useState(false)
+  // Audience (spec section 16): all active users / specific roles / admins only.
+  const [audienceMode, setAudienceMode] = useState<"all" | "roles" | "admins">("all")
+  const [audienceRoles, setAudienceRoles] = useState<string[]>(["user"])
   const [taskDrafts, setTaskDrafts] = useState<TemplateTaskDraft[]>([blankTemplateTask()])
   const [error, setError] = useState("")
 
@@ -804,8 +904,13 @@ export function TemplatesAdminCard({ me }: { me: Me }) {
       await api.post("/api/admin/templates", {
         name, auto_apply: autoApply,
         body: JSON.stringify({ list_name: listName, tasks }),
+        audience: audienceMode === "roles"
+          ? { mode: "roles", roles: audienceRoles }
+          : { mode: audienceMode },
       })
-      setName(""); setListName(""); setAutoApply(false); setTaskDrafts([blankTemplateTask()])
+      setName(""); setListName(""); setAutoApply(false)
+      setAudienceMode("all"); setAudienceRoles(["user"])
+      setTaskDrafts([blankTemplateTask()])
       load()
     } catch (err) { setError((err as Error).message) }
   }
@@ -822,6 +927,9 @@ export function TemplatesAdminCard({ me }: { me: Me }) {
         <div key={t.id} className="task-row" style={{ cursor: "default" }}>
           <span className="task-title row" style={{ gap: 6 }}>
             {t.name} {t.auto_apply && <span className="muted">· {trFormal("templates.auto_apply_badge")}</span>}
+            {t.audience?.mode && t.audience.mode !== "all" && (
+              <span className="muted">· {trFormal("templates.audience_" + t.audience.mode)}</span>
+            )}
           </span>
           <button className="nav-btn" onClick={() => remove(t.id)}>{trFormal("templates.delete")}</button>
         </div>
@@ -835,6 +943,27 @@ export function TemplatesAdminCard({ me }: { me: Me }) {
           <label className="row" style={{ gap: 4, fontSize: 13 }}>
             <input type="checkbox" checked={autoApply} onChange={(e) => setAutoApply(e.target.checked)} /> {trFormal("templates.auto_apply")}
           </label>
+          <label className="row" style={{ gap: 4, fontSize: 13 }}>
+            {trFormal("templates.audience")}
+            <select className="input" style={{ width: "auto" }} value={audienceMode}
+              onChange={(e) => setAudienceMode(e.target.value as "all" | "roles" | "admins")}>
+              <option value="all">{trFormal("templates.audience_all")}</option>
+              <option value="roles">{trFormal("templates.audience_roles")}</option>
+              <option value="admins">{trFormal("templates.audience_admins")}</option>
+            </select>
+          </label>
+          {audienceMode === "roles" && (
+            <div className="row" style={{ gap: 10, fontSize: 13 }}>
+              {["admin", "user", "viewer"].map((rl) => (
+                <label key={rl} className="row" style={{ gap: 4 }}>
+                  <input type="checkbox" checked={audienceRoles.includes(rl)}
+                    onChange={(e) => setAudienceRoles((prev) =>
+                      e.target.checked ? [...prev, rl] : prev.filter((x) => x !== rl))} />
+                  {trFormal("admin.role." + rl)}
+                </label>
+              ))}
+            </div>
+          )}
         </div>
         {taskDrafts.map((d, i) => (
           <div key={i} className="row" style={{ gap: 6, marginBottom: 6, flexWrap: "wrap" }}>
@@ -981,6 +1110,144 @@ export function FieldsPanel({ spaceId, isOwner }: { spaceId: number; isOwner: bo
         </form>
       )}
       {error && <div className="error-text">{error}</div>}
+    </div>
+  )
+}
+
+// ---------- About page (spec section 18: "также на странице «О сайте» (версия, разработчик)") ----------
+
+export function AboutPage({ siteName, version, developerName, developerUrl, aboutText, onBack }: {
+  siteName: string
+  version?: string
+  developerName?: string
+  developerUrl?: string
+  aboutText?: string
+  onBack: () => void
+}) {
+  return (
+    <div>
+      <div className="row" style={{ marginBottom: 12 }}>
+        <button className="nav-btn row" style={{ gap: 4, display: "inline-flex" }} onClick={onBack}>
+          <IconArrowLeft size={14} /> {tr("common.back")}
+        </button>
+        <h2 style={{ margin: 0 }}>{tr("about.title")}</h2>
+      </div>
+      <div className="card" style={{ maxWidth: 520 }}>
+        <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 10 }}>{siteName}</div>
+        {/* Rendered as plain text, never as HTML — the same escaping rule the spec sets for
+            the site name applies to anything root types into branding. */}
+        {aboutText && <p style={{ marginTop: 0, color: "var(--text-muted)" }}>{aboutText}</p>}
+        <div className="row" style={{ gap: 8, fontSize: 14, marginBottom: 6 }}>
+          <span className="muted" style={{ minWidth: 110 }}>{tr("about.version")}</span>
+          <span>{version || "—"}</span>
+        </div>
+        <div className="row" style={{ gap: 8, fontSize: 14 }}>
+          <span className="muted" style={{ minWidth: 110 }}>{tr("about.developer")}</span>
+          <span>
+            {developerUrl
+              ? <a href={developerUrl} target="_blank" rel="noreferrer noopener">{developerName || "DanMotive"}</a>
+              : (developerName || "DanMotive")}
+          </span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ---------- modal shell ----------
+
+// Modals render through a portal into <body>.
+//
+// Without it, any ancestor with backdrop-filter (which .card has in the "rich" visual mode)
+// establishes a stacking context that confines the modal's z-index to that subtree — so
+// content later in the DOM, e.g. the page footer, paints on top of the dialog. Portalling
+// sidesteps that instead of escalating z-index values.
+//
+// Escape closes, and the backdrop click is only honoured when it lands on the backdrop
+// itself so a drag that ends outside the panel doesn't dismiss the user's work.
+export function ModalShell({ onClose, children, maxWidth }: {
+  onClose: () => void
+  children: React.ReactNode
+  maxWidth?: number
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose() }
+    window.addEventListener("keydown", onKey)
+    // The page behind a dialog must not scroll while it's open.
+    const prev = document.body.style.overflow
+    document.body.style.overflow = "hidden"
+    return () => {
+      window.removeEventListener("keydown", onKey)
+      document.body.style.overflow = prev
+    }
+  }, [onClose])
+
+  return createPortal(
+    <div className="modal-backdrop" role="dialog" aria-modal="true"
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="modal" style={maxWidth ? { maxWidth } : undefined}>
+        {children}
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
+// ---------- Inbox (spec section 12) ----------
+
+// Cross-space triage list. Grouped by *why* each item is here — an undifferentiated pile of
+// "things needing attention" is far harder to act on than four short, labelled groups.
+const INBOX_REASONS = ["review", "mentioned", "assigned", "unassigned"] as const
+
+export function InboxPage({ onOpenTask }: { onOpenTask?: (item: InboxItem) => void }) {
+  const [data, setData] = useState<Inbox | null>(null)
+  const [error, setError] = useState("")
+
+  const load = () => {
+    setError("")
+    api.get("/api/inbox").then(setData).catch((e) => setError((e as Error).message))
+  }
+  useEffect(() => { load() }, [])
+
+  if (error) return <div className="card"><p className="error-text">{error}</p></div>
+  if (!data) return <div className="card">{tr("search.searching")}</div>
+
+  const total = data.items.length
+
+  return (
+    <div>
+      <h2 className="row" style={{ marginTop: 0, gap: 8 }}>
+        <IconInbox size={20} /> {tr("inbox.title")}
+        {total > 0 && <span className="badge">{total}</span>}
+      </h2>
+
+      {total === 0 && <div className="card"><p className="muted">{tr("inbox.empty")}</p></div>}
+
+      {INBOX_REASONS.map((reason) => {
+        const group = data.items.filter((i) => i.reason === reason)
+        if (group.length === 0) return null
+        return (
+          <div key={reason} className="card" style={{ marginBottom: 12 }}>
+            <div className="section-title" style={{ fontSize: 13, marginBottom: 8 }}>
+              {tr("inbox.reason." + reason)} · {group.length}
+            </div>
+            {group.map((it) => (
+              <div key={it.id} className="task-row" style={{ cursor: onOpenTask ? "pointer" : "default" }}
+                onClick={() => onOpenTask?.(it)}>
+                <span className="task-title">{it.title}</span>
+                <span className="muted" style={{ fontSize: 12 }}>
+                  {it.space_name} · {it.list_name}
+                </span>
+                {it.due_at && (
+                  <span className="muted" style={{ fontSize: 12 }}>
+                    {new Date(it.due_at).toLocaleDateString(getFormattingLocale())}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        )
+      })}
     </div>
   )
 }

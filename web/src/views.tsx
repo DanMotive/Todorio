@@ -4,8 +4,9 @@ import {
   api, REACTIONS, DEFAULT_STATUSES,
   type List, type Me, type Pulse, type Space, type Task, type Workflow, type ActiveFocus,
 } from "./api"
-import { AttachmentsBlock, StatsCard, FocusWidget, FocusPresence, NotesPanel, ActivityPanel, ArchivePanel, ArchivedSpacesPanel, FieldsPanel, type FieldDef } from "./extras"
+import { AttachmentsBlock, ModalShell, StatsCard, FocusWidget, FocusPresence, NotesPanel, ActivityPanel, ArchivePanel, ArchivedSpacesPanel, FieldsPanel, type FieldDef } from "./extras"
 import { tr, trFormal, setLocale, getLocale, getFormattingLocale, SUPPORTED } from "./i18n"
+import { TimelineView } from "./timeline"
 import {
   IconStar, IconRefresh, IconLock, IconX, IconUser, IconPause, IconSlash, IconClock,
   IconGrid, IconArrowLeft, IconList, IconFileText, IconActivity, IconMenu, IconColumns,
@@ -214,6 +215,21 @@ export function TaskModal({ task, me, spaceId, onClose, onChanged }: {
   // Editable task states
   const [status, setStatus] = useState(task.status || "open")
   const [priority, setPriority] = useState(task.priority || "normal")
+  // null = no manual override (progress derives from subtasks, or is simply unset)
+  const [progress, setProgress] = useState<number | null>(
+    typeof task.progress === "number" ? task.progress : null)
+  const [weight, setWeight] = useState(task.weight ?? 1)
+  // <input type="date"> wants YYYY-MM-DD in *local* time; slicing an ISO string would shift
+  // the day for anyone not on UTC.
+  const dateInputValue = (v: string | null) => {
+    if (!v) return ""
+    const d = new Date(v)
+    const m = String(d.getMonth() + 1).padStart(2, "0")
+    const day = String(d.getDate()).padStart(2, "0")
+    return `${d.getFullYear()}-${m}-${day}`
+  }
+  const [startAt, setStartAt] = useState(() => dateInputValue(task.start_at))
+  const [dueAt, setDueAt] = useState(() => dateInputValue(task.due_at))
   const [freq, setFreq] = useState(task.recurrence?.freq || "none")
   const [blockedByInput, setBlockedByInput] = useState("")
   const [blockedBy, setBlockedBy] = useState<number[]>(task.blocked_by || [])
@@ -384,8 +400,7 @@ export function TaskModal({ task, me, spaceId, onClose, onChanged }: {
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 640 }}>
+    <ModalShell onClose={onClose} maxWidth={640}>
         <div className="row">
           <h2 className="grow" style={{ margin: 0, fontSize: 20 }}>{task.title}</h2>
           <button className="nav-btn" onClick={onClose}>
@@ -396,7 +411,7 @@ export function TaskModal({ task, me, spaceId, onClose, onChanged }: {
         {task.description && <p style={{ color: "var(--text-muted)", margin: "8px 0 16px" }}>{task.description}</p>}
 
         {/* Task Properties grid */}
-        <div className="card" style={{ padding: 12, marginBottom: 16, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div className="card task-props" style={{ padding: 12, marginBottom: 16, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <div>
             <label className="muted" style={{ display: "block", fontSize: 12, marginBottom: 4 }}>{tr("task.status")}</label>
             <select className="input" value={status} onChange={(e) => handleStatusChange(e.target.value)}>
@@ -426,6 +441,77 @@ export function TaskModal({ task, me, spaceId, onClose, onChanged }: {
               <option value="weekly">{tr("task.recurrence.weekly")}</option>
               <option value="monthly">{tr("task.recurrence.monthly")}</option>
             </select>
+          </div>
+
+          {/* Schedule: start feeds the Timeline bar's left edge, the deadline its right (spec
+              sections 8 and 12). Date-only inputs — the product never asks for a time of day,
+              and <input type="date"> is localised by the browser for free. */}
+          <div>
+            <label className="muted row" style={{ fontSize: 12, marginBottom: 4, gap: 4 }}>
+              <IconCalendar size={12} /> {tr("task.start_at")}
+            </label>
+            <input className="input" type="date" value={startAt}
+              onChange={(e) => {
+                const v = e.target.value
+                setStartAt(v)
+                updateTask(v ? { start_at: new Date(v).toISOString() } : { clear_start_at: true })
+              }} />
+          </div>
+
+          <div>
+            <label className="muted row" style={{ fontSize: 12, marginBottom: 4, gap: 4 }}>
+              <IconClock size={12} /> {tr("task.due_at")}
+            </label>
+            <input className="input" type="date" value={dueAt}
+              onChange={(e) => {
+                const v = e.target.value
+                setDueAt(v)
+                updateTask(v ? { due_at: new Date(v).toISOString() } : { clear_due_at: true })
+              }} />
+          </div>
+
+          {/* Manual progress (spec section 6): only for tasks without subtasks — when a task has
+              subtasks its progress is derived from them (done/total), so a manual override would
+              contradict what the subtask list plainly shows. */}
+          {task.subtasks_total === 0 ? (
+            <div>
+              <label className="muted" style={{ display: "block", fontSize: 12, marginBottom: 4 }}>
+                {tr("task.progress")}: {progress ?? 0}%
+              </label>
+              <div className="row" style={{ gap: 8 }}>
+                <input type="range" min={0} max={100} step={5} style={{ flex: 1 }}
+                  value={progress ?? 0}
+                  onChange={(e) => setProgress(Number(e.target.value))}
+                  onMouseUp={(e) => updateTask({ progress: Number((e.target as HTMLInputElement).value) })}
+                  onTouchEnd={(e) => updateTask({ progress: Number((e.target as HTMLInputElement).value) })}
+                  onKeyUp={(e) => updateTask({ progress: Number((e.target as HTMLInputElement).value) })} />
+                {progress !== null && (
+                  <button className="nav-btn" title={tr("task.progress_clear")}
+                    onClick={() => { setProgress(null); updateTask({ clear_progress: true }) }}>
+                    <IconX size={12} />
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div>
+              <label className="muted" style={{ display: "block", fontSize: 12, marginBottom: 4 }}>
+                {tr("task.progress")}
+              </label>
+              <progress className="progress" max={task.subtasks_total} value={task.subtasks_done} />
+              <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
+                {task.subtasks_done}/{task.subtasks_total} · {tr("task.progress_auto")}
+              </div>
+            </div>
+          )}
+
+          {/* Weight feeds weighted list progress and the rankings score, so that closing ten
+              trivial tasks doesn't outrank finishing one hard one (spec sections 6 and 14). */}
+          <div>
+            <label className="muted" style={{ display: "block", fontSize: 12, marginBottom: 4 }}>{tr("task.weight")}</label>
+            <input className="input" type="number" min={1} max={100} value={weight}
+              onChange={(e) => setWeight(Number(e.target.value))}
+              onBlur={() => updateTask({ weight })} />
           </div>
 
           <div>
@@ -509,6 +595,7 @@ export function TaskModal({ task, me, spaceId, onClose, onChanged }: {
             ) : (
               <div>{c.body}</div>
             )}
+            <AttachmentsBlock commentId={c.id} compact />
             <div className="row" style={{ marginTop: 6, flexWrap: "wrap" }}>
               {REACTIONS.map((emoji) => {
                 const rx = (c.reactions as any[]).filter((r) => r.emoji === emoji)
@@ -542,8 +629,7 @@ export function TaskModal({ task, me, spaceId, onClose, onChanged }: {
             {tr("task.archive")}
           </button>
         </div>
-      </div>
-    </div>
+    </ModalShell>
   )
 }
 
@@ -759,13 +845,186 @@ export function SpacesPage({ me }: { me: Me }) {
   )
 }
 
+// ---------- Space Pulse (spec section 17) ----------
+
+// Signal rows are data-driven so a signal the owner disabled (absent from pulse.signals)
+// simply doesn't render, rather than showing "undefined".
+const PULSE_SIGNALS = [
+  { key: "overdue", Icon: IconClock },
+  { key: "unassigned", Icon: IconUser },
+  { key: "stale", Icon: IconPause },
+  { key: "blocked", Icon: IconSlash },
+  { key: "no_deadline", Icon: IconCalendar },
+] as const
+
+function PulseCard({ pulse, spaceId, canEdit, onChanged }: {
+  pulse: Pulse; spaceId: number; canEdit: boolean; onChanged: () => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const s = pulse.settings
+  const standup = pulse.standup
+  const standupEmpty = !standup ||
+    (standup.did.length === 0 && standup.doing.length === 0 && standup.blocked.length === 0)
+
+  return (
+    <div className="card" style={{ marginBottom: 12 }}>
+      <div className="pulse-card">
+        <div className="pulse-visual">
+          <span className={"pulse-dot pulse-dot--" + pulse.mood} title={tr("pulse.title")} />
+          <span className="pulse-score-num">{pulse.score}</span>
+        </div>
+        <div className="grow">
+          <div className="row" style={{ justifyContent: "space-between", gap: 8 }}>
+            <div><b>{tr("pulse.title")}</b> · {tr("pulse.open")}: {pulse.open}/{pulse.total}</div>
+            {canEdit && (
+              <button className="nav-btn row" style={{ gap: 5, display: "inline-flex", flexShrink: 0 }}
+                onClick={() => setEditing((v) => !v)}>
+                <IconSliders size={13} /> {tr("pulse.settings")}
+              </button>
+            )}
+          </div>
+          <div style={{ marginTop: 4 }}>
+            {PULSE_SIGNALS.map(({ key, Icon }) => {
+              const n = pulse.signals[key]
+              if (n === undefined) return null
+              return (
+                <span key={key} className="signal">
+                  <Icon size={12} /> {tr("pulse." + key)}: {n}
+                </span>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+
+      {pulse.next_action && (
+        <div className="pulse-next">
+          <b>{tr("pulse.next_action")}</b>{" "}
+          {tr("pulse.action." + pulse.next_action.kind).replace("{title}", pulse.next_action.title)}
+        </div>
+      )}
+
+      {pulse.in_progress && pulse.in_progress.length > 0 && (
+        <div style={{ marginTop: 10 }}>
+          <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>{tr("pulse.in_progress")}</div>
+          {pulse.in_progress.map((t) => (
+            <div key={t.id} className="row" style={{ gap: 6, fontSize: 13, marginBottom: 2 }}>
+              <span>{t.title}</span>
+              {t.assignee && <span className="muted">· {t.assignee}</span>}
+              {typeof t.progress === "number" && <span className="muted">· {t.progress}%</span>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {standup && !standupEmpty && (
+        <div style={{ marginTop: 10 }}>
+          <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>{tr("pulse.standup")}</div>
+          {([["did", standup.did], ["doing", standup.doing], ["blocked", standup.blocked]] as const).map(
+            ([k, items]) => items.length > 0 && (
+              <div key={k} style={{ fontSize: 13, marginBottom: 2 }}>
+                <span className="muted">{tr("pulse.standup_" + k)}:</span>{" "}
+                {items.map((t) => t.title).join(", ")}
+              </div>
+            ),
+          )}
+        </div>
+      )}
+
+      {editing && s && (
+        <PulseSettingsForm spaceId={spaceId} settings={s} signals={pulse.signals}
+          onSaved={() => { setEditing(false); onChanged() }} />
+      )}
+    </div>
+  )
+}
+
+function PulseSettingsForm({ spaceId, settings, signals, onSaved }: {
+  spaceId: number
+  settings: NonNullable<Pulse["settings"]>
+  signals: Pulse["signals"]
+  onSaved: () => void
+}) {
+  const [staleDays, setStaleDays] = useState(String(settings.stale_days))
+  const [greenAt, setGreenAt] = useState(String(settings.green_at))
+  const [yellowAt, setYellowAt] = useState(String(settings.yellow_at))
+  const [standup, setStandup] = useState(settings.standup)
+  // A signal missing from the response means the owner turned it off.
+  const [on, setOn] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(PULSE_SIGNALS.map(({ key }) => [key, signals[key] !== undefined])))
+  const [err, setErr] = useState("")
+
+  async function save() {
+    setErr("")
+    try {
+      // PATCH replaces the whole settings object, so send pulse nested under it.
+      await api.patch(`/api/spaces/${spaceId}`, {
+        settings: {
+          pulse: {
+            stale_days: Number(staleDays) || settings.stale_days,
+            green_at: Number(greenAt),
+            yellow_at: Number(yellowAt),
+            standup,
+            signals: on,
+          },
+        },
+      })
+      onSaved()
+    } catch (e) {
+      setErr((e as Error).message)
+    }
+  }
+
+  return (
+    <div style={{ marginTop: 12, borderTop: "1px solid var(--border)", paddingTop: 12 }}>
+      <div className="row" style={{ gap: 12, flexWrap: "wrap", marginBottom: 10 }}>
+        <label className="row" style={{ gap: 6, fontSize: 13 }}>
+          {tr("pulse.stale_days")}
+          <input className="input" type="number" min={1} max={365} style={{ width: 80 }}
+            value={staleDays} onChange={(e) => setStaleDays(e.target.value)} />
+        </label>
+        <label className="row" style={{ gap: 6, fontSize: 13 }}>
+          {tr("pulse.green_at")}
+          <input className="input" type="number" min={0} max={100} style={{ width: 80 }}
+            value={greenAt} onChange={(e) => setGreenAt(e.target.value)} />
+        </label>
+        <label className="row" style={{ gap: 6, fontSize: 13 }}>
+          {tr("pulse.yellow_at")}
+          <input className="input" type="number" min={0} max={100} style={{ width: 80 }}
+            value={yellowAt} onChange={(e) => setYellowAt(e.target.value)} />
+        </label>
+      </div>
+      <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>{tr("pulse.signals")}</div>
+      <div className="row" style={{ gap: 14, flexWrap: "wrap", marginBottom: 10 }}>
+        {PULSE_SIGNALS.map(({ key }) => (
+          <label key={key} className="row" style={{ gap: 6, fontSize: 13 }}>
+            <input type="checkbox" checked={!!on[key]}
+              onChange={(e) => setOn((p) => ({ ...p, [key]: e.target.checked }))} />
+            {tr("pulse." + key)}
+          </label>
+        ))}
+      </div>
+      <label className="row" style={{ gap: 6, fontSize: 13, marginBottom: 10 }}>
+        <input type="checkbox" checked={standup} onChange={(e) => setStandup(e.target.checked)} />
+        {tr("pulse.standup")}
+      </label>
+      {err && <div style={{ color: "var(--due-overdue)", fontSize: 13, marginBottom: 8 }}>{err}</div>}
+      <button className="btn" onClick={save}>{tr("common.save")}</button>
+    </div>
+  )
+}
+
 function SpaceView({ me, space, onBack }: { me: Me; space: Space; onBack: () => void }) {
   const [lists, setLists] = useState<List[]>([])
   const [pulse, setPulse] = useState<Pulse | null>(null)
   const [currentList, setCurrentList] = useState<List | null>(null)
   const [name, setName] = useState("")
-  const [tab, setTab] = useState<"lists" | "notes" | "activity" | "archive" | "fields">("lists")
+  const [tab, setTab] = useState<"lists" | "timeline" | "notes" | "activity" | "archive" | "fields">("lists")
   const [templates, setTemplates] = useState<Array<{ id: number; name: string }>>([])
+  // Count vs. weight is a per-viewer display preference (spec section 6), so it lives in
+  // localStorage rather than on the list — two people can read the same space differently.
+  const [progressMode, setProgressMode] = useState<"count" | "weight">(
+    () => (localStorage.getItem("todorio.progress_mode") === "weight" ? "weight" : "count"))
 
   const load = () => {
     api.get(`/api/spaces/${space.id}/lists`).then((r) => setLists(r.lists)).catch(() => {})
@@ -789,27 +1048,15 @@ function SpaceView({ me, space, onBack }: { me: Me; space: Space; onBack: () => 
         <h2 style={{ margin: 0 }}>{space.name}</h2>
       </div>
 
-      <StatsCard spaceId={space.id} />
+      <StatsCard spaceId={space.id} canEdit={space.my_role === "owner" || me.role === "root" || me.role === "admin"} />
       {pulse && pulse.enabled !== false && (
-        <div className="card pulse-card" style={{ marginBottom: 12 }}>
-          <div className="pulse-visual">
-            <span className={"pulse-dot pulse-dot--" + pulse.mood} title={tr("pulse.title")} />
-            <span className="pulse-score-num">{pulse.score}</span>
-          </div>
-          <div>
-            <div><b>{tr("pulse.title")}</b> · {tr("pulse.open")}: {pulse.open}/{pulse.total}</div>
-            <div style={{ marginTop: 4 }}>
-              <span className="signal"><IconClock size={12} /> {tr("pulse.overdue")}: {pulse.signals.overdue}</span>
-              <span className="signal"><IconUser size={12} /> {tr("pulse.unassigned")}: {pulse.signals.unassigned}</span>
-              <span className="signal"><IconPause size={12} /> {tr("pulse.stale")}: {pulse.signals.stale}</span>
-              <span className="signal"><IconSlash size={12} /> {tr("pulse.blocked")}: {pulse.signals.blocked}</span>
-            </div>
-          </div>
-        </div>
+        <PulseCard pulse={pulse} spaceId={space.id} canEdit={space.my_role === "owner" || me.role === "root" || me.role === "admin"}
+          onChanged={load} />
       )}
 
-      <div className="row" style={{ marginBottom: 8, gap: 4 }}>
+      <div className="row tab-strip" style={{ marginBottom: 8, gap: 4 }}>
         <button className={"nav-btn row" + (tab === "lists" ? " active" : "")} style={{ gap: 5, display: "inline-flex" }} onClick={() => setTab("lists")}><IconList size={14} /> {tr("lists.title")}</button>
+        <button className={"nav-btn row" + (tab === "timeline" ? " active" : "")} style={{ gap: 5, display: "inline-flex" }} onClick={() => setTab("timeline")}><IconActivity size={14} /> {tr("view.timeline")}</button>
         <button className={"nav-btn row" + (tab === "notes" ? " active" : "")} style={{ gap: 5, display: "inline-flex" }} onClick={() => setTab("notes")}><IconFileText size={14} /> {tr("notes.title")}</button>
         <button className={"nav-btn row" + (tab === "activity" ? " active" : "")} style={{ gap: 5, display: "inline-flex" }} onClick={() => setTab("activity")}><IconActivity size={14} /> {tr("activity.title")}</button>
         <button className={"nav-btn row" + (tab === "archive" ? " active" : "")} style={{ gap: 5, display: "inline-flex" }} onClick={() => setTab("archive")}><IconArchive size={14} /> {tr("archive.title")}</button>
@@ -818,13 +1065,33 @@ function SpaceView({ me, space, onBack }: { me: Me; space: Space; onBack: () => 
 
       {tab === "lists" && (
         <div className="card">
-          {lists.map((l) => (
-            <div key={l.id} className="task-row" onClick={() => setCurrentList(l)}>
-              <span className="task-title row" style={{ gap: 6 }}>{l.is_private ? <IconLock size={14} /> : <IconList size={14} />} {l.name}</span>
-              <span className="muted">{l.done_count}/{l.task_count}</span>
-              <progress className="progress" max={l.task_count || 1} value={l.done_count} />
-            </div>
-          ))}
+          <div className="row" style={{ justifyContent: "flex-end", marginBottom: 6 }}>
+            <label className="row muted" style={{ gap: 6, fontSize: 12 }}>
+              {tr("lists.progress_mode")}
+              <select className="input" style={{ width: "auto", padding: "2px 6px", fontSize: 12 }}
+                value={progressMode} onChange={(e) => {
+                  const m = e.target.value as "count" | "weight"
+                  setProgressMode(m)
+                  localStorage.setItem("todorio.progress_mode", m)
+                }}>
+                <option value="count">{tr("lists.progress_by_count")}</option>
+                <option value="weight">{tr("lists.progress_by_weight")}</option>
+              </select>
+            </label>
+          </div>
+          {lists.map((l) => {
+            // Fall back to plain counts when the server didn't send weighted totals.
+            const byWeight = progressMode === "weight" && l.weight_total !== undefined
+            const done = byWeight ? (l.weight_done ?? 0) : l.done_count
+            const total = byWeight ? (l.weight_total ?? 0) : l.task_count
+            return (
+              <div key={l.id} className="task-row" onClick={() => setCurrentList(l)}>
+                <span className="task-title row" style={{ gap: 6 }}>{l.is_private ? <IconLock size={14} /> : <IconList size={14} />} {l.name}</span>
+                <span className="muted">{done}/{total}</span>
+                <progress className="progress" max={total || 1} value={done} />
+              </div>
+            )
+          })}
           <form className="row" style={{ marginTop: 12 }} onSubmit={async (e) => {
             e.preventDefault()
             if (!name.trim()) return
@@ -844,6 +1111,7 @@ function SpaceView({ me, space, onBack }: { me: Me; space: Space; onBack: () => 
           )}
         </div>
       )}
+      {tab === "timeline" && <div className="card"><TimelineView spaceId={space.id} /></div>}
       {tab === "notes" && <div className="card"><NotesPanel spaceId={space.id} /></div>}
       {tab === "activity" && <div className="card"><ActivityPanel spaceId={space.id} /></div>}
       {tab === "archive" && <div className="card"><ArchivePanel me={me} spaceId={space.id} /></div>}
@@ -1151,6 +1419,10 @@ function ListView({ me, list, spaceId, onBack }: { me: Me; list: List; spaceId: 
         try {
           await api.post(`/api/lists/${list.id}/tasks`, {
             title, due_at: due ? new Date(due).toISOString() : null,
+            // Smart quick-add: "#tag !priority @user tomorrow" is extracted server-side
+            // (spec section 5). An explicit date picked in the field still wins over a
+            // parsed one — the server only fills what the client left empty.
+            parse: true,
           })
           setTitle(""); setDue("")
           load()
@@ -1162,6 +1434,9 @@ function ListView({ me, list, spaceId, onBack }: { me: Me; list: List; spaceId: 
         <input className="input" style={{ width: 170 }} type="date" value={due} onChange={(e) => setDue(e.target.value)} />
         <button className="btn" type="submit">+</button>
       </form>
+      {/* Quick-add syntax is invisible unless it's advertised — a parser nobody knows about
+          gets no use. Shown once under the field rather than as a tooltip. */}
+      <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>{tr("task.quickadd_hint")}</div>
       {createError && <p className="error-text">{createError}</p>}
       {open && <TaskModal task={open} me={me} spaceId={spaceId} onClose={() => setOpen(null)} onChanged={load} />}
     </div>

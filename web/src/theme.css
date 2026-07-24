@@ -1,6 +1,10 @@
-/* Todorio design system — 5 цветовых тем × светлая/тёмная × режимы rich/lite.
-   Управляется атрибутами на <html>: data-color, data-scheme, data-visual.
-   root задаёт дефолт сервера; пользователь меняет в профиле. */
+/* Todorio design system — 5 цветовых тем × режимы rich/lite.
+   Управляется атрибутами на <html>: data-color, data-visual.
+   root задаёт дефолт сервера; пользователь меняет в профиле.
+
+   Тема только тёмная: светлая убрана по решению пользователя, атрибут data-scheme больше
+   не используется. Базовые токены живут прямо в :root, так что рендер не зависит от того,
+   успел ли JS проставить атрибут — при холодной загрузке нет вспышки нестилизованного UI. */
 
 /* Without this, elements with width:100% plus padding/border (e.g. .input)
    overflow past their parent's edge instead of respecting it. */
@@ -18,21 +22,11 @@
 :root[data-color="yellow"] { --accent: #F5B301; --accent-soft: #F5B30122; --accent-contrast: #1A1400; }
 :root[data-color="gray"]   { --accent: #71737C; --accent-soft: #71737C22; --accent-contrast: #fff; }
 
-/* —— Светлая / тёмная —— */
-/* Due-date badge colors are scheme-specific, not fixed: the dark-mode shades (bright red/
-   orange/amber) read as low-contrast pastel-on-white when reused as-is in light mode — e.g.
-   #F5B301 amber or #8B8D98 gray against a white card falls below WCAG AA (4.5:1) for normal
-   text. Light mode gets darker/more saturated variants of the same hues instead. */
-:root[data-scheme="light"] {
-  --bg: #F7F7F9; --surface: #FFFFFF; --border: #E4E4EA;
-  --text: #17181C; --text-muted: #6E7079;
-  --due-overdue: #B42318;  /* просрочено */
-  --due-today:   #9A3412;  /* сегодня */
-  --due-soon:    #854D0E;  /* скоро (1–3 дня) */
-  --due-later:   #6E7079;  /* дальше */
-  --hover-bg: #EBEBF0;     /* см. .nav-btn:hover/.task-row:hover ниже */
-}
-:root[data-scheme="dark"] {
+/* —— Базовая (тёмная) палитра ——
+   Раньше это был блок :root[data-scheme="dark"] рядом со светлым. Светлый удалён, а эти
+   токены переехали в :root: без атрибута цвета применяются сразу. Оттенки плашек дедлайна
+   подобраны под тёмный фон — светлые варианты (#B42318 и т.п.) удалены вместе со схемой. */
+:root {
   --bg: #0F1420; --surface: #171E2E; --border: #262F44;
   --text: #E8E7FF; --text-muted: #8D93AB;
   --due-overdue: #E5484D;  /* просрочено */
@@ -83,11 +77,10 @@ body {
   min-height: 100vh;
 }
 .sidebar {
-  /* The sidebar is the site's persistent header/nav — always dark, regardless of the
-     light/dark scheme toggle (that toggle only affects the main content area). Redeclaring
-     the base tokens here cascades into every var(--surface)/var(--border)/var(--text) and
-     var(--glass) (glass is derived from --surface) used by anything inside the sidebar,
-     including the theme <select> in the footer. */
+  /* The sidebar is the site's persistent header/nav and carries its own slightly darker
+     shade than the main content area. Redeclaring the base tokens here cascades into every
+     var(--surface)/var(--border)/var(--text) and var(--glass) (glass is derived from
+     --surface) used by anything inside the sidebar, including the color <select>. */
   --bg: #0F1420;
   --surface: #171E2E;
   --border: #262F44;
@@ -182,6 +175,98 @@ body {
   max-width: 900px;
   padding: 32px 40px;
   overflow-y: auto;
+}
+
+/* ---------- Mobile layout (spec section 20: "полноценная мобильная версия") ----------
+   On narrow screens the sidebar becomes an off-canvas drawer: it slides in over the content
+   instead of permanently occupying 260px of a ~375px viewport. A hamburger button in the
+   mobile top bar toggles it, and tapping the backdrop closes it.
+
+   The drawer is translated off-screen rather than display:none so the transition animates,
+   and it's hidden from assistive tech + taken out of the tab order via `inert` on the
+   element itself (set by App.tsx) — a keyboard user must not tab into a closed drawer. */
+.mobile-topbar { display: none; }
+
+@media (max-width: 860px) {
+  .app-layout { display: block; }
+
+  .mobile-topbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    background: #0F1420;
+    border-bottom: 1px solid #262F44;
+    color: #E8E7FF;
+  }
+  .mobile-topbar b { font-size: 16px; }
+  .mobile-topbar img { width: 26px; height: 26px; }
+  .mobile-topbar .ctrl-btn { color: #E8E7FF; }
+
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 82vw;
+    max-width: 300px;
+    height: 100%;
+    transform: translateX(-100%);
+    transition: transform 0.22s ease;
+    z-index: 45;
+    overflow-y: auto;
+  }
+  .sidebar.open { transform: translateX(0); }
+
+  .sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 40;
+  }
+
+  .main-content {
+    max-width: 100%;
+    padding: 18px 14px 40px;
+  }
+
+  /* Dense desktop tables/grids need to reflow rather than force horizontal scrolling. */
+  .task-row { flex-wrap: wrap; }
+  .modal { max-width: 96vw !important; padding: 16px; }
+
+  /* Rows built as a single flex line on desktop (card headers with period buttons + a
+     visibility select, the space tab strip) overflow a phone viewport. Let them wrap
+     instead of being clipped at the right edge. */
+  .card > .row,
+  .pulse-card { flex-wrap: wrap; }
+
+  /* Pulse header: on a phone the score dot, title and settings button don't fit one line.
+     Stack the title above the settings button so neither is squeezed into two words. */
+  .pulse-card > .grow > .row { flex-direction: column; align-items: flex-start; gap: 4px; }
+  .pulse-dot { width: 36px; height: 36px; }
+
+  /* The space tab strip is the one place horizontal scrolling is the right answer: the tabs
+     are a single logical group and wrapping them mid-strip reads worse than swiping. */
+  .tab-strip {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .tab-strip::-webkit-scrollbar { display: none; }
+  .tab-strip > button { flex-shrink: 0; }
+
+  /* The task properties grid in the modal is two columns on desktop; one column is the only
+     thing that fits a phone without squeezing every control. */
+  .task-props { grid-template-columns: 1fr !important; }
+}
+
+/* A drawer that slides is unwelcome for users who asked for less motion. */
+@media (prefers-reduced-motion: reduce) {
+  .sidebar { transition: none; }
 }
 
 .card {

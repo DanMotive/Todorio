@@ -3,27 +3,31 @@ import { api, type Me, type Profile } from "./api"
 import "./theme.css"
 import "./ui.css"
 import { AdminPage, AuthPage, MyTasksPage, NotificationsPage, PendingPage, SpacesPage } from "./views"
-import { AnnouncementsBanner, DigestModal, InvitesCard, SearchPage, ServerSettingsCard, TemplatesAdminCard, AnnouncementsAdminCard } from "./extras"
+import { AboutPage, AnnouncementsBanner, InboxPage, ModalShell, DigestModal, InvitesCard, SearchPage, ServerSettingsCard, TemplatesAdminCard, AnnouncementsAdminCard } from "./extras"
 import { Avatar, SettingsPage, ForcedPasswordChange } from "./settings"
 import { detectLocale, setLocale, tr } from "./i18n"
-import { IconDownload, IconKeyboard, IconSliders } from "./icons"
+import { IconInbox, IconKeyboard, IconMenu, IconSliders } from "./icons"
 
 type Bootstrap = {
   site_name: string
   browser_title: string
   developer_name: string
+  developer_url?: string
   footer_text?: string
+  show_product_name?: boolean
+  about_text?: string
+  logo_path?: string
+  version?: string
   default_locale: string
   locales_enabled?: string[]
-  theme: { color: string; scheme: string; visual: string }
+  theme: { color: string; visual: string }
 }
 
 const COLORS = ["red", "blue", "green", "yellow", "gray"] as const
 
-function applyTheme(color: string, scheme: string, visual: string) {
+function applyTheme(color: string, visual: string) {
   const el = document.documentElement
   el.dataset.color = color
-  el.dataset.scheme = scheme
   el.dataset.visual = visual
 }
 
@@ -47,19 +51,39 @@ export default function App() {
   const [me, setMe] = useState<Me | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [loaded, setLoaded] = useState(false)
-  const [view, setView] = useState<"my" | "spaces" | "search" | "notifications" | "admin" | "settings">("my")
+  const [view, setView] = useState<"my" | "inbox" | "spaces" | "search" | "notifications" | "admin" | "settings" | "about">("my")
   const [unread, setUnread] = useState(0)
   const [soundOn, setSoundOn] = useState(localStorage.getItem("todorio.sound") === "1")
   const soundOnRef = useRef(soundOn)
   useEffect(() => { soundOnRef.current = soundOn }, [soundOn])
-  const [installEvt, setInstallEvt] = useState<any>(null)
   const [showHelp, setShowHelp] = useState(false)
+  // Mobile drawer. Only meaningful under the 860px breakpoint; on desktop the sidebar is
+  // always visible and this state is inert.
+  const [navOpen, setNavOpen] = useState(false)
+  // Whether the mobile layout is active, matching the CSS breakpoint. Needed because a closed
+  // off-canvas drawer must be removed from the tab order, but the same element on desktop is
+  // the permanent nav and must stay reachable.
+  const [isNarrow, setIsNarrow] = useState(
+    () => typeof window.matchMedia === "function" && window.matchMedia("(max-width: 860px)").matches)
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return
+    const mq = window.matchMedia("(max-width: 860px)")
+    const onChange = () => { setIsNarrow(mq.matches); if (!mq.matches) setNavOpen(false) }
+    mq.addEventListener("change", onChange)
+    return () => mq.removeEventListener("change", onChange)
+  }, [])
   const esRef = useRef<EventSource | null>(null)
 
   // theme: server default <- personal override (localStorage + profile)
-  const savedTheme = JSON.parse(localStorage.getItem("todorio.theme") || "null")
-  const [theme, setTheme] = useState<{ color: string; scheme: string; visual: string }>(
-    savedTheme || { color: "blue", scheme: "dark", visual: "rich" },
+  // A theme cached by an older build still carries a `scheme` key. Strip it on read rather
+  // than spreading it back into state and re-persisting a field the product no longer has.
+  const savedTheme = (() => {
+    const raw = JSON.parse(localStorage.getItem("todorio.theme") || "null")
+    if (!raw) return null
+    return { color: raw.color || "blue", visual: raw.visual || "rich" }
+  })()
+  const [theme, setTheme] = useState<{ color: string; visual: string }>(
+    savedTheme || { color: "blue", visual: "rich" },
   )
 
   useEffect(() => {
@@ -80,9 +104,9 @@ export default function App() {
         // профиля (главный)") — it overrides both the bootstrap default and any localStorage
         // cache from before login, so a user's own settings follow them to a new device.
         if (p?.locale) setLocale(p.locale)
-        if (p?.theme_color || p?.theme_scheme || p?.theme_visual) {
+        if (p?.theme_color || p?.theme_visual) {
           setTheme((t) => ({
-            color: p.theme_color || t.color, scheme: p.theme_scheme || t.scheme, visual: p.theme_visual || t.visual,
+            color: p.theme_color || t.color, visual: p.theme_visual || t.visual,
           }))
         }
         if (p?.notify_prefs && typeof p.notify_prefs.sound === "boolean") {
@@ -92,12 +116,19 @@ export default function App() {
       })
       .catch(() => {})
       .finally(() => setLoaded(true))
-    const onInstall = (e: Event) => { e.preventDefault(); setInstallEvt(e) }
-    window.addEventListener("beforeinstallprompt", onInstall)
-    return () => window.removeEventListener("beforeinstallprompt", onInstall)
   }, [])
 
-  useEffect(() => { applyTheme(theme.color, theme.scheme, theme.visual) }, [theme])
+  useEffect(() => { applyTheme(theme.color, theme.visual) }, [theme])
+
+  // Navigating always dismisses the drawer — otherwise it would stay open over the page the
+  // user just chose. Escape closes it too, matching the modal behaviour.
+  useEffect(() => { setNavOpen(false) }, [view])
+  useEffect(() => {
+    if (!navOpen) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setNavOpen(false) }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [navOpen])
 
   // SSE — live notifications after login
   useEffect(() => {
@@ -123,6 +154,7 @@ export default function App() {
       switch (e.key) {
         case "?": setShowHelp((v) => !v); break
         case "m": setView("my"); break
+        case "i": setView("inbox"); break
         case "s": setView("spaces"); break
         case "/": setView("search"); break
         case "n": setView("notifications"); break
@@ -139,7 +171,7 @@ export default function App() {
     localStorage.setItem("todorio.theme", JSON.stringify(next))
     if (me) {
       api.patch("/api/me", {
-        theme_color: next.color, theme_scheme: next.scheme, theme_visual: next.visual,
+        theme_color: next.color, theme_visual: next.visual,
       }).catch(() => {})
     }
   }
@@ -161,9 +193,29 @@ export default function App() {
 
   return (
     <div className="app-layout">
-      <aside className="sidebar">
+      {/* Mobile-only top bar: the hamburger is the sole way to reach the nav under 860px. */}
+      <div className="mobile-topbar">
+        <button className="ctrl-btn" aria-label={tr("nav.menu")} aria-expanded={navOpen}
+          onClick={() => setNavOpen((v) => !v)}>
+          <IconMenu size={20} />
+        </button>
+        <img src={boot?.logo_path ? "/api/logo" : "/icons/logo.svg"} alt=""
+          onError={(e) => { (e.currentTarget as HTMLImageElement).src = "/icons/logo.svg" }} />
+        <b>{siteName}</b>
+        {unread > 0 && <span className="badge" style={{ marginLeft: "auto" }}>{unread}</span>}
+      </div>
+
+      {navOpen && <div className="sidebar-backdrop" onClick={() => setNavOpen(false)} />}
+
+      <aside className={"sidebar" + (navOpen ? " open" : "")}
+        // A closed drawer is off-screen: keep it out of the tab order and away from screen
+        // readers. `inert` covers both in one attribute.
+        {...(isNarrow && !navOpen ? { inert: "" as any } : {})}>
         <div className="sidebar-header">
-          <img src="/icons/logo.svg" alt="" />
+          {/* A root-uploaded logo wins; if none is set /api/logo 404s and we fall back to
+              the bundled SVG. Swapping src in onError keeps that fallback declarative. */}
+          <img src={boot?.logo_path ? "/api/logo" : "/icons/logo.svg"} alt=""
+            onError={(e) => { (e.currentTarget as HTMLImageElement).src = "/icons/logo.svg" }} />
           <b>{siteName}</b>
         </div>
         
@@ -171,6 +223,11 @@ export default function App() {
           <button className={"sidebar-btn" + (view === "my" ? " active" : "")} onClick={() => setView("my")}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
             {tr("nav.my")}
+          </button>
+          
+          <button className={"sidebar-btn" + (view === "inbox" ? " active" : "")} onClick={() => setView("inbox")}>
+            <IconInbox size={18} />
+            {tr("inbox.title")}
           </button>
           
           <button className={"sidebar-btn" + (view === "spaces" ? " active" : "")} onClick={() => setView("spaces")}>
@@ -218,15 +275,6 @@ export default function App() {
           </div>
 
           <div className="sidebar-controls">
-            <button className="ctrl-btn" title={tr("nav.theme")}
-              onClick={() => updateTheme({ scheme: theme.scheme === "dark" ? "light" : "dark" })}>
-              {theme.scheme === "dark" ? (
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-              ) : (
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2m0 18v2M4.22 4.22l1.42 1.42m12.72 12.72l1.42 1.42M1 12h2m18 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
-              )}
-            </button>
-
             <button className="ctrl-btn" title={tr("nav.visual")}
               onClick={() => updateTheme({ visual: theme.visual === "rich" ? "lite" : "rich" })}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
@@ -250,15 +298,6 @@ export default function App() {
             </button>
           </div>
 
-          {installEvt && (
-            <button className="btn secondary row" style={{ marginTop: 8, gap: 6, justifyContent: "center" }} onClick={async () => {
-              installEvt.prompt()
-              await installEvt.userChoice.catch(() => {})
-              setInstallEvt(null)
-            }}>
-              <IconDownload size={14} /> {tr("pwa.install")}
-            </button>
-          )}
           <button className="nav-btn row" style={{ marginTop: 4, fontSize: 12, gap: 5 }} onClick={() => setShowHelp(true)}>
             <IconKeyboard size={14} /> {tr("help.shortcuts")}
           </button>
@@ -269,10 +308,15 @@ export default function App() {
         <AnnouncementsBanner />
         <DigestModal />
         {view === "my" && <MyTasksPage me={me} />}
+        {view === "inbox" && <InboxPage />}
         {view === "spaces" && <SpacesPage me={me} />}
         {view === "search" && <SearchPage />}
         {view === "notifications" && <NotificationsPage onRead={() => setUnread(0)} />}
         {view === "settings" && <SettingsPage me={me} theme={theme} onUpdateTheme={updateTheme} onProfileSaved={setProfile} />}
+        {view === "about" && (
+          <AboutPage siteName={siteName} version={boot?.version} developerName={boot?.developer_name}
+            developerUrl={boot?.developer_url} aboutText={boot?.about_text} onBack={() => setView("my")} />
+        )}
         {view === "admin" && (
           <>
             <AdminPage me={me} />
@@ -284,18 +328,24 @@ export default function App() {
         )}
 
         <footer className="muted" style={{ marginTop: 60, textAlign: "center", fontSize: 13 }}>
-          {siteName} · {tr("footer.developed_by")} {boot?.developer_name || "DanMotive"}
+          {boot?.show_product_name !== false && <>{siteName} · </>}
+          {tr("footer.developed_by")}{" "}
+          {boot?.developer_url
+            ? <a href={boot.developer_url} target="_blank" rel="noreferrer noopener">{boot?.developer_name || "DanMotive"}</a>
+            : (boot?.developer_name || "DanMotive")}
           {boot?.footer_text ? ` · ${boot.footer_text}` : ""}
+          {" · "}
+          <button className="linklike" onClick={() => setView("about")}>{tr("about.title")}</button>
         </footer>
       </main>
 
       {showHelp && (
-        <div className="modal-backdrop" onClick={() => setShowHelp(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420 }}>
+        <ModalShell onClose={() => setShowHelp(false)} maxWidth={420}>
             <h3 className="row" style={{ marginTop: 0, gap: 6 }}><IconKeyboard size={17} /> {tr("help.shortcuts")}</h3>
             <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "6px 14px", fontSize: 14 }}>
               <code>?</code><span>{tr("help.toggle")}</span>
               <code>m</code><span>{tr("nav.my")}</span>
+              <code>i</code><span>{tr("inbox.title")}</span>
               <code>s</code><span>{tr("nav.spaces")}</span>
               <code>/</code><span>{tr("nav.search")}</span>
               <code>n</code><span>{tr("nav.notifications")}</span>
@@ -307,8 +357,7 @@ export default function App() {
               {tr("help.enable_hotkeys")}
             </label>
             <button className="btn" style={{ marginTop: 14 }} onClick={() => setShowHelp(false)}>{tr("digest.ok")}</button>
-          </div>
-        </div>
+        </ModalShell>
       )}
     </div>
   )

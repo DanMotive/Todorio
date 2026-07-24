@@ -86,7 +86,7 @@ func (a *API) handleRegister(w http.ResponseWriter, r *http.Request) {
 		a.consumeInvite(r.Context(), invite.ID)
 	}
 	if status == "active" && total != 0 {
-		a.postApprove(r.Context(), id, in.Username)
+		a.postApprove(r.Context(), id, in.Username, role)
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{"id": id, "status": status})
 }
@@ -169,18 +169,18 @@ func (a *API) handleMe(w http.ResponseWriter, r *http.Request) {
 	_ = a.DB.Pool.QueryRow(r.Context(),
 		`SELECT count(*) FROM notifications WHERE user_id=$1 AND read_at IS NULL`, u.ID).Scan(&unread)
 
-	var displayName, locale, themeColor, themeScheme, themeVisual, avatarPath *string
+	var displayName, locale, themeColor, themeVisual, avatarPath *string
 	var notifyPrefs json.RawMessage
 	_ = a.DB.Pool.QueryRow(r.Context(), `
-		SELECT display_name, locale, theme_color, theme_scheme, theme_visual, avatar_path, notify_prefs
+		SELECT display_name, locale, theme_color, theme_visual, avatar_path, notify_prefs
 		FROM users WHERE id=$1`, u.ID).Scan(
-		&displayName, &locale, &themeColor, &themeScheme, &themeVisual, &avatarPath, &notifyPrefs)
+		&displayName, &locale, &themeColor, &themeVisual, &avatarPath, &notifyPrefs)
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"user": u, "unread_notifications": unread,
 		"profile": map[string]any{
 			"display_name": displayName, "locale": locale,
-			"theme_color": themeColor, "theme_scheme": themeScheme, "theme_visual": themeVisual,
+			"theme_color": themeColor, "theme_visual": themeVisual,
 			"avatar_path": avatarPath, "notify_prefs": notifyPrefs,
 		},
 	})
@@ -199,7 +199,6 @@ func (a *API) handleUpdateMe(w http.ResponseWriter, r *http.Request) {
 		DisplayName *string         `json:"display_name"`
 		Locale      *string         `json:"locale"`
 		ThemeColor  *string         `json:"theme_color"`
-		ThemeScheme *string         `json:"theme_scheme"`
 		ThemeVisual *string         `json:"theme_visual"`
 		NotifyPrefs *map[string]any `json:"notify_prefs"`
 	}
@@ -222,11 +221,10 @@ func (a *API) handleUpdateMe(w http.ResponseWriter, r *http.Request) {
 			display_name = COALESCE($2, display_name),
 			locale       = COALESCE($3, locale),
 			theme_color  = COALESCE($4, theme_color),
-			theme_scheme = COALESCE($5, theme_scheme),
-			theme_visual = COALESCE($6, theme_visual),
-			notify_prefs = CASE WHEN $7::text IS NULL THEN notify_prefs ELSE notify_prefs || $7::jsonb END
+			theme_visual = COALESCE($5, theme_visual),
+			notify_prefs = CASE WHEN $6::text IS NULL THEN notify_prefs ELSE notify_prefs || $6::jsonb END
 		WHERE id=$1`,
-		u.ID, in.DisplayName, in.Locale, in.ThemeColor, in.ThemeScheme, in.ThemeVisual, notifyJSON)
+		u.ID, in.DisplayName, in.Locale, in.ThemeColor, in.ThemeVisual, notifyJSON)
 	if err != nil {
 		errJSON(w, http.StatusBadRequest, "invalid value (check the theme: red/blue/green/yellow/gray)")
 		return

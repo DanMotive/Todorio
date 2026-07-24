@@ -14,16 +14,20 @@ type Quest struct {
 }
 
 // Quests — tasks to help a new user learn the product (a guided tour as to-dos).
+//
+// Titles are deliberately plain text: emoji render differently across OS/browser font stacks,
+// so they're kept out of anything the product itself generates. The one mention of the reaction
+// set below is describing a feature to the user, not decorating the UI.
 func Quests() []Quest {
 	return []Quest{
-		{"✅ Close this task", "Click the circle to the left of the title — that's how completed tasks are marked."},
-		{"📝 Create your first task", "Open your list and click \"New task\". Name it anything you like!"},
-		{"⏰ Set a due date", "Open a task and set a due date — a colored badge will appear, and you'll get a notification before it's overdue."},
-		{"💬 Write a comment", "Every task card has a discussion feed. Mention a teammate with @username and they'll get a notification."},
-		{"🔥 Add a reaction", "Any task or comment can get an emoji reaction: 👍 ✅ 🎉 🔥 👀 ❓ ❗ ❌ 😭 ⭐"},
-		{"🎨 Switch the theme", "The site header has a choice of 5 colors, a light/dark scheme, and a lite mode for slower machines."},
-		{"📊 Check the space Pulse", "The space page shows team health: overdue tasks, stalled tasks, and an overall score."},
-		{"📱 Install as an app", "The ⬇️ button in the header installs Todorio as a PWA on your phone or desktop (requires HTTPS)."},
+		{"Close this task", "Click the circle to the left of the title — that's how completed tasks are marked."},
+		{"Create your first task", "Open your list and click \"New task\". Name it anything you like!"},
+		{"Set a due date", "Open a task and set a due date — a colored badge will appear, and you'll get a notification before it's overdue."},
+		{"Write a comment", "Every task card has a discussion feed. Mention a teammate with @username and they'll get a notification."},
+		{"Add a reaction", "Any task or comment can get a reaction — pick one from the fixed set in the task's discussion feed."},
+		{"Switch the theme", "Settings has a choice of 5 accent colors and a lite mode for slower machines."},
+		{"Check the space Pulse", "The space page shows team health: overdue tasks, stalled tasks, and an overall score."},
+		{"Install as an app", "Settings has an \"Install app\" button that installs Todorio as a PWA on your phone or desktop (requires HTTPS)."},
 	}
 }
 
@@ -45,7 +49,7 @@ func EnsureDemo(ctx context.Context, d *db.DB) error {
 	var spaceID int64
 	if err := d.Pool.QueryRow(ctx,
 		`INSERT INTO spaces(name, owner_id) VALUES($1,$2) RETURNING id`,
-		"🎓 Welcome to Todorio", rootID).Scan(&spaceID); err != nil {
+		"Welcome to Todorio", rootID).Scan(&spaceID); err != nil {
 		return err
 	}
 	if _, err := d.Pool.Exec(ctx,
@@ -55,7 +59,7 @@ func EnsureDemo(ctx context.Context, d *db.DB) error {
 	var listID int64
 	if err := d.Pool.QueryRow(ctx,
 		`INSERT INTO lists(space_id, name) VALUES($1,$2) RETURNING id`,
-		spaceID, "🎯 Onboarding quests").Scan(&listID); err != nil {
+		spaceID, "Onboarding quests").Scan(&listID); err != nil {
 		return err
 	}
 	if _, err := d.Pool.Exec(ctx,

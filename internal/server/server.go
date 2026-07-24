@@ -69,17 +69,22 @@ func Run(cfg config.Config, version string) error {
 			}
 		}
 		writeJSON(w, map[string]any{
-			"site_name":             database.Setting(r.Context(), "branding.site_name", "Todorio"),
-			"browser_title":         database.Setting(r.Context(), "branding.browser_title", "Todorio"),
-			"developer_name":        database.Setting(r.Context(), "branding.developer_name", "DanMotive"),
-			"footer_text":           database.Setting(r.Context(), "branding.footer_text", ""),
+			"site_name":         database.Setting(r.Context(), "branding.site_name", "Todorio"),
+			"browser_title":     database.Setting(r.Context(), "branding.browser_title", "Todorio"),
+			"developer_name":    database.Setting(r.Context(), "branding.developer_name", "DanMotive"),
+			"developer_url":     database.Setting(r.Context(), "branding.developer_url", ""),
+			"footer_text":       database.Setting(r.Context(), "branding.footer_text", ""),
+			"show_product_name": database.Setting(r.Context(), "branding.show_product_name", "true") != "false",
+			"about_text":        database.Setting(r.Context(), "branding.about_text", ""),
+			// Empty means "no custom logo" — the frontend falls back to the bundled SVG.
+			"logo_path":             database.Setting(r.Context(), "branding.logo_path", ""),
+			"version":               version,
 			"default_locale":        cfg.DefaultLocale,
 			"detect_browser_locale": cfg.DetectBrowser,
 			"registration_mode":     database.Setting(r.Context(), "policy.registration.mode", "open_approval"),
 			"locales_enabled":       locales,
 			"theme": map[string]string{
 				"color":  database.Setting(r.Context(), "branding.default_color", cfg.DefaultColor),
-				"scheme": database.Setting(r.Context(), "branding.default_scheme", cfg.DefaultScheme),
 				"visual": database.Setting(r.Context(), "branding.default_visual", cfg.DefaultVisual),
 			},
 		})

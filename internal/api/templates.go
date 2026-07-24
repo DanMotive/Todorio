@@ -35,6 +35,9 @@ func (a *API) handleCreateTemplate(w http.ResponseWriter, r *http.Request) {
 		Name      string          `json:"name"`
 		Body      json.RawMessage `json:"body"`
 		AutoApply bool            `json:"auto_apply"`
+		// Audience controls who sees the template (spec section 16: "публикация для всех
+		// активных пользователей, определённых ролей или админов").
+		Audience *templateAudience `json:"audience"`
 	}
 	if err := readJSON(r, &in); err != nil || in.Name == "" {
 		errJSON(w, http.StatusBadRequest, "invalid request")
@@ -45,24 +48,69 @@ func (a *API) handleCreateTemplate(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, http.StatusBadRequest, "body: expected {list_name, tasks[]}")
 		return
 	}
+	aud := templateAudience{Mode: "all"}
+	if in.Audience != nil {
+		aud = *in.Audience
+	}
+	if !validAudienceMode[aud.Mode] {
+		errJSON(w, http.StatusBadRequest, "audience.mode must be all, roles, or admins")
+		return
+	}
+	audJSON, _ := json.Marshal(aud)
 	var id int64
 	if err := a.DB.Pool.QueryRow(r.Context(), `
-		INSERT INTO templates(name, body, auto_apply) VALUES($1,$2,$3) RETURNING id`,
-		in.Name, string(in.Body), in.AutoApply).Scan(&id); err != nil {
+		INSERT INTO templates(name, body, auto_apply, audience) VALUES($1,$2,$3,$4) RETURNING id`,
+		in.Name, string(in.Body), in.AutoApply, string(audJSON)).Scan(&id); err != nil {
+		dbFail(r, "create template", err)
 		errJSON(w, http.StatusInternalServerError, "database error")
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{"id": id})
 }
 
-// GET /api/templates — templates visible to all active users.
+// templateAudience — who a published template is visible to.
+//
+//	{"mode":"all"}                        — every active user (the default)
+//	{"mode":"admins"}                     — root and admins only
+//	{"mode":"roles","roles":["user"]}     — the listed roles only
+type templateAudience struct {
+	Mode  string   `json:"mode"`
+	Roles []string `json:"roles,omitempty"`
+}
+
+var validAudienceMode = map[string]bool{"all": true, "roles": true, "admins": true}
+
+// visibleTo reports whether a user with the given role may see this template. An unset or
+// unrecognised mode falls back to "visible to all" — matching the pre-audience behaviour, so
+// templates created before this feature don't silently disappear.
+func (t templateAudience) visibleTo(role string) bool {
+	switch t.Mode {
+	case "admins":
+		return role == "root" || role == "admin"
+	case "roles":
+		for _, r := range t.Roles {
+			if r == role {
+				return true
+			}
+		}
+		// Root always retains visibility — it manages templates and must be able to see
+		// what it published, whatever the audience says.
+		return role == "root"
+	default:
+		return true
+	}
+}
+
+// GET /api/templates — templates the caller is allowed to see, per each template's audience.
 func (a *API) handleListTemplates(w http.ResponseWriter, r *http.Request) {
-	if a.requireUser(w, r) == nil {
+	u := a.requireUser(w, r)
+	if u == nil {
 		return
 	}
 	rows, err := a.DB.Pool.Query(r.Context(),
-		`SELECT id, name, body, auto_apply FROM templates ORDER BY id`)
+		`SELECT id, name, body, auto_apply, audience FROM templates ORDER BY id`)
 	if err != nil {
+		dbFail(r, "list templates", err)
 		errJSON(w, http.StatusInternalServerError, "database error")
 		return
 	}
@@ -71,11 +119,21 @@ func (a *API) handleListTemplates(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var id int64
 		var name string
-		var body json.RawMessage
+		var body, audRaw json.RawMessage
 		var autoApply bool
-		if rows.Scan(&id, &name, &body, &autoApply) == nil {
-			list = append(list, map[string]any{"id": id, "name": name, "body": body, "auto_apply": autoApply})
+		if rows.Scan(&id, &name, &body, &autoApply, &audRaw) != nil {
+			continue
 		}
+		aud := templateAudience{Mode: "all"}
+		if len(audRaw) > 0 {
+			_ = json.Unmarshal(audRaw, &aud)
+		}
+		if !aud.visibleTo(u.Role) {
+			continue
+		}
+		list = append(list, map[string]any{
+			"id": id, "name": name, "body": body, "auto_apply": autoApply, "audience": aud,
+		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"templates": list})
 }
@@ -122,8 +180,18 @@ func (a *API) handleApplyTemplate(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, http.StatusForbidden, "no permission in the space")
 		return
 	}
-	var raw []byte
-	if a.DB.Pool.QueryRow(r.Context(), `SELECT body FROM templates WHERE id=$1`, id).Scan(&raw) != nil {
+	var raw, audRaw []byte
+	if a.DB.Pool.QueryRow(r.Context(), `SELECT body, audience FROM templates WHERE id=$1`, id).Scan(&raw, &audRaw) != nil {
+		errJSON(w, http.StatusNotFound, "template not found")
+		return
+	}
+	// The audience is enforced here too, not just when listing: hiding a template from the
+	// list is presentation, but applying it by guessed id has to be refused as well.
+	aud := templateAudience{Mode: "all"}
+	if len(audRaw) > 0 {
+		_ = json.Unmarshal(audRaw, &aud)
+	}
+	if !aud.visibleTo(u.Role) {
 		errJSON(w, http.StatusNotFound, "template not found")
 		return
 	}
@@ -168,7 +236,10 @@ func (a *API) applyTemplate(ctx context.Context, raw []byte, spaceID, userID int
 
 // postApprove — what happens after a new user is approved:
 // access to the demo space, personal space, auto_apply templates, and onboarding quests.
-func (a *API) postApprove(ctx context.Context, userID int64, username string) {
+// role is the role the user was just approved with — auto-apply must respect each template's
+// audience, otherwise a template published to admins only would still be materialised into a
+// plain user's personal space.
+func (a *API) postApprove(ctx context.Context, userID int64, username, role string) {
 	// 1. add to the demo space (if created during setup)
 	if sid := a.DB.Setting(ctx, "onboarding.demo_space_id", ""); sid != "" {
 		if demoID, err := strconv.ParseInt(sid, 10, 64); err == nil {
@@ -182,21 +253,35 @@ func (a *API) postApprove(ctx context.Context, userID int64, username string) {
 	var spaceID int64
 	if err := a.DB.Pool.QueryRow(ctx,
 		`INSERT INTO spaces(name, owner_id) VALUES($1,$2) RETURNING id`,
-		"🌱 "+username+"'s space", userID).Scan(&spaceID); err != nil {
+		username+"'s space", userID).Scan(&spaceID); err != nil {
 		return
 	}
 	_, _ = a.DB.Pool.Exec(ctx,
 		`INSERT INTO space_members(space_id,user_id,role) VALUES($1,$2,'owner')`, spaceID, userID)
 
-	// 3. root's auto_apply templates
-	rows, err := a.DB.Pool.Query(ctx, `SELECT body FROM templates WHERE auto_apply`)
+	// 3. root's auto_apply templates (only those this user's role is allowed to see)
+	rows, err := a.DB.Pool.Query(ctx, `SELECT body, audience FROM templates WHERE auto_apply`)
 	if err == nil {
-		defer rows.Close()
+		type pending struct{ raw []byte }
+		todo := []pending{}
 		for rows.Next() {
-			var raw []byte
-			if rows.Scan(&raw) == nil {
-				_, _ = a.applyTemplate(ctx, raw, spaceID, userID)
+			var raw, audRaw []byte
+			if rows.Scan(&raw, &audRaw) != nil {
+				continue
 			}
+			aud := templateAudience{Mode: "all"}
+			if len(audRaw) > 0 {
+				_ = json.Unmarshal(audRaw, &aud)
+			}
+			if aud.visibleTo(role) {
+				todo = append(todo, pending{raw})
+			}
+		}
+		rows.Close()
+		// applyTemplate runs its own queries, so the rows cursor is drained and closed first
+		// rather than issuing new queries while it's still open.
+		for _, t := range todo {
+			_, _ = a.applyTemplate(ctx, t.raw, spaceID, userID)
 		}
 	}
 
@@ -207,7 +292,7 @@ func (a *API) postApprove(ctx context.Context, userID int64, username string) {
 	var listID int64
 	if err := a.DB.Pool.QueryRow(ctx,
 		`INSERT INTO lists(space_id, name) VALUES($1,$2) RETURNING id`,
-		spaceID, "🎯 Onboarding quests").Scan(&listID); err != nil {
+		spaceID, "Onboarding quests").Scan(&listID); err != nil {
 		return
 	}
 	_, _ = a.DB.Pool.Exec(ctx,

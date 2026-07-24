@@ -79,7 +79,7 @@ func (a *API) handleApproveUser(w http.ResponseWriter, r *http.Request) {
 	// demo space, personal space, auto_apply templates, and onboarding quests
 	var username string
 	_ = a.DB.Pool.QueryRow(r.Context(), `SELECT username FROM users WHERE id=$1`, id).Scan(&username)
-	a.postApprove(r.Context(), id, username)
+	a.postApprove(r.Context(), id, username, in.Role)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 

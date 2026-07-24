@@ -18,9 +18,32 @@ var imageExt = map[string]string{
 	"image/gif":  ".gif",
 }
 
+// commentListID resolves the list a comment belongs to, for permission checks. Returns false
+// when the comment doesn't exist or its task has been archived.
+func (a *API) commentListID(r *http.Request, commentID int64) (int64, bool) {
+	var listID int64
+	err := a.DB.Pool.QueryRow(r.Context(), `
+		SELECT t.list_id FROM comments c
+		JOIN tasks t ON t.id = c.task_id
+		WHERE c.id=$1 AND c.deleted_at IS NULL AND t.archived_at IS NULL`, commentID).Scan(&listID)
+	return listID, err == nil
+}
+
 // POST /api/tasks/{id}/attachments — multipart image upload (field "file").
-// Size limit comes from settings (limits.uploads.max_file_size_mb, default 10 MB).
 func (a *API) handleUploadAttachment(w http.ResponseWriter, r *http.Request) {
+	a.uploadAttachment(w, r, "task")
+}
+
+// POST /api/comments/{id}/attachments — same upload flow, different owner (spec section 7:
+// attachments belong to tasks *and* comments).
+func (a *API) handleUploadCommentAttachment(w http.ResponseWriter, r *http.Request) {
+	a.uploadAttachment(w, r, "comment")
+}
+
+// uploadAttachment handles both target types. Size limit comes from settings
+// (limits.uploads.max_file_size_mb, default 10 MB); per-target count limits come from
+// limits.uploads.max_per_task / max_per_comment (spec section 10 examples: 10 and 5).
+func (a *API) uploadAttachment(w http.ResponseWriter, r *http.Request, targetType string) {
 	u := a.requireUser(w, r)
 	if u == nil {
 		return
@@ -29,19 +52,45 @@ func (a *API) handleUploadAttachment(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, http.StatusForbidden, "attachments are disabled on this server")
 		return
 	}
-	taskID, err := pathID(r)
+	targetID, err := pathID(r)
 	if err != nil {
 		errJSON(w, http.StatusBadRequest, "invalid id")
 		return
 	}
 	var listID int64
-	if a.DB.Pool.QueryRow(r.Context(), `SELECT list_id FROM tasks WHERE id=$1 AND archived_at IS NULL`, taskID).Scan(&listID) != nil {
-		errJSON(w, http.StatusNotFound, "task not found")
-		return
+	var ok bool
+	if targetType == "comment" {
+		if listID, ok = a.commentListID(r, targetID); !ok {
+			errJSON(w, http.StatusNotFound, "comment not found")
+			return
+		}
+	} else {
+		if a.DB.Pool.QueryRow(r.Context(), `SELECT list_id FROM tasks WHERE id=$1 AND archived_at IS NULL`, targetID).Scan(&listID) != nil {
+			errJSON(w, http.StatusNotFound, "task not found")
+			return
+		}
 	}
 	if !permAtLeast(a.listPermission(r, u, listID), "editor") {
 		errJSON(w, http.StatusForbidden, "no permission")
 		return
+	}
+
+	// Per-target attachment count limit. 0 = unlimited, via intSetting so an explicit 0 is
+	// distinguishable from "never configured".
+	limitKey, defLimit := "limits.uploads.max_per_task", 10
+	if targetType == "comment" {
+		limitKey, defLimit = "limits.uploads.max_per_comment", 5
+	}
+	if maxN := a.intSetting(r.Context(), limitKey, defLimit); maxN > 0 {
+		var count int
+		_ = a.DB.Pool.QueryRow(r.Context(),
+			`SELECT count(*) FROM attachments WHERE target_type=$1 AND target_id=$2`,
+			targetType, targetID).Scan(&count)
+		if count >= maxN {
+			errJSON(w, http.StatusForbidden,
+				fmt.Sprintf("attachment limit reached (%d per %s)", maxN, targetType))
+			return
+		}
 	}
 
 	maxMB := a.intSetting(r.Context(), "limits.uploads.max_file_size_mb", 10)
@@ -79,7 +128,7 @@ func (a *API) handleUploadAttachment(w http.ResponseWriter, r *http.Request) {
 
 	rnd := make([]byte, 8)
 	_, _ = rand.Read(rnd)
-	rel := filepath.Join("tasks", strconv.FormatInt(taskID, 10), hex.EncodeToString(rnd)+ext)
+	rel := filepath.Join(targetType+"s", strconv.FormatInt(targetID, 10), hex.EncodeToString(rnd)+ext)
 	abs := filepath.Join(a.Cfg.UploadsDir, rel)
 	if err := os.MkdirAll(filepath.Dir(abs), 0o750); err != nil {
 		errJSON(w, http.StatusInternalServerError, "storage unavailable")
@@ -101,9 +150,10 @@ func (a *API) handleUploadAttachment(w http.ResponseWriter, r *http.Request) {
 	var id int64
 	if err := a.DB.Pool.QueryRow(r.Context(), `
 		INSERT INTO attachments(target_type, target_id, uploader_id, file_path, mime_type, size_bytes)
-		VALUES('task',$1,$2,$3,$4,$5) RETURNING id`,
-		taskID, u.ID, rel, mime, size).Scan(&id); err != nil {
+		VALUES($1,$2,$3,$4,$5,$6) RETURNING id`,
+		targetType, targetID, u.ID, rel, mime, size).Scan(&id); err != nil {
 		_ = os.Remove(abs)
+		dbFail(r, "insert attachment", err)
 		errJSON(w, http.StatusInternalServerError, "database error")
 		return
 	}
@@ -112,19 +162,36 @@ func (a *API) handleUploadAttachment(w http.ResponseWriter, r *http.Request) {
 
 // GET /api/tasks/{id}/attachments
 func (a *API) handleListAttachments(w http.ResponseWriter, r *http.Request) {
+	a.listAttachments(w, r, "task")
+}
+
+// GET /api/comments/{id}/attachments
+func (a *API) handleListCommentAttachments(w http.ResponseWriter, r *http.Request) {
+	a.listAttachments(w, r, "comment")
+}
+
+func (a *API) listAttachments(w http.ResponseWriter, r *http.Request, targetType string) {
 	u := a.requireUser(w, r)
 	if u == nil {
 		return
 	}
-	taskID, err := pathID(r)
+	targetID, err := pathID(r)
 	if err != nil {
 		errJSON(w, http.StatusBadRequest, "invalid id")
 		return
 	}
 	var listID int64
-	if a.DB.Pool.QueryRow(r.Context(), `SELECT list_id FROM tasks WHERE id=$1`, taskID).Scan(&listID) != nil {
-		errJSON(w, http.StatusNotFound, "task not found")
-		return
+	var ok bool
+	if targetType == "comment" {
+		if listID, ok = a.commentListID(r, targetID); !ok {
+			errJSON(w, http.StatusNotFound, "comment not found")
+			return
+		}
+	} else {
+		if a.DB.Pool.QueryRow(r.Context(), `SELECT list_id FROM tasks WHERE id=$1`, targetID).Scan(&listID) != nil {
+			errJSON(w, http.StatusNotFound, "task not found")
+			return
+		}
 	}
 	if !permAtLeast(a.listPermission(r, u, listID), "viewer") {
 		errJSON(w, http.StatusForbidden, "no access")
@@ -132,8 +199,9 @@ func (a *API) handleListAttachments(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, err := a.DB.Pool.Query(r.Context(), `
 		SELECT id, mime_type, size_bytes, created_at FROM attachments
-		WHERE target_type='task' AND target_id=$1 ORDER BY id`, taskID)
+		WHERE target_type=$1 AND target_id=$2 ORDER BY id`, targetType, targetID)
 	if err != nil {
+		dbFail(r, "list attachments", err)
 		errJSON(w, http.StatusInternalServerError, "database error")
 		return
 	}
@@ -161,17 +229,24 @@ func (a *API) handleGetAttachment(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, http.StatusBadRequest, "invalid id")
 		return
 	}
-	var rel, mime string
-	var taskID int64
+	var rel, mime, targetType string
+	var targetID int64
 	if a.DB.Pool.QueryRow(r.Context(), `
-		SELECT file_path, mime_type, target_id FROM attachments WHERE id=$1 AND target_type='task'`,
-		id).Scan(&rel, &mime, &taskID) != nil {
+		SELECT file_path, mime_type, target_type, target_id FROM attachments WHERE id=$1`,
+		id).Scan(&rel, &mime, &targetType, &targetID) != nil {
 		errJSON(w, http.StatusNotFound, "attachment not found")
 		return
 	}
+	// Files are served only after checking access to the owning list — never as a public
+	// directory. A comment attachment resolves through its comment's task to the same check.
 	var listID int64
-	if a.DB.Pool.QueryRow(r.Context(), `SELECT list_id FROM tasks WHERE id=$1`, taskID).Scan(&listID) != nil ||
-		!permAtLeast(a.listPermission(r, u, listID), "viewer") {
+	var ok bool
+	if targetType == "comment" {
+		listID, ok = a.commentListID(r, targetID)
+	} else {
+		ok = a.DB.Pool.QueryRow(r.Context(), `SELECT list_id FROM tasks WHERE id=$1`, targetID).Scan(&listID) == nil
+	}
+	if !ok || !permAtLeast(a.listPermission(r, u, listID), "viewer") {
 		errJSON(w, http.StatusForbidden, "no access")
 		return
 	}

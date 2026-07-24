@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/DanMotive/Todorio/internal/events"
@@ -18,6 +19,7 @@ type taskRow struct {
 	Priority     string          `json:"priority"`
 	AssigneeID   *int64          `json:"assignee_id"`
 	CreatorID    int64           `json:"creator_id"`
+	StartAt      *time.Time      `json:"start_at"`
 	DueAt        *time.Time      `json:"due_at"`
 	Weight       int             `json:"weight"`
 	Progress     *int            `json:"progress"`
@@ -37,7 +39,7 @@ type taskRow struct {
 // along on every existing task read (list, my-tasks, single task) instead of needing N+1 calls.
 const taskSelect = `
 	SELECT t.id, t.list_id, t.parent_id, t.title, t.description, t.status, t.priority,
-		t.assignee_id, t.creator_id, t.due_at, t.weight, t.progress,
+		t.assignee_id, t.creator_id, t.start_at, t.due_at, t.weight, t.progress,
 		COALESCE(t.blocked_by, '{}'), t.custom_fields, t.recurrence,
 		t.completed_at, t.created_at, t.updated_at,
 		(SELECT count(*) FROM tasks s WHERE s.parent_id=t.id AND s.archived_at IS NULL AND s.completed_at IS NOT NULL)::int,
@@ -52,7 +54,7 @@ const taskSelect = `
 func scanTask(row interface{ Scan(...any) error }) (taskRow, error) {
 	var t taskRow
 	err := row.Scan(&t.ID, &t.ListID, &t.ParentID, &t.Title, &t.Description, &t.Status, &t.Priority,
-		&t.AssigneeID, &t.CreatorID, &t.DueAt, &t.Weight, &t.Progress,
+		&t.AssigneeID, &t.CreatorID, &t.StartAt, &t.DueAt, &t.Weight, &t.Progress,
 		&t.BlockedBy, &t.CustomFields, &t.Recurrence,
 		&t.CompletedAt, &t.CreatedAt, &t.UpdatedAt, &t.SubtaskDone, &t.SubtaskAll, &t.ActiveFocus)
 	return t, err
@@ -156,21 +158,73 @@ func (a *API) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		Priority    *string    `json:"priority"`
 		ParentID    *int64     `json:"parent_id"`
 		AssigneeID  *int64     `json:"assignee_id"`
+		StartAt     *time.Time `json:"start_at"`
 		DueAt       *time.Time `json:"due_at"`
 		Weight      *int       `json:"weight"`
+		// Parse turns on smart quick-add: "#tag !priority @user tomorrow" is extracted from the
+		// title (spec section 5). Opt-in per request so a plain create can't have its title
+		// rewritten unexpectedly — e.g. a title that legitimately contains "#1".
+		Parse bool `json:"parse"`
 	}
 	if err := readJSON(r, &in); err != nil || in.Title == "" {
 		errJSON(w, http.StatusBadRequest, "a task title is required")
 		return
 	}
+	if in.StartAt != nil && in.DueAt != nil && in.StartAt.After(*in.DueAt) {
+		errJSON(w, http.StatusBadRequest, "the start date cannot be after the deadline")
+		return
+	}
+
+	// Smart quick-add. Explicit fields always win over parsed ones: if the client sent an
+	// assignee or a deadline outright, that was a deliberate choice and the text is only used
+	// to fill what's still empty.
+	var parsedTags []string
+	if in.Parse {
+		p := parseQuickAdd(in.Title, a.resolveUserForList(r.Context(), listID))
+		if p.Title == "" {
+			errJSON(w, http.StatusBadRequest, "a task title is required")
+			return
+		}
+		in.Title = p.Title
+		parsedTags = p.Tags
+		if in.Priority == nil && p.Priority != "" {
+			in.Priority = &p.Priority
+		}
+		if in.AssigneeID == nil && p.AssigneeID != nil {
+			in.AssigneeID = p.AssigneeID
+		}
+		if in.DueAt == nil && p.DueAt != nil {
+			in.DueAt = p.DueAt
+		}
+	}
+	// description is NOT NULL in the schema: a client that omits the field (the ListView
+	// quick-add form sends only title + due_at) decodes to a nil *string, which pgx binds
+	// as SQL NULL and the insert fails with a not-null violation. Normalise to "" here,
+	// the same way notes.go does for its NOT NULL body column.
+	description := ""
+	if in.Description != nil {
+		description = *in.Description
+	}
 	var id int64
 	err = a.DB.Pool.QueryRow(r.Context(), `
-		INSERT INTO tasks(list_id, parent_id, title, description, priority, assignee_id, due_at, weight, creator_id)
-		VALUES($1,$2,$3,$4,COALESCE($5,'normal'),$6,$7,COALESCE($8,1),$9) RETURNING id`,
-		listID, in.ParentID, in.Title, in.Description, in.Priority, in.AssigneeID, in.DueAt, in.Weight, u.ID).Scan(&id)
+		INSERT INTO tasks(list_id, parent_id, title, description, priority, assignee_id, start_at, due_at, weight, creator_id)
+		VALUES($1,$2,$3,$4,COALESCE($5,'normal'),$6,$7,$8,COALESCE($9,1),$10) RETURNING id`,
+		listID, in.ParentID, in.Title, description, in.Priority, in.AssigneeID, in.StartAt, in.DueAt, in.Weight, u.ID).Scan(&id)
 	if err != nil {
+		dbFail(r, "create task", err)
 		errJSON(w, http.StatusInternalServerError, "database error")
 		return
+	}
+	// Parsed #tags land in the "labels" multiselect custom field — the product has no separate
+	// label system by design (see fields.go), so this is the one place they belong.
+	if len(parsedTags) > 0 {
+		labels, _ := json.Marshal(map[string]string{"labels": strings.Join(parsedTags, ",")})
+		if _, err := a.DB.Pool.Exec(r.Context(),
+			`UPDATE tasks SET custom_fields = custom_fields || $2::jsonb WHERE id=$1`,
+			id, string(labels)); err != nil {
+			// The task itself was created; failing to attach labels shouldn't 500 the request.
+			dbFail(r, "attach quick-add labels", err)
+		}
 	}
 	if in.AssigneeID != nil && *in.AssigneeID != u.ID {
 		a.notify(r, *in.AssigneeID, "task_assigned", map[string]any{"task_id": id, "title": in.Title, "by": u.Username})
@@ -205,15 +259,23 @@ func (a *API) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in struct {
-		Title           *string            `json:"title"`
-		Description     *string            `json:"description"`
-		Status          *string            `json:"status"`
-		Priority        *string            `json:"priority"`
-		AssigneeID      *int64             `json:"assignee_id"`
-		ClearAssignee   bool               `json:"clear_assignee"`
-		DueAt           *time.Time         `json:"due_at"`
-		ClearDueAt      bool               `json:"clear_due_at"`
-		Progress        *int               `json:"progress"`
+		Title         *string `json:"title"`
+		Description   *string `json:"description"`
+		Status        *string `json:"status"`
+		Priority      *string `json:"priority"`
+		AssigneeID    *int64  `json:"assignee_id"`
+		ClearAssignee bool    `json:"clear_assignee"`
+		// StartAt is the Timeline/Gantt bar's left edge (spec section 12). Like due_at it needs
+		// an explicit clear flag, since COALESCE can't tell "null" from "field omitted".
+		StartAt      *time.Time `json:"start_at"`
+		ClearStartAt bool       `json:"clear_start_at"`
+		DueAt        *time.Time `json:"due_at"`
+		ClearDueAt   bool       `json:"clear_due_at"`
+		Progress     *int       `json:"progress"`
+		// ClearProgress removes a manual progress override so the task falls back to automatic
+		// progress from its subtasks. A plain "progress": null can't express this — it's
+		// indistinguishable from omitting the field once COALESCE is applied below.
+		ClearProgress   bool               `json:"clear_progress"`
 		Weight          *int               `json:"weight"`
 		BlockedBy       *[]int64           `json:"blocked_by"`
 		Position        *int               `json:"position"`
@@ -224,6 +286,32 @@ func (a *API) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 	if err := readJSON(r, &in); err != nil {
 		errJSON(w, http.StatusBadRequest, "invalid request")
 		return
+	}
+	// progress is a SMALLINT percentage and weight feeds weighted progress/ranking maths —
+	// clamp both here rather than letting a malformed client write nonsense that every
+	// consumer would then have to defend against.
+	if in.Progress != nil && (*in.Progress < 0 || *in.Progress > 100) {
+		errJSON(w, http.StatusBadRequest, "progress must be between 0 and 100")
+		return
+	}
+	if in.Weight != nil && (*in.Weight < 1 || *in.Weight > 100) {
+		errJSON(w, http.StatusBadRequest, "weight must be between 1 and 100")
+		return
+	}
+	// A start after the deadline would draw a backwards Timeline bar. Validate against the
+	// value the task will actually end up with, not just what's in this request: either side
+	// of the range can be unchanged, cleared, or set here.
+	if newStart, newDue := in.StartAt, in.DueAt; newStart != nil || newDue != nil {
+		if newStart == nil && !in.ClearStartAt {
+			_ = a.DB.Pool.QueryRow(r.Context(), `SELECT start_at FROM tasks WHERE id=$1`, id).Scan(&newStart)
+		}
+		if newDue == nil && !in.ClearDueAt {
+			newDue = oldDueAt
+		}
+		if newStart != nil && newDue != nil && newStart.After(*newDue) {
+			errJSON(w, http.StatusBadRequest, "the start date cannot be after the deadline")
+			return
+		}
 	}
 	if in.Status != nil {
 		allowed := a.listStatuses(r, listID)
@@ -255,7 +343,8 @@ func (a *API) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 			priority    = COALESCE($5, priority),
 			assignee_id = CASE WHEN $7 THEN NULL ELSE COALESCE($6, assignee_id) END,
 			due_at      = CASE WHEN $9 THEN NULL ELSE COALESCE($8, due_at) END,
-			progress    = COALESCE($10, progress),
+			start_at    = CASE WHEN $19 THEN NULL ELSE COALESCE($18, start_at) END,
+			progress    = CASE WHEN $17 THEN NULL ELSE COALESCE($10, progress) END,
 			weight      = COALESCE($11, weight),
 			blocked_by  = COALESCE($12, blocked_by),
 			position    = COALESCE($13, position),
@@ -270,8 +359,10 @@ func (a *API) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 		id, in.Title, in.Description, in.Status, in.Priority,
 		in.AssigneeID, in.ClearAssignee, in.DueAt, in.ClearDueAt,
 		in.Progress, in.Weight, in.BlockedBy, in.Position,
-		in.ClearRecurrence, in.Recurrence, in.CustomFields)
+		in.ClearRecurrence, in.Recurrence, in.CustomFields, in.ClearProgress,
+		in.StartAt, in.ClearStartAt)
 	if err != nil {
+		dbFail(r, "update task", err)
 		errJSON(w, http.StatusBadRequest, "update failed (check the values)")
 		return
 	}

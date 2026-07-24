@@ -89,17 +89,72 @@ func (a *API) handleStats(w http.ResponseWriter, r *http.Request) {
 			(SELECT count(*) FROM stat_captions WHERE locale=$1 AND category=$2 AND part=2), 1)) LIMIT 1`,
 		locale, category, spaceID).Scan(&part2)
 
-	resp := map[string]any{
-		"period":  interval,
-		"members": members,
-		"caption": map[string]string{"part1": part1, "part2": part2, "category": category},
+	// Leaderboard visibility (spec section 14: "кому показывать — своё место / топ-3 / полная
+	// таблица / только владельцу"). Read from spaces.settings->stats->visibility; anything
+	// unset or unrecognised keeps the previous behaviour of showing the full table.
+	//
+	// This is filtered server-side, not just hidden in the UI: "only the owner may see the
+	// table" has to mean the rows never reach anyone else's browser.
+	visibility := "full"
+	var visRaw *string
+	_ = a.DB.Pool.QueryRow(r.Context(),
+		`SELECT settings #>> '{stats,visibility}' FROM spaces WHERE id=$1`, spaceID).Scan(&visRaw)
+	if visRaw != nil {
+		switch *visRaw {
+		case "own", "top3", "full", "owner_only":
+			visibility = *visRaw
+		}
+	}
+	isOwner := a.spaceRole(r, u.ID, u.IsAdmin(), spaceID) == "owner"
+
+	// The unfiltered ranking is needed to work out the viewer's own position before trimming.
+	myRank := 0
+	for i, m := range members {
+		if m.ID == u.ID {
+			myRank = i + 1
+			break
+		}
 	}
 
-	// "Top performer" — configurable by the space owner (settings.stats.show_best).
+	shown := members
+	switch visibility {
+	case "owner_only":
+		if !isOwner {
+			shown = []member{}
+		}
+	case "top3":
+		if !isOwner && len(shown) > 3 {
+			shown = shown[:3]
+		}
+	case "own":
+		if !isOwner {
+			shown = []member{}
+			for _, m := range members {
+				if m.ID == u.ID {
+					shown = append(shown, m)
+					break
+				}
+			}
+		}
+	}
+
+	resp := map[string]any{
+		"period":       interval,
+		"members":      shown,
+		"visibility":   visibility,
+		"my_rank":      myRank,
+		"total_ranked": len(members),
+		"caption":      map[string]string{"part1": part1, "part2": part2, "category": category},
+	}
+
+	// "Top performer" — configurable by the space owner (settings.stats.show_best). Suppressed
+	// when the leaderboard is owner-only, since naming the top performer would leak exactly
+	// what that setting is meant to keep private.
 	var showBest *bool
 	_ = a.DB.Pool.QueryRow(r.Context(),
 		`SELECT (settings #>> '{stats,show_best}')::boolean FROM spaces WHERE id=$1`, spaceID).Scan(&showBest)
-	if (showBest == nil || *showBest) && len(members) > 0 && members[0].DoneWeight > 0 {
+	if (showBest == nil || *showBest) && len(members) > 0 && members[0].DoneWeight > 0 &&
+		(visibility != "owner_only" || isOwner) {
 		resp["best"] = members[0]
 	}
 

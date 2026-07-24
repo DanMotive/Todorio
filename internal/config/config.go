@@ -26,7 +26,6 @@ type Config struct {
 	DetectBrowser bool   `json:"detect_browser_locale"`
 	// Server-wide theme defaults (root); the user can override them in their profile.
 	DefaultColor  string `json:"default_color"`  // red | blue | green | yellow | gray
-	DefaultScheme string `json:"default_scheme"` // light | dark
 	DefaultVisual string `json:"default_visual"` // rich | lite
 }
 
@@ -38,7 +37,6 @@ func Defaults() Config {
 		DefaultLocale: "en-US",
 		DetectBrowser: true,
 		DefaultColor:  "blue",
-		DefaultScheme: "dark",
 		DefaultVisual: "rich",
 	}
 }

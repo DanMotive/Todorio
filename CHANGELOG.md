@@ -1,5 +1,151 @@
 # Changelog
 
+## Unreleased — dark-only theme, Inbox with smart quick-add
+
+Two changes on top of the previous pass: the light colour scheme was removed at the user's
+request, and the last major unstarted spec feature — «Входящие» with quick-add parsing — landed.
+
+### Removed — light colour scheme
+
+Todorio is dark-only now. The `data-scheme` attribute is gone entirely; the base tokens moved
+from `:root[data-scheme="dark"]` into plain `:root`, so the palette applies before any JS runs
+and there's no flash of unstyled UI on a cold load.
+
+- Removed the sidebar light/dark toggle, the scheme selector in Settings → Appearance, the
+  `branding.default_scheme` server setting, `DefaultScheme` in config, the `theme.scheme` field
+  in `/api/bootstrap`, and the four now-dead locale keys across all 13 locales.
+- New migration `0008_drop_theme_scheme.sql` drops `users.theme_scheme`. This was confirmed
+  rather than assumed — the column held real per-user preferences on the live database, so
+  dropping it is irreversible. `IF EXISTS` keeps the migration idempotent.
+- A theme cached in localStorage by an older build still carries a `scheme` key; it's stripped
+  on read rather than being spread back into state and re-persisted.
+- Also removed the light-mode `--due-*` variants, which existed only to hit WCAG contrast on a
+  white card, and a stale hardcoded `data-scheme="dark"` in `index.html`.
+- The rich/lite visual mode toggle is a separate feature and is untouched.
+
+### Added — Inbox and smart quick-add (spec sections 5 and 12)
+
+`GET /api/inbox` is a cross-space triage list, deliberately distinct from "My tasks": that view
+is deadline-sorted, which pushes undated and unassigned work to the bottom or hides it. Every
+item carries a `reason` (`review` / `mentioned` / `assigned` / `unassigned`) so the UI groups
+them into short labelled sections instead of one undifferentiated pile.
+
+The quick-add parser (`internal/api/quickadd.go`) recognises `#tag`, `!priority`, `@user`, and
+dates — relative words (`today`/`сегодня`, `tomorrow`/`завтра`), weekday names, `dd.mm`,
+`dd.mm.yyyy`, and `yyyy-mm-dd` — in both English and Russian.
+
+It is deliberately conservative: a token is consumed **only** when it resolves to something
+real. `@nobody` who isn't a visible member stays in the title as literal text and is reported
+back in `unresolved`; `!bogus` is left alone because it isn't a priority. Silently eating part
+of what someone typed would leave them with a title they never wrote and no way to know why.
+
+- Parsing is opt-in per request (`"parse": true`) so a title that legitimately contains `#1`
+  isn't rewritten unexpectedly. Explicit fields always beat parsed ones.
+- Parsed `#tags` land in the `labels` multiselect custom field — the product has no separate
+  label system by design.
+- 10 unit tests cover the edge cases: `31.02` is rejected rather than rolling over to 03.03,
+  `v1.2.3` isn't mistaken for a date, a weekday always resolves to the *next* one, deadlines
+  land at 23:59 so a task isn't overdue all the day it's due, and plain text is untouched.
+- Inbox gets a sidebar entry and the `i` hotkey; the quick-add syntax is advertised under the
+  task field, since a parser nobody knows about gets no use.
+
+## Unreleased — task-creation bugfix, Space Pulse completion, mobile layout, and the Timeline/Gantt view
+
+Four rounds of work in one pass: a confirmed P0 bugfix, finishing the product's headline feature,
+a real mobile layout, and the last unstarted spec view. No `.git` history was touched and no
+existing migration was edited — only source files plus one new numbered migration.
+
+### Fixed — "database error" when creating a task (P0)
+
+The root cause was **not** a permissions problem, which is what two earlier rounds assumed.
+`handleCreateTask` passed the decoded `*string` description straight into the insert. The ListView
+quick-add form only sends `title` and `due_at`, so `description` decoded to `nil`, pgx bound SQL
+`NULL`, and the column is `description TEXT NOT NULL` — a guaranteed failure for **any** user
+creating a task from the main form, root included. `notes.go` already handled this correctly for its
+own NOT NULL column; tasks now do the same.
+
+- Added `dbFail()`: the real database error is written to the server log while the client still gets
+  a deliberately vague `"database error"`. A blind 500 is undiagnosable, which is exactly why this
+  bug survived two rounds of investigation. Applied across the handlers touched in this pass.
+- Fixed `PATCH /api/spaces/{id}` replacing the whole `settings` object. Space settings hold several
+  independent sections (workflow, fields, rankings, pulse) edited by different bits of UI, so the
+  new Pulse settings form would have silently wiped a space's workflow. Now a shallow `jsonb ||`
+  merge, matching how `notify_prefs` already worked.
+- Fixed modals rendering behind the page footer: `.card` carries `backdrop-filter` in "rich" visual
+  mode, which creates a stacking context that trapped the modal's `z-index`. Modals now render
+  through a portal into `<body>` (new `ModalShell`), which also brought Escape-to-close and
+  scroll locking. This was a pre-existing desktop bug, not a mobile-only one.
+- Links had no styling at all and fell back to the browser default `#0000EE`, effectively unreadable
+  on the dark surface (visible on the developer credit and About page). They now use the
+  contrast-audited accent color.
+
+### Added — Timeline / Gantt view (spec section 12)
+
+The last spec view with no implementation. Built from CSS + one SVG overlay rather than a charting
+dependency, keeping the single-binary bundle small.
+
+- New migration `0007_task_start_at.sql`: `tasks.start_at` (nullable) plus a partial index for the
+  date-window scan. A Gantt bar needs both ends and tasks only had `due_at`.
+- `GET /api/spaces/{id}/timeline` with a date window, optional single-list filter, dependency links,
+  and a count of unschedulable tasks. Ranges the server derives from a deadline alone are flagged
+  `implied` and drawn hatched, so a guessed date never looks like one the user entered.
+- Dependency arrows are returned only when both endpoints are inside the window — an arrow to an
+  off-screen bar has nowhere to point.
+- Day/week/month zoom, date ticks with gridlines, a today marker, and dotted edges on bars that
+  extend past the visible window.
+- Start and deadline date pickers in the task modal (it previously had no date editor at all), with
+  server-side validation that a start can't fall after the deadline.
+
+### Added — Space Pulse, completed (spec section 17)
+
+- Per-space settings in `spaces.settings->pulse`: stall threshold, the green/yellow/red score
+  bounds, and which signals to track. A disabled signal no longer drags the score down.
+- The daily mini-standup ("what I did / am doing / is blocking me") and the "next best action"
+  suggestion from the spec mockup, ranked unblock > assign > schedule > chase-overdue.
+- Owner-facing settings form; root keeps the existing global `pulse.enabled` kill switch.
+
+### Added — remaining spec gaps
+
+- Manual progress slider for tasks without subtasks, plus a "by weight" list progress mode
+  (spec section 6). `clear_progress` was needed because `COALESCE` can't distinguish a `null` from
+  an omitted field.
+- Attachments on comments, with the per-target limits from the spec (10/task, 5/comment). The
+  file-serving handler was hardcoded to `target_type='task'` and is now generic — it resolves a
+  comment attachment through its task for the same permission check.
+- "About" page with version and developer credit, `branding.developer_url`, and a
+  `show_product_name` footer toggle.
+- Root logo upload replacing the hardcoded SVG. SVG is accepted (it's the right format for a logo)
+  but served with a restrictive CSP and `nosniff` so uploaded markup can't execute in the site's
+  origin.
+- Leaderboard visibility: full table / top 3 / own place / owner only (spec section 14), filtered
+  **server-side** — "owner only" has to mean the rows never reach anyone else's browser.
+- Template audience: all users / specific roles / admins only (spec section 16), enforced when
+  listing, when applying by id, and on the auto-apply path for newly approved users.
+
+### Changed — no emoji in the interface
+
+Per an explicit product rule, emoji were removed from every interface string: the `my.empty` key in
+all 13 locales, four keys in each IT-slang overlay, the onboarding quest titles, and the generated
+demo space/list names. The fixed reaction set is user content and stays. The typographic arrow in
+`task.system.status_changed` is not an emoji and was kept.
+
+- The PWA "Install app" button moved from the sidebar into Settings → Appearance. `beforeinstallprompt`
+  is now captured in `main.tsx`, since the browser fires it once before the settings page mounts.
+
+### Added — mobile layout (spec section 20)
+
+- The sidebar becomes an off-canvas drawer under 860px with a hamburger top bar; a closed drawer is
+  removed from the tab order via `inert` so it isn't keyboard-reachable.
+- Reflowed the card headers, task-properties grid, and Pulse header for narrow screens; the space tab
+  strip scrolls horizontally rather than wrapping mid-strip.
+
+### Added — i18n verification script
+
+`scripts/check_i18n.py` checks that all 13 base locales carry an identical key set, that no interface
+string contains emoji, and that every `tr()`/`trFormal()` call in the TSX resolves to a real key
+(including dynamic `tr("prefix." + var)` forms). It immediately caught a `common.save` key that was
+referenced but never defined.
+
 ## Unreleased — client settings, spec audit, and a full feature-parity push
 
 This pass covered three rounds of work: (1) a full client-facing settings page, (2) a systematic

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"log"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -82,6 +83,7 @@ func (a *API) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/tasks/{id}/versions", a.handleListTaskVersions)
 	mux.HandleFunc("POST /api/tasks/{id}/versions/{version_id}/restore", a.handleRestoreTaskVersion)
 	mux.HandleFunc("GET /api/my/tasks", a.handleMyTasks)
+	mux.HandleFunc("GET /api/inbox", a.handleInbox)
 	mux.HandleFunc("GET /api/my/stats", a.handleMyStats)
 
 	// --- social interactions ---
@@ -99,6 +101,7 @@ func (a *API) Routes(mux *http.ServeMux) {
 	// --- space Pulse and stats ---
 	mux.HandleFunc("GET /api/spaces/{id}/pulse", a.handlePulse)
 	mux.HandleFunc("GET /api/spaces/{id}/stats", a.handleStats)
+	mux.HandleFunc("GET /api/spaces/{id}/timeline", a.handleTimeline)
 
 	// --- TOTP (2FA for root/admins) ---
 	mux.HandleFunc("POST /api/me/totp/setup", a.handleTOTPSetup)
@@ -108,6 +111,13 @@ func (a *API) Routes(mux *http.ServeMux) {
 	// --- image attachments ---
 	mux.HandleFunc("POST /api/tasks/{id}/attachments", a.handleUploadAttachment)
 	mux.HandleFunc("GET /api/tasks/{id}/attachments", a.handleListAttachments)
+	mux.HandleFunc("POST /api/comments/{id}/attachments", a.handleUploadCommentAttachment)
+	mux.HandleFunc("GET /api/comments/{id}/attachments", a.handleListCommentAttachments)
+
+	// --- instance logo (spec section 18) ---
+	mux.HandleFunc("POST /api/admin/logo", a.handleUploadLogo)
+	mux.HandleFunc("DELETE /api/admin/logo", a.handleDeleteLogo)
+	mux.HandleFunc("GET /api/logo", a.handleGetLogo)
 	mux.HandleFunc("GET /api/attachments/{id}", a.handleGetAttachment)
 	mux.HandleFunc("DELETE /api/attachments/{id}", a.handleDeleteAttachment)
 
@@ -181,6 +191,18 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 
 func errJSON(w http.ResponseWriter, code int, msg string) {
 	writeJSON(w, code, map[string]string{"error": msg})
+}
+
+// dbFail logs the real database error to the server log before the handler replies with a
+// deliberately vague "database error" to the client. The client message stays vague on
+// purpose (no schema details leak to the browser), but a blind 500 is undiagnosable when a
+// user reports a failure — the server log is where the actual cause has to be visible.
+// op should read like "create task" so the log line says which handler failed.
+func dbFail(r *http.Request, op string, err error) {
+	if err == nil {
+		return
+	}
+	log.Printf("db error: %s: %v [%s %s]", op, err, r.Method, r.URL.Path)
 }
 
 func readJSON(r *http.Request, dst any) error {

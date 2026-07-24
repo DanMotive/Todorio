@@ -46,6 +46,7 @@ export type Task = {
   status: string
   priority: string
   assignee_id: number | null
+  start_at: string | null
   due_at: string | null
   progress: number | null
   weight: number
@@ -64,12 +65,51 @@ export type Space = { id: number; name: string; my_role: string }
 export type List = {
   id: number; name: string; is_private: boolean; my_permission: string
   task_count: number; done_count: number
+  // Weighted totals for the "by weight" progress mode (spec section 6). Older servers
+  // won't send these, so treat them as optional and fall back to the counts above.
+  weight_total?: number; weight_done?: number
 }
+export type PulseTask = { id: number; title: string; assignee?: string | null; progress?: number | null }
+export type PulseSettings = { stale_days: number; green_at: number; yellow_at: number; standup: boolean }
 export type Pulse = {
   enabled?: boolean
   score: number; mood: string; total: number; open: number; done: number
-  signals: { overdue: number; unassigned: number; no_deadline: number; blocked: number; stale: number }
+  // A signal the space owner switched off is omitted from this object entirely,
+  // so every entry has to be treated as optional by consumers.
+  signals: Partial<Record<"overdue" | "unassigned" | "no_deadline" | "blocked" | "stale", number>>
+  settings?: PulseSettings
+  next_action?: { kind: string; task_id: number; title: string }
+  in_progress?: PulseTask[]
+  standup?: { did: PulseTask[]; doing: PulseTask[]; blocked: PulseTask[] }
 }
+
+// Timeline / Gantt (spec section 12). `implied` marks a range the server derived rather than
+// one the user entered — those bars are rendered differently so guessed dates never look like
+// scheduled ones.
+export type TimelineItem = {
+  id: number; list_id: number; list_name: string; parent_id: number | null
+  title: string; status: string; priority: string; assignee: string | null
+  start: string; end: string; implied: boolean
+  progress: number; overdue: boolean; done: boolean
+  blocked_by: number[]; completed_at: string | null
+}
+export type Timeline = {
+  from: string; to: string
+  items: TimelineItem[]
+  links: Array<{ from: number; to: number }>
+  unscheduled: number
+}
+
+// Inbox (spec section 12). `reason` explains why an item needs triage so the UI can group
+// them instead of showing one undifferentiated pile.
+export type InboxItem = {
+  id: number; list_id: number; list_name: string
+  space_id: number; space_name: string
+  title: string; status: string; priority: string
+  due_at: string | null; created_at: string
+  reason: "review" | "assigned" | "unassigned" | "mentioned"
+}
+export type Inbox = { items: InboxItem[]; counts: Record<string, number> }
 
 export type Workflow = { statuses: string[]; defaults: string[] }
 export const DEFAULT_STATUSES = ["open", "in_progress", "review", "done"]
@@ -110,7 +150,6 @@ export type Profile = {
   display_name: string | null
   locale: string | null
   theme_color: string | null
-  theme_scheme: string | null
   theme_visual: string | null
   avatar_path: string | null
   notify_prefs: NotifyPrefs | null

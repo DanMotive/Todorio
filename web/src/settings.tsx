@@ -5,18 +5,63 @@
 import { useEffect, useRef, useState } from "react"
 import { api, type Me, type Profile, type NotifyPrefs } from "./api"
 import { tr, setLocale, SUPPORTED } from "./i18n"
-import { IconCamera, IconTrash, IconGlobe, IconBell, IconClock, IconShield, IconCheckCircle, IconAlertCircle, IconSliders } from "./icons"
+import { IconCamera, IconTrash, IconGlobe, IconBell, IconClock, IconShield, IconCheckCircle, IconAlertCircle, IconSliders, IconDownload } from "./icons"
 import { TotpCard } from "./extras"
 
 const IT_STYLE_LOCALES = ["ru-RU", "en-US"]
 const NOTIFY_TYPES = ["comment", "reaction", "task_assigned", "due_changed", "status_changed", "overdue"]
 const THEME_COLORS = ["red", "blue", "green", "yellow", "gray"] as const
-type ThemeState = { color: string; scheme: string; visual: string }
+type ThemeState = { color: string; visual: string }
 
 function hashHue(name: string): number {
   let h = 0
   for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h)
   return Math.abs(h) % 360
+}
+
+// "Install app" (PWA) lives here in Settings rather than the sidebar.
+//
+// The browser fires `beforeinstallprompt` once, early — usually before this component ever
+// mounts — so listening only from here would miss it and the button would never appear.
+// main.tsx captures the event as soon as the page loads and stashes it on window; this
+// component reads that stash on mount and also subscribes, whichever happens first.
+//
+// The row renders nothing at all when installation isn't offered: already installed, an
+// unsupported browser, or plain HTTP (the spec requires HTTPS, self-signed is fine). A dead
+// button the user can't act on is worse than no button.
+function InstallAppRow() {
+  const [evt, setEvt] = useState<any>(() => (window as any).todorioInstallEvent || null)
+  const [installed, setInstalled] = useState(false)
+
+  useEffect(() => {
+    const onPrompt = (e: Event) => { e.preventDefault(); setEvt(e) }
+    const onInstalled = () => { setInstalled(true); setEvt(null); (window as any).todorioInstallEvent = null }
+    window.addEventListener("beforeinstallprompt", onPrompt)
+    window.addEventListener("appinstalled", onInstalled)
+    return () => {
+      window.removeEventListener("beforeinstallprompt", onPrompt)
+      window.removeEventListener("appinstalled", onInstalled)
+    }
+  }, [])
+
+  // Already running as an installed app — nothing to offer.
+  const standalone = typeof window.matchMedia === "function" &&
+    window.matchMedia("(display-mode: standalone)").matches
+  if (installed || standalone || !evt) return null
+
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <button className="btn secondary row" style={{ gap: 6 }} onClick={async () => {
+        evt.prompt()
+        await evt.userChoice.catch(() => {})
+        setEvt(null)
+        ;(window as any).todorioInstallEvent = null
+      }}>
+        <IconDownload size={14} /> {tr("pwa.install")}
+      </button>
+      <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>{tr("pwa.install_hint")}</div>
+    </div>
+  )
 }
 
 // Reusable avatar: shows the uploaded photo if one exists, otherwise a stable-colored initial.
@@ -254,13 +299,6 @@ export function SettingsPage({ me, theme, onUpdateTheme, onProfileSaved }: {
           </select>
         </label>
         <label className="row" style={{ gap: 6, fontSize: 13 }}>
-          {tr("profile.scheme")}
-          <select className="input" style={{ width: "auto" }} value={theme.scheme} onChange={(e) => onUpdateTheme({ scheme: e.target.value })}>
-            <option value="dark">{tr("profile.scheme_dark")}</option>
-            <option value="light">{tr("profile.scheme_light")}</option>
-          </select>
-        </label>
-        <label className="row" style={{ gap: 6, fontSize: 13 }}>
           {tr("profile.visual")}
           <select className="input" style={{ width: "auto" }} value={theme.visual} onChange={(e) => onUpdateTheme({ visual: e.target.value })}>
             <option value="rich">{tr("profile.visual_rich")}</option>
@@ -268,6 +306,7 @@ export function SettingsPage({ me, theme, onUpdateTheme, onProfileSaved }: {
           </select>
         </label>
       </div>
+      <InstallAppRow />
 
       {/* ---------- notifications ---------- */}
       <div className="section-title row" style={{ gap: 6 }}><IconBell size={15} /> {tr("profile.section.notifications")}</div>

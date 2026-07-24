@@ -94,11 +94,17 @@ func (a *API) handleUpdateSpace(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, http.StatusBadRequest, "invalid request")
 		return
 	}
+	// settings is shallow-merged (jsonb ||), not replaced. A space's settings object holds
+	// several independent sections — workflow, fields, rankings, pulse — each edited by its own
+	// bit of UI. A whole-object replace would mean the Pulse settings form silently wiping the
+	// space's workflow, so a client sends only the section it owns and the rest survives.
+	// (Same reasoning as notify_prefs on PATCH /api/me.)
 	_, err = a.DB.Pool.Exec(r.Context(), `
 		UPDATE spaces SET name = COALESCE($2, name),
-			settings = COALESCE($3, settings)
+			settings = settings || COALESCE($3, '{}'::jsonb)
 		WHERE id=$1`, id, in.Name, in.Settings)
 	if err != nil {
+		dbFail(r, "update space", err)
 		errJSON(w, http.StatusInternalServerError, "database error")
 		return
 	}
@@ -170,29 +176,38 @@ func (a *API) handleListLists(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, http.StatusForbidden, "no access to the space")
 		return
 	}
+	// weight_total / weight_done power the "by weight" progress mode (spec section 6): the same
+	// counts as task_count/done_count but summed over tasks.weight, so a list of one hard task
+	// and nine trivial ones doesn't read as 90% done after the trivial ones are closed. Both
+	// pairs are always returned and the client picks a mode; that keeps the choice a display
+	// concern instead of forcing a second round-trip when the user toggles it.
 	rows, err := a.DB.Pool.Query(r.Context(), `
 		SELECT l.id, l.name, l.is_private, COALESCE(lm.permission,'') AS my_perm, l.position,
 			(SELECT count(*) FROM tasks t WHERE t.list_id=l.id AND t.archived_at IS NULL) AS task_count,
-			(SELECT count(*) FROM tasks t WHERE t.list_id=l.id AND t.archived_at IS NULL AND t.completed_at IS NOT NULL) AS done_count
+			(SELECT count(*) FROM tasks t WHERE t.list_id=l.id AND t.archived_at IS NULL AND t.completed_at IS NOT NULL) AS done_count,
+			(SELECT COALESCE(sum(t.weight),0) FROM tasks t WHERE t.list_id=l.id AND t.archived_at IS NULL) AS weight_total,
+			(SELECT COALESCE(sum(t.weight),0) FROM tasks t WHERE t.list_id=l.id AND t.archived_at IS NULL AND t.completed_at IS NOT NULL) AS weight_done
 		FROM lists l
 		LEFT JOIN list_members lm ON lm.list_id=l.id AND lm.user_id=$2
 		WHERE l.space_id=$1 AND l.archived_at IS NULL
 			AND ($3 OR lm.user_id IS NOT NULL OR l.is_private=false)
 		ORDER BY l.position, l.id`, spaceID, u.ID, u.IsAdmin())
 	if err != nil {
+		dbFail(r, "list lists", err)
 		errJSON(w, http.StatusInternalServerError, "database error")
 		return
 	}
 	defer rows.Close()
 	lists := []map[string]any{}
 	for rows.Next() {
-		var id, position, taskCount, doneCount int64
+		var id, position, taskCount, doneCount, weightTotal, weightDone int64
 		var name, myPerm string
 		var isPrivate bool
-		if rows.Scan(&id, &name, &isPrivate, &myPerm, &position, &taskCount, &doneCount) == nil {
+		if rows.Scan(&id, &name, &isPrivate, &myPerm, &position, &taskCount, &doneCount, &weightTotal, &weightDone) == nil {
 			lists = append(lists, map[string]any{
 				"id": id, "name": name, "is_private": isPrivate, "my_permission": myPerm,
 				"position": position, "task_count": taskCount, "done_count": doneCount,
+				"weight_total": weightTotal, "weight_done": weightDone,
 			})
 		}
 	}
