@@ -86,9 +86,9 @@ func (a *API) handleStats(w http.ResponseWriter, r *http.Request) {
 		locale, category, spaceID).Scan(&part2)
 
 	resp := map[string]any{
-		"period":   interval,
-		"members":  members,
-		"caption":  map[string]string{"part1": part1, "part2": part2, "category": category},
+		"period":  interval,
+		"members": members,
+		"caption": map[string]string{"part1": part1, "part2": part2, "category": category},
 	}
 
 	// "Top performer" — configurable by the space owner (settings.stats.show_best).

@@ -1,5 +1,5 @@
 // Todorio — your private workspace for tasks and teams.
-// https://github.com/DanMotive/Todorio · Apache 2.0 · Developed by Vlad
+// https://github.com/DanMotive/Todorio · Apache 2.0 · Developed by DanMotive
 package main
 
 import (
@@ -176,7 +176,11 @@ func main() {
 			fail(err)
 		}
 	case "server":
-		if err := config.RunCLI(os.Args[2:]); err != nil {
+		cfg, err := config.Load()
+		if err != nil {
+			fail(fmt.Errorf("config not found — run `todorio setup` first: %w", err))
+		}
+		if err := config.RunCLI(os.Args[2:], cfg); err != nil {
 			fail(err)
 		}
 	default:

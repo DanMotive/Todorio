@@ -1,6 +1,7 @@
-// Additional Todorio blocks: announcements, digest, statistics, attachments, TOTP.
+// Additional Todorio blocks: announcements, digest, statistics, attachments, TOTP, notes,
+// activity feed, focus timer, search, server settings.
 import { useEffect, useRef, useState } from "react"
-import { api, type Me } from "./api"
+import { api, type Me, type Note, type ActivityEvent, type SearchResult, type SettingDef } from "./api"
 import { tr } from "./i18n"
 
 // ---------- root announcements ----------
@@ -339,6 +340,254 @@ export function PublicListPage({ token }: { token: string }) {
           ))}
         {data && data.tasks.length === 0 && <p>{tr("public.empty")}</p>}
       </div>
+    </div>
+  )
+}
+
+// ---------- notes (Markdown pages inside a space) ----------
+
+function NoteModal({ note, onClose, onChanged }: { note: Note; onClose: () => void; onChanged: () => void }) {
+  const [title, setTitle] = useState(note.title)
+  const [body, setBody] = useState(note.body || "")
+  const [saved, setSaved] = useState(true)
+
+  async function save() {
+    await api.patch(`/api/notes/${note.id}`, { title, body }).catch(() => {})
+    setSaved(true)
+    onChanged()
+  }
+  async function remove() {
+    await api.del(`/api/notes/${note.id}`).catch(() => {})
+    onChanged()
+    onClose()
+  }
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 640 }}>
+        <input className="input" style={{ fontSize: 18, fontWeight: 600, marginBottom: 10 }}
+          value={title} onChange={(e) => { setTitle(e.target.value); setSaved(false) }} />
+        <textarea className="input" style={{ minHeight: 260, fontFamily: "inherit", resize: "vertical" }}
+          value={body} onChange={(e) => { setBody(e.target.value); setSaved(false) }} />
+        <div className="row" style={{ marginTop: 12, justifyContent: "space-between" }}>
+          <button className="nav-btn" style={{ color: "var(--due-overdue)" }} onClick={remove}>{tr("task.archive")}</button>
+          <div className="row">
+            {!saved && <span className="muted">{tr("notes.unsaved")}</span>}
+            <button className="btn" onClick={save}>{tr("notes.save")}</button>
+            <button className="nav-btn" onClick={onClose}>{tr("common.back")}</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export function NotesPanel({ spaceId }: { spaceId: number }) {
+  const [notes, setNotes] = useState<Note[]>([])
+  const [open, setOpen] = useState<Note | null>(null)
+  const [title, setTitle] = useState("")
+  const load = () => api.get(`/api/spaces/${spaceId}/notes`).then((r) => setNotes(r.notes)).catch(() => {})
+  useEffect(() => { load() }, [spaceId])
+
+  async function create() {
+    if (!title.trim()) return
+    await api.post(`/api/spaces/${spaceId}/notes`, { title }).catch(() => {})
+    setTitle("")
+    load()
+  }
+  async function openNote(n: Note) {
+    const r = await api.get(`/api/notes/${n.id}`).catch(() => null)
+    if (r) setOpen(r.note)
+  }
+
+  return (
+    <div>
+      {notes.map((n) => (
+        <div key={n.id} className="task-row" onClick={() => openNote(n)}>
+          <span className="task-title">📝 {n.title}</span>
+          <span className="muted">{new Date(n.updated_at).toLocaleDateString()}</span>
+        </div>
+      ))}
+      {notes.length === 0 && <p className="muted">{tr("notes.empty")}</p>}
+      <form className="row" style={{ marginTop: 12 }} onSubmit={(e) => { e.preventDefault(); create() }}>
+        <input className="input grow" placeholder={tr("notes.new_placeholder")} value={title} onChange={(e) => setTitle(e.target.value)} />
+        <button className="btn" type="submit">{tr("common.create")}</button>
+      </form>
+      {open && <NoteModal note={open} onClose={() => setOpen(null)} onChanged={load} />}
+    </div>
+  )
+}
+
+// ---------- space activity feed ----------
+
+export function ActivityPanel({ spaceId }: { spaceId: number }) {
+  const [events, setEvents] = useState<ActivityEvent[]>([])
+  useEffect(() => {
+    api.get(`/api/spaces/${spaceId}/activity`).then((r) => {
+      // the API concatenates three separately-sorted queries — re-sort client-side (documented API quirk)
+      const sorted = [...(r.events as ActivityEvent[])].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+      setEvents(sorted)
+    }).catch(() => {})
+  }, [spaceId])
+  const ICON: Record<string, string> = { task_created: "🆕", task_completed: "✅", comment: "💬" }
+  if (events.length === 0) return <p className="muted">{tr("activity.empty")}</p>
+  return (
+    <div>
+      {events.map((e, i) => (
+        <div key={i} className="task-row" style={{ cursor: "default" }}>
+          <span className="task-title">{ICON[e.type] || "•"} {tr("activity." + e.type)} · «{e.title}» · @{e.by}</span>
+          <span className="muted">{new Date(e.at).toLocaleString()}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ---------- focus mode / time tracking ----------
+
+export function FocusWidget({ taskId }: { taskId?: number }) {
+  const [running, setRunning] = useState(false)
+  const [elapsed, setElapsed] = useState(0)
+  const [startedAt, setStartedAt] = useState<number | null>(null)
+
+  useEffect(() => {
+    if (!running || startedAt == null) return
+    const id = setInterval(() => setElapsed(Math.floor((Date.now() - startedAt) / 1000)), 1000)
+    return () => clearInterval(id)
+  }, [running, startedAt])
+
+  async function start() {
+    await api.post("/api/focus/start", taskId ? { task_id: taskId } : {}).catch(() => {})
+    setStartedAt(Date.now())
+    setElapsed(0)
+    setRunning(true)
+  }
+  async function stop() {
+    await api.post("/api/focus/stop").catch(() => {})
+    setRunning(false)
+  }
+  function fmt(s: number) {
+    const m = Math.floor(s / 60).toString().padStart(2, "0")
+    const ss = (s % 60).toString().padStart(2, "0")
+    return `${m}:${ss}`
+  }
+
+  return (
+    <div className="row" style={{ margin: "10px 0", gap: 8 }}>
+      <button className={"nav-btn" + (running ? " active" : "")} onClick={running ? stop : start}>
+        {running ? "⏸ " + tr("focus.stop") : "▶ " + tr("focus.start")}
+      </button>
+      {running && <span className="muted">⏱ {fmt(elapsed)}</span>}
+    </div>
+  )
+}
+
+// ---------- global search ----------
+
+export function SearchPage() {
+  const [q, setQ] = useState("")
+  const [results, setResults] = useState<SearchResult[]>([])
+  const [busy, setBusy] = useState(false)
+
+  async function run(query: string) {
+    setQ(query)
+    if (query.trim().length < 2) {
+      setResults([])
+      return
+    }
+    setBusy(true)
+    try {
+      const r = await api.get(`/api/search?q=${encodeURIComponent(query)}`)
+      setResults(r.results)
+    } catch {
+      setResults([])
+    }
+    setBusy(false)
+  }
+
+  return (
+    <div className="card">
+      <h2>{tr("search.title")}</h2>
+      <input className="input" placeholder={tr("search.placeholder")} value={q} onChange={(e) => run(e.target.value)} autoFocus />
+      {busy && <p className="muted">{tr("search.searching")}</p>}
+      {!busy && q.trim().length >= 2 && results.length === 0 && <p className="muted">{tr("search.empty")}</p>}
+      {results.map((r, i) => (
+        <div key={i} className="task-row" style={{ cursor: "default" }}>
+          {r.type === "task" && <span className="task-title">✅ {r.title}</span>}
+          {r.type === "note" && <span className="task-title">📝 {r.title}</span>}
+          {r.type === "comment" && <span className="task-title">💬 «{r.task_title}» — {r.snippet}</span>}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ---------- server settings (root only) ----------
+
+export function ServerSettingsCard({ me }: { me: Me }) {
+  const [settings, setSettings] = useState<SettingDef[]>([])
+  const [allLocales, setAllLocales] = useState<string[]>([])
+  const [enabledLocales, setEnabledLocales] = useState<string[]>([])
+  const [msg, setMsg] = useState("")
+  const load = () => api.get("/api/admin/settings").then((r) => {
+    setSettings(r.settings)
+    setAllLocales(r.all_locales)
+    setEnabledLocales(r.locales_enabled)
+  }).catch(() => {})
+  useEffect(() => { load() }, [])
+
+  if (me.role !== "root") return null
+
+  async function save(key: string, value: string) {
+    try {
+      await api.post("/api/admin/settings", { key, value })
+      setMsg("✅ " + key)
+      load()
+    } catch (e) {
+      setMsg("❌ " + (e as Error).message)
+    }
+  }
+
+  async function toggleLocale(locale: string, enabled: boolean) {
+    await api.post("/api/admin/locales", { locale, enabled }).catch(() => {})
+    load()
+  }
+
+  return (
+    <div className="card" style={{ marginTop: 12 }}>
+      <h3 style={{ marginTop: 0 }}>⚙️ {tr("settings.title")}</h3>
+      <p className="muted">{tr("settings.hint")}</p>
+      {settings.map((s) => (
+        <div key={s.key} className="row" style={{ margin: "8px 0", flexWrap: "wrap" }}>
+          <label style={{ width: 260 }}>{s.label}</label>
+          {s.type === "select" && (
+            <select className="input" style={{ width: "auto" }} defaultValue={s.value} onChange={(e) => save(s.key, e.target.value)}>
+              {(s.options || []).map((o) => <option key={o} value={o}>{o}</option>)}
+            </select>
+          )}
+          {s.type === "bool" && (
+            <select className="input" style={{ width: "auto" }} defaultValue={s.value} onChange={(e) => save(s.key, e.target.value)}>
+              <option value="true">{tr("common.on")}</option>
+              <option value="false">{tr("common.off")}</option>
+            </select>
+          )}
+          {(s.type === "text" || s.type === "number") && (
+            <input className="input" style={{ width: 220 }} type={s.type === "number" ? "number" : "text"}
+              defaultValue={s.value} onBlur={(e) => save(s.key, e.target.value)} />
+          )}
+        </div>
+      ))}
+      <div className="section-title" style={{ fontSize: 13 }}>{tr("settings.locales")}</div>
+      <div className="row" style={{ flexWrap: "wrap", gap: 10 }}>
+        {allLocales.map((l) => (
+          <label key={l} className="row" style={{ gap: 4, fontSize: 13 }}>
+            <input type="checkbox" checked={enabledLocales.includes(l)}
+              onChange={(e) => toggleLocale(l, e.target.checked)} />
+            {l}
+          </label>
+        ))}
+      </div>
+      {msg && <div className="muted" style={{ marginTop: 8 }}>{msg}</div>}
     </div>
   )
 }

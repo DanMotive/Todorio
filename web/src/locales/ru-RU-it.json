@@ -18,5 +18,18 @@
   "task.archive": "В /dev/null",
   "task.done": "Задеплоено 🚀",
   "task.new": "Новый таск",
-  "task.new_placeholder": "Новая таска…"
+  "task.new_placeholder": "Новая таска…",
+  "task.status.open": "В беклоге",
+  "task.status.in_progress": "В процессе",
+  "task.status.review": "На ревью",
+  "task.status.done": "Задеплоено 🚀",
+  "task.priority.urgent": "Хотфикс",
+  "task.priority.high": "Хайпрайорити",
+  "view.kanban": "Канбанчик",
+  "view.my_week": "Мой спринт",
+  "focus.start": "Врубить дедлайн-моуд",
+  "focus.stop": "Хватит",
+  "my_week.overdue": "Горит 🔥",
+  "notes.title": "Заметочки",
+  "activity.title": "Активность в репе"
 }

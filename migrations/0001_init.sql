@@ -73,7 +73,7 @@ CREATE TABLE tasks (
     blocked_by   BIGINT REFERENCES tasks(id) ON DELETE SET NULL,-- dependency
     title        TEXT NOT NULL,
     description  TEXT NOT NULL DEFAULT '',
-    status       TEXT NOT NULL DEFAULT 'new',       -- from the space's workflow
+    status       TEXT NOT NULL DEFAULT 'open',      -- from the space's workflow
     priority     TEXT,                              -- low | normal | high | urgent
     assignee_id  BIGINT REFERENCES users(id) ON DELETE SET NULL, -- block/delete -> NULL (unassigned)
     due_at       TIMESTAMPTZ,
