@@ -36,6 +36,9 @@ func (a *API) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/me", a.handleMe)
 	mux.HandleFunc("PATCH /api/me", a.handleUpdateMe)
 	mux.HandleFunc("POST /api/me/password", a.handleChangePassword)
+	mux.HandleFunc("POST /api/me/avatar", a.handleUploadAvatar)
+	mux.HandleFunc("DELETE /api/me/avatar", a.handleDeleteAvatar)
+	mux.HandleFunc("GET /api/users/{id}/avatar", a.handleGetAvatar)
 
 	// --- user administration ---
 	mux.HandleFunc("GET /api/admin/users", a.handleAdminUsers)
@@ -221,10 +224,16 @@ func permAtLeast(perm, min string) bool {
 	return rank[perm] >= rank[min]
 }
 
-// notify creates a notification in the DB and publishes it over SSE, unless the recipient is in
-// a Do Not Disturb window — the notification is still saved and delivered the next time the user
-// opens notifications or the "while you were away" digest.
+// notify creates a notification in the DB and publishes it over SSE, unless the recipient has
+// turned this kind off entirely (users.notify_prefs.types.<kind> = false) — in which case nothing
+// is recorded at all, per spec section 7 ("each type is switched on/off in the profile"). If the
+// type is on but the recipient is in a Do Not Disturb window, the notification is still saved and
+// delivered the next time they open notifications or the "while you were away" digest — DND only
+// suppresses the live SSE push.
 func (a *API) notify(r *http.Request, userID int64, kind string, payload map[string]any) {
+	if !a.notifyTypeEnabled(r.Context(), userID, kind) {
+		return
+	}
 	b, _ := json.Marshal(payload)
 	_, _ = a.DB.Pool.Exec(r.Context(),
 		`INSERT INTO notifications(user_id, kind, payload) VALUES($1,$2,$3)`, userID, kind, string(b))
@@ -232,6 +241,23 @@ func (a *API) notify(r *http.Request, userID int64, kind string, payload map[str
 		return
 	}
 	a.Bus.Publish([]int64{userID}, events.Event{Type: "notification", Data: map[string]any{"kind": kind, "payload": payload}})
+}
+
+// notifyTypeEnabled reports whether userID wants this notification kind at all (default: on).
+// users.notify_prefs -> {"types": {"comment": false, ...}}.
+func (a *API) notifyTypeEnabled(ctx context.Context, userID int64, kind string) bool {
+	var raw *string
+	if a.DB.Pool.QueryRow(ctx, `SELECT notify_prefs #>> '{types}' FROM users WHERE id=$1`, userID).Scan(&raw) != nil || raw == nil {
+		return true
+	}
+	var types map[string]bool
+	if json.Unmarshal([]byte(*raw), &types) != nil {
+		return true
+	}
+	if v, ok := types[kind]; ok {
+		return v
+	}
+	return true
 }
 
 // inDoNotDisturb reports whether the user's quiet-hours window covers the current server time.

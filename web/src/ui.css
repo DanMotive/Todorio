@@ -32,7 +32,7 @@
   cursor: pointer;
   font: inherit;
 }
-.nav-btn.active, .nav-btn:hover { background: var(--surface, #171e2e); }
+.nav-btn.active, .nav-btn:hover { background: var(--hover-bg, var(--surface, #171e2e)); }
 
 .badge {
   display: inline-flex;
@@ -56,7 +56,7 @@
   border-radius: 10px;
   cursor: pointer;
 }
-.task-row:hover { background: var(--surface, #171e2e); }
+.task-row:hover { background: var(--hover-bg, var(--surface, #171e2e)); }
 .task-row.done .task-title { text-decoration: line-through; opacity: 0.55; }
 .task-title { flex: 1; }
 

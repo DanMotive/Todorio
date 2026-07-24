@@ -31,5 +31,21 @@
   "focus.stop": "Bail",
   "my_week.overdue": "On fire 🔥",
   "notes.title": "Scratchpad",
-  "activity.title": "Commit log"
+  "activity.title": "Commit log",
+  "nav.settings": "Config",
+  "profile.title": "Config",
+  "profile.section.security": "Sec",
+  "profile.section.notifications": "Alerts",
+  "profile.avatar_upload": "Upload a pic",
+  "profile.password_change": "Rotate password",
+  "profile.password_changed": "Password rotated.",
+  "profile.saved": "Saved — commit landed.",
+  "profile.dnd_title": "Do Not Disturb (I'm in prod)",
+  "profile.reminders_overdue": "Nag me daily until it's shipped",
+  "profile.type.overdue": "Stale tickets",
+  "notif.kind.status_changed": "Someone touched the status",
+  "notif.kind.due_changed": "Deadline got moved",
+  "forcepw.title": "Set a real password",
+  "forcepw.text": "Yo {username} — for security's sake, set yourself a real password before diving in.",
+  "forcepw.button": "Set it and go"
 }

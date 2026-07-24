@@ -174,8 +174,11 @@ func (a *API) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 	}
 	var listID int64
 	var oldAssignee *int64
+	var oldStatus, title string
+	var oldDueAt *time.Time
 	if a.DB.Pool.QueryRow(r.Context(),
-		`SELECT list_id, assignee_id FROM tasks WHERE id=$1 AND archived_at IS NULL`, id).Scan(&listID, &oldAssignee) != nil {
+		`SELECT list_id, assignee_id, status, due_at, title FROM tasks WHERE id=$1 AND archived_at IS NULL`, id).
+		Scan(&listID, &oldAssignee, &oldStatus, &oldDueAt, &title) != nil {
 		errJSON(w, http.StatusNotFound, "task not found")
 		return
 	}
@@ -259,7 +262,25 @@ func (a *API) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if in.AssigneeID != nil && (oldAssignee == nil || *oldAssignee != *in.AssigneeID) && *in.AssigneeID != u.ID {
-		a.notify(r, *in.AssigneeID, "task_assigned", map[string]any{"task_id": id, "by": u.Username})
+		a.notify(r, *in.AssigneeID, "task_assigned", map[string]any{"task_id": id, "title": title, "by": u.Username})
+	}
+
+	// "изменение дедлайна/статуса" (spec section 7): notify whoever is assigned after this update,
+	// as long as it isn't the person making the change themselves.
+	notifyAssignee := oldAssignee
+	if in.ClearAssignee {
+		notifyAssignee = nil
+	} else if in.AssigneeID != nil {
+		notifyAssignee = in.AssigneeID
+	}
+	if notifyAssignee != nil && *notifyAssignee != u.ID {
+		if in.Status != nil && *in.Status != oldStatus {
+			a.notify(r, *notifyAssignee, "status_changed", map[string]any{"task_id": id, "title": title, "status": *in.Status, "by": u.Username})
+		}
+		dueChanged := (in.ClearDueAt && oldDueAt != nil) || (in.DueAt != nil && (oldDueAt == nil || !in.DueAt.Equal(*oldDueAt)))
+		if dueChanged {
+			a.notify(r, *notifyAssignee, "due_changed", map[string]any{"task_id": id, "title": title, "by": u.Username})
+		}
 	}
 	a.publishToListMembers(r, listID, events.Event{Type: "task.updated", Data: map[string]any{"task_id": id, "list_id": listID}})
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})

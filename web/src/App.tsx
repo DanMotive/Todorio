@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react"
-import { api, type Me } from "./api"
+import { api, type Me, type Profile } from "./api"
 import "./theme.css"
 import "./ui.css"
 import { AdminPage, AuthPage, MyTasksPage, NotificationsPage, PendingPage, SpacesPage } from "./views"
 import { AnnouncementsBanner, DigestModal, TotpCard, InvitesCard, SearchPage, ServerSettingsCard } from "./extras"
+import { Avatar, SettingsPage, ForcedPasswordChange } from "./settings"
 import { detectLocale, setLocale, tr } from "./i18n"
-import { IconDownload, IconKeyboard } from "./icons"
+import { IconDownload, IconKeyboard, IconSliders } from "./icons"
 
 type Bootstrap = {
   site_name: string
@@ -44,10 +45,13 @@ function beep() {
 export default function App() {
   const [boot, setBoot] = useState<Bootstrap | null>(null)
   const [me, setMe] = useState<Me | null>(null)
+  const [profile, setProfile] = useState<Profile | null>(null)
   const [loaded, setLoaded] = useState(false)
-  const [view, setView] = useState<"my" | "spaces" | "search" | "notifications" | "admin">("my")
+  const [view, setView] = useState<"my" | "spaces" | "search" | "notifications" | "admin" | "settings">("my")
   const [unread, setUnread] = useState(0)
   const [soundOn, setSoundOn] = useState(localStorage.getItem("todorio.sound") === "1")
+  const soundOnRef = useRef(soundOn)
+  useEffect(() => { soundOnRef.current = soundOn }, [soundOn])
   const [installEvt, setInstallEvt] = useState<any>(null)
   const [showHelp, setShowHelp] = useState(false)
   const esRef = useRef<EventSource | null>(null)
@@ -67,7 +71,25 @@ export default function App() {
       if (!savedTheme) setTheme(b.theme)
     }).catch(() => {})
     api.get("/api/me")
-      .then((r) => { setMe(r.user); setUnread(r.unread_notifications) })
+      .then((r) => {
+        setMe(r.user)
+        setUnread(r.unread_notifications)
+        const p: Profile | undefined = r.profile
+        setProfile(p ?? null)
+        // The profile is the primary source for locale/theme (spec section 9: "1. язык из
+        // профиля (главный)") — it overrides both the bootstrap default and any localStorage
+        // cache from before login, so a user's own settings follow them to a new device.
+        if (p?.locale) setLocale(p.locale)
+        if (p?.theme_color || p?.theme_scheme || p?.theme_visual) {
+          setTheme((t) => ({
+            color: p.theme_color || t.color, scheme: p.theme_scheme || t.scheme, visual: p.theme_visual || t.visual,
+          }))
+        }
+        if (p?.notify_prefs && typeof p.notify_prefs.sound === "boolean") {
+          setSoundOn(p.notify_prefs.sound)
+          localStorage.setItem("todorio.sound", p.notify_prefs.sound ? "1" : "0")
+        }
+      })
       .catch(() => {})
       .finally(() => setLoaded(true))
     const onInstall = (e: Event) => { e.preventDefault(); setInstallEvt(e) }
@@ -83,7 +105,7 @@ export default function App() {
     const es = new EventSource("/api/events")
     es.addEventListener("notification", () => {
       setUnread((n) => n + 1)
-      if (localStorage.getItem("todorio.sound") === "1") beep()
+      if (soundOnRef.current) beep()
     })
     esRef.current = es
     return () => es.close()
@@ -133,6 +155,9 @@ export default function App() {
 
   if (!me) return <AuthPage siteName={siteName} locales={boot?.locales_enabled} onLogin={(u) => { setMe(u); setView("my") }} />
   if (me.status !== "active") return <PendingPage onLogout={logout} />
+  if (me.must_change_password) {
+    return <ForcedPasswordChange me={me} onDone={() => setMe((m) => (m ? { ...m, must_change_password: false } : m))} />
+  }
 
   return (
     <div className="app-layout">
@@ -170,12 +195,23 @@ export default function App() {
               {tr("nav.admin")}
             </button>
           )}
+
+          <button className={"sidebar-btn" + (view === "settings" ? " active" : "")} onClick={() => setView("settings")}>
+            <IconSliders size={18} />
+            {tr("nav.settings")}
+          </button>
         </div>
 
         <div className="sidebar-footer">
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8, fontSize: 13 }}>
-            <span className="muted">@{me.username}</span>
-            <select className="input" style={{ width: "auto", padding: "4px 6px", fontSize: 12 }} value={theme.color}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8, fontSize: 13, gap: 8 }}>
+            <button className="row" style={{ gap: 8, background: "none", border: "none", color: "inherit", cursor: "pointer", padding: 0, overflow: "hidden" }}
+              onClick={() => setView("settings")} title={tr("nav.settings")}>
+              <Avatar userId={me.id} name={profile?.display_name || me.username} size={26} />
+              <span className="muted" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {profile?.display_name || `@${me.username}`}
+              </span>
+            </button>
+            <select className="input" style={{ width: "auto", padding: "4px 6px", fontSize: 12, flexShrink: 0 }} value={theme.color}
               onChange={(e) => updateTheme({ color: e.target.value })}>
               {COLORS.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
@@ -200,11 +236,12 @@ export default function App() {
               const next = !soundOn
               setSoundOn(next)
               localStorage.setItem("todorio.sound", next ? "1" : "0")
+              api.patch("/api/me", { notify_prefs: { sound: next } }).catch(() => {})
             }}>
               {soundOn ? (
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="11 5 6 9H2v6h4l5 4V5z"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
               ) : (
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="11 5 6 9H2v6h4l5 4V5z"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
               )}
             </button>
 
@@ -235,6 +272,7 @@ export default function App() {
         {view === "spaces" && <SpacesPage me={me} />}
         {view === "search" && <SearchPage />}
         {view === "notifications" && <NotificationsPage onRead={() => setUnread(0)} />}
+        {view === "settings" && <SettingsPage me={me} theme={theme} onUpdateTheme={updateTheme} onProfileSaved={setProfile} />}
         {view === "admin" && (
           <>
             <AdminPage me={me} />

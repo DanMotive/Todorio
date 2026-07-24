@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"regexp"
 	"strings"
@@ -154,7 +155,9 @@ func (a *API) handleLogout(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-// GET /api/me — reachable by pending users too (for the waiting page).
+// GET /api/me — reachable by pending users too (for the waiting page). Includes the full profile
+// (locale/theme/avatar/notify_prefs) so a client on a NEW device picks up the user's own saved
+// settings instead of just the server-wide defaults from /api/bootstrap.
 func (a *API) handleMe(w http.ResponseWriter, r *http.Request) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
@@ -164,10 +167,27 @@ func (a *API) handleMe(w http.ResponseWriter, r *http.Request) {
 	var unread int
 	_ = a.DB.Pool.QueryRow(r.Context(),
 		`SELECT count(*) FROM notifications WHERE user_id=$1 AND read_at IS NULL`, u.ID).Scan(&unread)
-	writeJSON(w, http.StatusOK, map[string]any{"user": u, "unread_notifications": unread})
+
+	var displayName, locale, themeColor, themeScheme, themeVisual, avatarPath *string
+	var notifyPrefs json.RawMessage
+	_ = a.DB.Pool.QueryRow(r.Context(), `
+		SELECT display_name, locale, theme_color, theme_scheme, theme_visual, avatar_path, notify_prefs
+		FROM users WHERE id=$1`, u.ID).Scan(
+		&displayName, &locale, &themeColor, &themeScheme, &themeVisual, &avatarPath, &notifyPrefs)
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"user": u, "unread_notifications": unread,
+		"profile": map[string]any{
+			"display_name": displayName, "locale": locale,
+			"theme_color": themeColor, "theme_scheme": themeScheme, "theme_visual": themeVisual,
+			"avatar_path": avatarPath, "notify_prefs": notifyPrefs,
+		},
+	})
 }
 
-// PATCH /api/me — locale, theme, notification settings, display name.
+// PATCH /api/me — display name, locale, theme, notification preferences.
+// notify_prefs is shallow-merged (jsonb ||), not replaced: sending {"sound":false} only touches
+// that key and leaves dnd/types/reminders exactly as they were.
 func (a *API) handleUpdateMe(w http.ResponseWriter, r *http.Request) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
@@ -186,15 +206,26 @@ func (a *API) handleUpdateMe(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, http.StatusBadRequest, "invalid request")
 		return
 	}
+	var notifyJSON *string
+	if in.NotifyPrefs != nil {
+		b, err := json.Marshal(in.NotifyPrefs)
+		if err != nil {
+			errJSON(w, http.StatusBadRequest, "invalid notify_prefs")
+			return
+		}
+		s := string(b)
+		notifyJSON = &s
+	}
 	_, err := a.DB.Pool.Exec(r.Context(), `
 		UPDATE users SET
 			display_name = COALESCE($2, display_name),
 			locale       = COALESCE($3, locale),
 			theme_color  = COALESCE($4, theme_color),
 			theme_scheme = COALESCE($5, theme_scheme),
-			theme_visual = COALESCE($6, theme_visual)
+			theme_visual = COALESCE($6, theme_visual),
+			notify_prefs = CASE WHEN $7::text IS NULL THEN notify_prefs ELSE notify_prefs || $7::jsonb END
 		WHERE id=$1`,
-		u.ID, in.DisplayName, in.Locale, in.ThemeColor, in.ThemeScheme, in.ThemeVisual)
+		u.ID, in.DisplayName, in.Locale, in.ThemeColor, in.ThemeScheme, in.ThemeVisual, notifyJSON)
 	if err != nil {
 		errJSON(w, http.StatusBadRequest, "invalid value (check the theme: red/blue/green/yellow/gray)")
 		return

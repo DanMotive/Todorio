@@ -737,6 +737,8 @@ const KIND_ICON: Record<string, React.ReactNode> = {
   approved: <IconCheckCircle size={15} />, task_assigned: <IconPin size={15} />,
   comment: <IconMessage size={15} />, reaction: <IconStar size={15} />,
   overdue: <IconClock size={15} />, space_added: <IconGrid size={15} />, list_shared: <IconList size={15} />,
+  status_changed: <IconRefresh size={15} />, due_changed: <IconClock size={15} />,
+  due_soon: <IconClock size={15} />, due_today: <IconAlertCircle size={15} />,
 }
 
 export function NotificationsPage({ onRead }: { onRead: () => void }) {
@@ -759,6 +761,7 @@ export function NotificationsPage({ onRead }: { onRead: () => void }) {
             {KIND_ICON[n.kind] || null}
             <span>
               {tr("notif.kind." + n.kind)}
+              {n.kind === "due_soon" && n.payload?.days ? ` (${n.payload.days}d)` : ""}
               {n.payload?.title ? ` · «${n.payload.title}»` : ""}
               {n.payload?.task_title ? ` · «${n.payload.task_title}»` : ""}
               {n.payload?.by ? ` · ${tr("notif.by")} @${n.payload.by}` : ""}

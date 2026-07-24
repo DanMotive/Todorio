@@ -93,4 +93,22 @@ export type SettingDef = {
   default: string; options?: string[]; value: string
 }
 
+// Per-user preferences, own settings page (distinct from the root-only ServerSettingsCard).
+export type NotifyPrefs = {
+  sound?: boolean
+  dnd?: { enabled: boolean; start: string; end: string }
+  types?: Record<string, boolean>
+  reminders?: { before_days?: number[]; on_due_day?: boolean; daily_overdue?: boolean }
+}
+
+export type Profile = {
+  display_name: string | null
+  locale: string | null
+  theme_color: string | null
+  theme_scheme: string | null
+  theme_visual: string | null
+  avatar_path: string | null
+  notify_prefs: NotifyPrefs | null
+}
+
 export const REACTIONS = ["\u{1F44D}", "\u2705", "\u{1F389}", "\u{1F525}", "\u{1F440}", "\u2753", "\u2757", "\u274C", "\u{1F62D}", "\u2B50"]

@@ -31,5 +31,21 @@
   "focus.stop": "Хватит",
   "my_week.overdue": "Горит 🔥",
   "notes.title": "Заметочки",
-  "activity.title": "Активность в репе"
+  "activity.title": "Активность в репе",
+  "nav.settings": "Конфиги",
+  "profile.title": "Конфиги",
+  "profile.section.security": "Секьюрити",
+  "profile.section.notifications": "Алерты",
+  "profile.avatar_upload": "Залить пикчу",
+  "profile.password_change": "Ротануть пароль",
+  "profile.password_changed": "Пароль заротирован.",
+  "profile.saved": "Сохранено, коммит прошёл.",
+  "profile.dnd_title": "Не беспокоить (я в проде)",
+  "profile.reminders_overdue": "Долбить каждый день, пока не сделаешь",
+  "profile.type.overdue": "Протухшие таски",
+  "notif.kind.status_changed": "Статус потыкали",
+  "notif.kind.due_changed": "Дедлайн подвинули",
+  "forcepw.title": "Придумай пароль посерьёзнее",
+  "forcepw.text": "Здарова, {username} — из соображений безопасности сначала придумай себе нормальный пароль.",
+  "forcepw.button": "Сменить и погнали"
 }
