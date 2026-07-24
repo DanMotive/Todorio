@@ -32,6 +32,12 @@ type taskRow struct {
 	SubtaskDone  int             `json:"subtasks_done"`
 	SubtaskAll   int             `json:"subtasks_total"`
 	ActiveFocus  json.RawMessage `json:"active_focus"`
+	// Review workflow (migration 0009). ReviewState is nil for a task never submitted.
+	ReviewState  *string    `json:"review_state"`
+	ReviewBy     *string    `json:"review_by"`
+	ReviewAt     *time.Time `json:"review_at"`
+	ReviewNote   *string    `json:"review_note"`
+	WatcherCount int        `json:"watcher_count"`
 }
 
 // active_focus is who (if anyone) currently has an open focus session on this task — the
@@ -48,15 +54,19 @@ const taskSelect = `
 				'user_id', u.id, 'username', u.username, 'avatar_path', u.avatar_path, 'started_at', fs.started_at
 			) ORDER BY fs.started_at)
 			FROM focus_sessions fs JOIN users u ON u.id = fs.user_id
-			WHERE fs.task_id = t.id AND fs.ended_at IS NULL), '[]')
-	FROM tasks t`
+			WHERE fs.task_id = t.id AND fs.ended_at IS NULL), '[]'),
+		t.review_state, rv.username, t.review_at, t.review_note,
+		(SELECT count(*) FROM task_watchers tw WHERE tw.task_id = t.id)::int
+	FROM tasks t
+	LEFT JOIN users rv ON rv.id = t.review_by`
 
 func scanTask(row interface{ Scan(...any) error }) (taskRow, error) {
 	var t taskRow
 	err := row.Scan(&t.ID, &t.ListID, &t.ParentID, &t.Title, &t.Description, &t.Status, &t.Priority,
 		&t.AssigneeID, &t.CreatorID, &t.StartAt, &t.DueAt, &t.Weight, &t.Progress,
 		&t.BlockedBy, &t.CustomFields, &t.Recurrence,
-		&t.CompletedAt, &t.CreatedAt, &t.UpdatedAt, &t.SubtaskDone, &t.SubtaskAll, &t.ActiveFocus)
+		&t.CompletedAt, &t.CreatedAt, &t.UpdatedAt, &t.SubtaskDone, &t.SubtaskAll, &t.ActiveFocus,
+		&t.ReviewState, &t.ReviewBy, &t.ReviewAt, &t.ReviewNote, &t.WatcherCount)
 	return t, err
 }
 
@@ -141,6 +151,10 @@ func (a *API) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	listID, err := pathID(r)
 	if err != nil || !permAtLeast(a.listPermission(r, u, listID), "editor") {
 		errJSON(w, http.StatusForbidden, "no permission to create tasks")
+		return
+	}
+	// Volume guard: stops a broken script from creating thousands of tasks (spec section 10).
+	if !a.enforceAction(w, r, u.ID, "task_create", "limits.actions.tasks_per_hour", 0) {
 		return
 	}
 	if limit := a.intSetting(r.Context(), "limits.content.tasks_per_list", 0); limit > 0 {
@@ -229,6 +243,7 @@ func (a *API) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	if in.AssigneeID != nil && *in.AssigneeID != u.ID {
 		a.notify(r, *in.AssigneeID, "task_assigned", map[string]any{"task_id": id, "title": in.Title, "by": u.Username})
 	}
+	a.countAction(r.Context(), u.ID, "task_create")
 	a.publishToListMembers(r, listID, events.Event{Type: "task.created", Data: map[string]any{"task_id": id, "list_id": listID}})
 	writeJSON(w, http.StatusCreated, map[string]any{"id": id})
 }
@@ -370,10 +385,23 @@ func (a *API) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 	// recurring tasks: spawn the next occurrence once this one is marked done
 	if in.Status != nil && *in.Status == "done" {
 		a.spawnRecurrence(r.Context(), id)
+		// A finished task should not keep accruing focus time — the sidebar timer would go on
+		// ticking against work that is already closed.
+		a.closeFocusForTask(r, id, u)
 	}
 
 	if in.AssigneeID != nil && (oldAssignee == nil || *oldAssignee != *in.AssigneeID) && *in.AssigneeID != u.ID {
 		a.notify(r, *in.AssigneeID, "task_assigned", map[string]any{"task_id": id, "title": title, "by": u.Username})
+	}
+	// Watchers follow a task without owning it, so they get the same status/deadline/assignee
+	// events (spec section 5). notifyWatchers already skips the actor and the assignee, so this
+	// cannot double-notify anyone.
+	if in.Status != nil && *in.Status != oldStatus {
+		a.notifyWatchers(r, id, u.ID, "status_changed",
+			map[string]any{"task_id": id, "title": title, "status": *in.Status, "by": u.Username})
+	}
+	if in.DueAt != nil || in.ClearDueAt {
+		a.notifyWatchers(r, id, u.ID, "due_changed", map[string]any{"task_id": id, "title": title, "by": u.Username})
 	}
 
 	// "изменение дедлайна/статуса" (spec section 7): notify whoever is assigned after this update,
@@ -446,6 +474,9 @@ func (a *API) handleArchiveTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_, _ = a.DB.Pool.Exec(r.Context(), `UPDATE tasks SET archived_at=now(), archived_by=$2 WHERE id=$1 OR parent_id=$1`, id, u.ID)
+	// An archived task must not keep a focus timer running. The archive cascades to subtasks
+	// (OR parent_id=$1 above), so the focus cleanup has to cover them too.
+	a.closeFocusForTaskTree(r, id, u)
 	a.publishToListMembers(r, listID, events.Event{Type: "task.archived", Data: map[string]any{"task_id": id, "list_id": listID}})
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }

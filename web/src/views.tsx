@@ -1,10 +1,11 @@
 // Todorio screens: login, "My tasks", spaces, tasks, notifications, admin panel.
 import { useEffect, useState } from "react"
+import { createPortal } from "react-dom"
 import {
   api, REACTIONS, DEFAULT_STATUSES,
   type List, type Me, type Pulse, type Space, type Task, type Workflow, type ActiveFocus,
 } from "./api"
-import { AttachmentsBlock, ModalShell, StatsCard, FocusWidget, FocusPresence, NotesPanel, ActivityPanel, ArchivePanel, ArchivedSpacesPanel, FieldsPanel, type FieldDef } from "./extras"
+import { AttachmentsBlock, ModalShell, StatsCard, useConfirm, FocusWidget, FocusPresence, NotesPanel, ActivityPanel, ArchivePanel, ArchivedSpacesPanel, FieldsPanel, type FieldDef } from "./extras"
 import { tr, trFormal, setLocale, getLocale, getFormattingLocale, SUPPORTED } from "./i18n"
 import { TimelineView } from "./timeline"
 import {
@@ -143,13 +144,26 @@ export function PendingPage({ onLogout }: { onLogout: () => void }) {
 
 // ---------- tasks ----------
 
-function TaskRow({ task, onToggle, onOpen, favorite, onToggleFavorite, meId }: {
+function TaskRow({ task, onToggle, onOpen, favorite, onToggleFavorite, meId,
+  selected, onSelect, onContext }: {
   task: Task; onToggle: (t: Task) => void; onOpen: (t: Task) => void
   favorite?: boolean; onToggleFavorite?: (t: Task) => void; meId?: number
+  // Bulk selection and the right-click menu are optional: only the list view wires them up, so
+  // "My tasks" and the other views keep their simpler row.
+  selected?: boolean
+  onSelect?: (t: Task, additive: boolean) => void
+  onContext?: (t: Task, x: number, y: number) => void
 }) {
   const done = !!task.completed_at
   return (
-    <div className={"task-row" + (done ? " done" : "")} onClick={() => onOpen(task)}>
+    <div className={"task-row" + (done ? " done" : "") + (selected ? " selected" : "")}
+      onClick={() => onOpen(task)}
+      onContextMenu={onContext ? (e) => { e.preventDefault(); onContext(task, e.clientX, e.clientY) } : undefined}>
+      {onSelect && (
+        <input type="checkbox" className="task-select" checked={!!selected} title={tr("bulk.select")}
+          onClick={(e) => e.stopPropagation()}
+          onChange={(e) => onSelect(task, (e.nativeEvent as MouseEvent).shiftKey)} />
+      )}
       <input type="checkbox" checked={done} onClick={(e) => e.stopPropagation()} onChange={() => onToggle(task)} />
       <span className="task-title">{task.title}</span>
       {task.subtasks_total > 0 && (
@@ -165,6 +179,82 @@ function TaskRow({ task, onToggle, onOpen, favorite, onToggleFavorite, meId }: {
       )}
     </div>
   )
+}
+
+// ---------- right-click menu on a task row ----------
+
+// Quick edits without opening the modal. This exists because changing one field meant opening the
+// full task view, which is slow and — before the timer was made global — used to knock the focus
+// session off screen.
+//
+// Rendered through a portal so it can't be clipped by a scrolling ancestor, and positioned from
+// the click point but clamped to the viewport so a right-click near the bottom edge stays visible.
+function TaskContextMenu({ task, x, y, statuses, meId, onClose, onPatch, onOpenFull }: {
+  task: Task
+  x: number; y: number
+  statuses: string[]
+  meId: number
+  onClose: () => void
+  onPatch: (patch: Record<string, unknown>) => void
+  onOpenFull: () => void
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose() }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [onClose])
+
+  const W = 210, H = 330
+  const left = Math.min(x, Math.max(8, window.innerWidth - W - 8))
+  const top = Math.min(y, Math.max(8, window.innerHeight - H - 8))
+
+  return createPortal(
+    // A full-screen transparent layer catches the click that dismisses the menu, so no document
+    // listener has to be juggled against the opening click itself.
+    <div className="ctx-backdrop" onMouseDown={onClose} onContextMenu={(e) => { e.preventDefault(); onClose() }}>
+      <div className="ctx-menu" style={{ left, top, width: W }} onMouseDown={(e) => e.stopPropagation()}>
+        <div className="ctx-title" title={task.title}>{task.title}</div>
+
+        <div className="ctx-group">{tr("task.status")}</div>
+        {statuses.map((st) => (
+          <button key={st} className={"ctx-item" + (task.status === st ? " active" : "")}
+            onClick={() => onPatch({ status: st })}>
+            {DEFAULT_STATUSES.includes(st) ? tr("task.status." + st) : st}
+          </button>
+        ))}
+
+        <div className="ctx-group">{tr("task.priority")}</div>
+        {["low", "normal", "high", "urgent"].map((p) => (
+          <button key={p} className={"ctx-item" + (task.priority === p ? " active" : "")}
+            onClick={() => onPatch({ priority: p })}>
+            {tr("task.priority." + p)}
+          </button>
+        ))}
+
+        <div className="ctx-group">{tr("task.due_at")}</div>
+        <button className="ctx-item" onClick={() => onPatch({ due_at: endOfDayISO(0) })}>{tr("ctx.due_today")}</button>
+        <button className="ctx-item" onClick={() => onPatch({ due_at: endOfDayISO(1) })}>{tr("ctx.due_tomorrow")}</button>
+        <button className="ctx-item" onClick={() => onPatch({ due_at: endOfDayISO(7) })}>{tr("ctx.due_week")}</button>
+        <button className="ctx-item" onClick={() => onPatch({ clear_due_at: true })}>{tr("bulk.clear_due")}</button>
+
+        <div className="ctx-sep" />
+        {task.assignee_id === meId
+          ? <button className="ctx-item" onClick={() => onPatch({ clear_assignee: true })}>{tr("ctx.unassign")}</button>
+          : <button className="ctx-item" onClick={() => onPatch({ assignee_id: meId })}>{tr("bulk.assign_me")}</button>}
+        <button className="ctx-item" onClick={onOpenFull}>{tr("ctx.open_full")}</button>
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
+// endOfDayISO returns an ISO timestamp for 23:59 local time, N days from today. Built from local
+// date parts rather than from a UTC offset, so "today" means the user's today.
+function endOfDayISO(daysFromNow: number): string {
+  const d = new Date()
+  d.setDate(d.getDate() + daysFromNow)
+  d.setHours(23, 59, 0, 0)
+  return d.toISOString()
 }
 
 // ---------- task version history (spec section 11 — task_versions was write-only until now) ----------
@@ -230,6 +320,50 @@ export function TaskModal({ task, me, spaceId, onClose, onChanged }: {
   }
   const [startAt, setStartAt] = useState(() => dateInputValue(task.start_at))
   const [dueAt, setDueAt] = useState(() => dateInputValue(task.due_at))
+  // Watchers, review workflow and threaded replies (spec sections 5 and 7).
+  const [watching, setWatching] = useState(false)
+  const [watchers, setWatchers] = useState<Array<{ id: number; username: string }>>([])
+  const [reviewState, setReviewState] = useState(task.review_state)
+  const [reviewNote, setReviewNote] = useState(task.review_note || "")
+  const [returnNote, setReturnNote] = useState("")
+  const [replyTo, setReplyTo] = useState<{ id: number; author: string } | null>(null)
+  const { confirm, confirmElement } = useConfirm()
+
+  const loadWatchers = () =>
+    api.get(`/api/tasks/${task.id}/watchers`).then((r) => {
+      setWatchers(r.watchers || [])
+      setWatching(!!r.watching)
+    }).catch(() => {})
+  useEffect(() => { loadWatchers() }, [task.id])
+
+  async function toggleWatch() {
+    if (watching) await api.del(`/api/tasks/${task.id}/watch`).catch(() => {})
+    else await api.post(`/api/tasks/${task.id}/watch`).catch(() => {})
+    loadWatchers()
+  }
+
+  async function submitForReview() {
+    try {
+      const r = await api.post(`/api/tasks/${task.id}/review/submit`)
+      setReviewState(r.review_state)
+      setStatus("review")
+      onChanged()
+    } catch (e) { setError((e as Error).message) }
+  }
+
+  async function decideReview(accept: boolean) {
+    try {
+      const r = await api.post(`/api/tasks/${task.id}/review/decide`,
+        { accept, note: accept ? "" : returnNote })
+      setReviewState(r.review_state)
+      setStatus(r.status)
+      setReviewNote(accept ? "" : returnNote)
+      setReturnNote("")
+      // Accepting completes the task, which closes its focus session server-side.
+      if (accept) window.dispatchEvent(new CustomEvent("todorio:focus-changed"))
+      onChanged()
+    } catch (e) { setError((e as Error).message) }
+  }
   const [freq, setFreq] = useState(task.recurrence?.freq || "none")
   const [blockedByInput, setBlockedByInput] = useState("")
   const [blockedBy, setBlockedBy] = useState<number[]>(task.blocked_by || [])
@@ -326,6 +460,8 @@ export function TaskModal({ task, me, spaceId, onClose, onChanged }: {
   async function handleStatusChange(s: string) {
     setStatus(s)
     await updateTask({ status: s })
+    // "done" closes any focus session on this task server-side — refresh the sidebar clock.
+    if (s === "done") window.dispatchEvent(new CustomEvent("todorio:focus-changed"))
   }
 
   async function handlePriorityChange(p: string) {
@@ -377,8 +513,10 @@ export function TaskModal({ task, me, spaceId, onClose, onChanged }: {
     e.preventDefault()
     if (!body.trim()) return
     try {
-      await api.post(`/api/tasks/${task.id}/comments`, { body })
+      await api.post(`/api/tasks/${task.id}/comments`,
+        replyTo ? { body, parent_id: replyTo.id } : { body })
       setBody("")
+      setReplyTo(null)
       load()
     } catch (err) { setError((err as Error).message) }
   }
@@ -401,6 +539,7 @@ export function TaskModal({ task, me, spaceId, onClose, onChanged }: {
 
   return (
     <ModalShell onClose={onClose} maxWidth={640}>
+        {confirmElement}
         <div className="row">
           <h2 className="grow" style={{ margin: 0, fontSize: 20 }}>{task.title}</h2>
           <button className="nav-btn" onClick={onClose}>
@@ -562,6 +701,50 @@ export function TaskModal({ task, me, spaceId, onClose, onChanged }: {
         <FocusWidget taskId={task.id} />
         <FocusPresence active={activeFocus} meId={me.id} />
 
+        {/* Review workflow (spec section 5): the owner accepts or returns; a return must carry a
+            reason so the author knows what to change. */}
+        <div className="card" style={{ padding: 12, marginBottom: 16 }}>
+          <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+            {reviewState === "pending" && (
+              <span className="badge">{tr("task.review_pending")}</span>
+            )}
+            {reviewState === "accepted" && (
+              <span className="badge" style={{ background: "var(--pulse-ok)" }}>{tr("task.review_accepted")}</span>
+            )}
+            {reviewState === "returned" && (
+              <span className="badge" style={{ background: "var(--due-overdue)" }}>{tr("task.review_returned")}</span>
+            )}
+            {reviewState !== "pending" && (
+              <button className="nav-btn" onClick={submitForReview}>{tr("task.review_submit")}</button>
+            )}
+            {reviewState === "pending" && (
+              <>
+                <button className="btn" style={{ padding: "4px 10px" }} onClick={() => decideReview(true)}>
+                  {tr("task.review_accept")}
+                </button>
+                <input className="input" style={{ maxWidth: 220 }} placeholder={tr("task.review_note")}
+                  value={returnNote} onChange={(e) => setReturnNote(e.target.value)} />
+                <button className="nav-btn" onClick={() => decideReview(false)}>{tr("task.review_return")}</button>
+              </>
+            )}
+            <button className={"nav-btn row" + (watching ? " active" : "")}
+              style={{ gap: 5, display: "inline-flex", marginLeft: "auto" }} onClick={toggleWatch}>
+              <IconUser size={13} /> {watching ? tr("task.unwatch") : tr("task.watch")}
+              {watchers.length > 0 && <span className="muted">· {watchers.length}</span>}
+            </button>
+          </div>
+          {reviewState === "returned" && reviewNote && (
+            <div className="muted" style={{ fontSize: 13, marginTop: 6 }}>
+              {tr("task.review_note")}: {reviewNote}
+            </div>
+          )}
+          {watchers.length > 0 && (
+            <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+              {tr("task.watchers")}: {watchers.map((wt) => "@" + wt.username).join(", ")}
+            </div>
+          )}
+        </div>
+
         <div className="section-title">{tr("task.comments")}</div>
         <AttachmentsBlock taskId={task.id} />
         {comments.map((c) => c.is_system ? (
@@ -570,7 +753,8 @@ export function TaskModal({ task, me, spaceId, onClose, onChanged }: {
             <span>@{c.author} {formatSystemComment(c.body)} · {new Date(c.created_at).toLocaleString(getFormattingLocale())}</span>
           </div>
         ) : (
-          <div key={c.id} className="card" style={{ marginBottom: 8, padding: 12 }}>
+          <div key={c.id} className="card"
+            style={{ marginBottom: 8, padding: 12, marginLeft: c.parent_id ? 24 : 0 }}>
             <div className="row">
               <b>@{c.author}</b>
               <span className="muted">
@@ -596,6 +780,10 @@ export function TaskModal({ task, me, spaceId, onClose, onChanged }: {
               <div>{c.body}</div>
             )}
             <AttachmentsBlock commentId={c.id} compact />
+            <button className="nav-btn" style={{ fontSize: 12, marginTop: 4 }}
+              onClick={() => setReplyTo({ id: c.id, author: c.author })}>
+              {tr("comment.reply")}
+            </button>
             <div className="row" style={{ marginTop: 6, flexWrap: "wrap" }}>
               {REACTIONS.map((emoji) => {
                 const rx = (c.reactions as any[]).filter((r) => r.emoji === emoji)
@@ -614,6 +802,14 @@ export function TaskModal({ task, me, spaceId, onClose, onChanged }: {
             </div>
           </div>
         ))}
+        {replyTo && (
+          <div className="row muted" style={{ gap: 6, fontSize: 12, marginBottom: 4 }}>
+            {tr("comment.replying_to")} @{replyTo.author}
+            <button className="nav-btn" style={{ fontSize: 11 }} onClick={() => setReplyTo(null)}>
+              {tr("comment.cancel_reply")}
+            </button>
+          </div>
+        )}
         <form className="row" onSubmit={send}>
           <input className="input grow" placeholder={tr("task.comment_placeholder")} value={body}
             onChange={(e) => setBody(e.target.value)} />
@@ -624,7 +820,16 @@ export function TaskModal({ task, me, spaceId, onClose, onChanged }: {
         <div className="error-text">{error}</div>
 
         <div className="row" style={{ marginTop: 16, justifyContent: "space-between" }}>
-          <button className="nav-btn" style={{ color: "var(--due-overdue)" }} onClick={async () => { await api.del(`/api/tasks/${task.id}`); onChanged(); onClose() }}>
+          <button className="nav-btn" style={{ color: "var(--due-overdue)" }} onClick={() => confirm({
+              title: tr("confirm.archive_task_title").replace("{title}", task.title),
+              body: tr("confirm.archive_body"),
+              confirmLabel: tr("task.archive"), danger: true,
+              action: async () => {
+                await api.del(`/api/tasks/${task.id}`)
+                window.dispatchEvent(new CustomEvent("todorio:focus-changed"))
+                onChanged(); onClose()
+              },
+            })}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 6 }}><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
             {tr("task.archive")}
           </button>
@@ -711,6 +916,41 @@ function MyStatsPanel() {
 
 type MySubTab = "all" | "today" | "overdue" | "review" | "no_deadline" | "mentions"
 
+// Onboarding quest progress (spec section 12: "с прогресс-баром освоения"). The quests and the
+// "create them on approval" step already existed; this was the missing readout.
+//
+// Hides itself in three cases: the account has no quest list at all (quests were off, or this
+// predates the feature), all quests are done, or the user dismissed it — dismissal is per
+// browser via localStorage, matching how the hotkey and sound toggles already persist, since
+// there is no server-side "onboarding UI state" to put it in.
+function OnboardingProgressBar() {
+  const [data, setData] = useState<{ enabled: boolean; done?: number; total?: number } | null>(null)
+  const [dismissed, setDismissed] = useState(() => localStorage.getItem("todorio.onboarding_dismissed") === "1")
+
+  useEffect(() => {
+    api.get("/api/onboarding/progress").then(setData).catch(() => setData({ enabled: false }))
+  }, [])
+
+  if (!data?.enabled || dismissed || (data.total && data.done === data.total)) return null
+
+  const pct = data.total ? Math.round((data.done! / data.total) * 100) : 0
+  return (
+    <div className="card onboarding-bar" style={{ marginBottom: 12 }}>
+      <div className="row" style={{ justifyContent: "space-between", marginBottom: 6 }}>
+        <b>{tr("onboarding.progress_title")}</b>
+        <button className="nav-btn" style={{ fontSize: 12 }}
+          onClick={() => { localStorage.setItem("todorio.onboarding_dismissed", "1"); setDismissed(true) }}>
+          {tr("onboarding.dismiss")}
+        </button>
+      </div>
+      <progress className="progress" max={data.total} value={data.done} style={{ width: "100%" }} />
+      <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+        {tr("onboarding.progress_hint").replace("{done}", String(data.done)).replace("{total}", String(data.total))}
+      </div>
+    </div>
+  )
+}
+
 export function MyTasksPage({ me }: { me: Me }) {
   const [tasks, setTasks] = useState<Task[]>([])
   const [open, setOpen] = useState<Task | null>(null)
@@ -735,6 +975,9 @@ export function MyTasksPage({ me }: { me: Me }) {
 
   async function toggle(task: Task) {
     await api.patch(`/api/tasks/${task.id}`, { status: task.completed_at ? "open" : "done" }).catch(() => {})
+    // Completing a task closes its focus session server-side; tell the sidebar timer to
+    // re-read now instead of ticking on until its next poll.
+    window.dispatchEvent(new CustomEvent("todorio:focus-changed"))
     load()
   }
 
@@ -760,6 +1003,7 @@ export function MyTasksPage({ me }: { me: Me }) {
 
   return (
     <div className="card">
+      <OnboardingProgressBar />
       <div className="row" style={{ marginBottom: 8 }}>
         <h2 className="grow" style={{ margin: 0 }}>{tr("my.title")}</h2>
         <div className="row" style={{ gap: 4 }}>
@@ -1025,6 +1269,9 @@ function SpaceView({ me, space, onBack }: { me: Me; space: Space; onBack: () => 
   // localStorage rather than on the list — two people can read the same space differently.
   const [progressMode, setProgressMode] = useState<"count" | "weight">(
     () => (localStorage.getItem("todorio.progress_mode") === "weight" ? "weight" : "count"))
+  // The Timeline tab only knows a task's id (it's plotting bars, not full task objects), so
+  // opening one from a bar click fetches it the same way openMentionedTask does elsewhere.
+  const [open, setOpen] = useState<Task | null>(null)
 
   const load = () => {
     api.get(`/api/spaces/${space.id}/lists`).then((r) => setLists(r.lists)).catch(() => {})
@@ -1032,6 +1279,11 @@ function SpaceView({ me, space, onBack }: { me: Me; space: Space; onBack: () => 
   }
   useEffect(() => { load() }, [space.id])
   useEffect(() => { api.get("/api/templates").then((r) => setTemplates(r.templates)).catch(() => {}) }, [])
+
+  async function openTaskById(id: number) {
+    const r = await api.get(`/api/tasks/${id}`).catch(() => null)
+    if (r?.task) setOpen(r.task)
+  }
 
   if (currentList) return <ListView me={me} list={currentList} spaceId={space.id} onBack={() => { setCurrentList(null); load() }} />
 
@@ -1111,11 +1363,12 @@ function SpaceView({ me, space, onBack }: { me: Me; space: Space; onBack: () => 
           )}
         </div>
       )}
-      {tab === "timeline" && <div className="card"><TimelineView spaceId={space.id} /></div>}
+      {tab === "timeline" && <div className="card"><TimelineView spaceId={space.id} onOpenTask={openTaskById} /></div>}
       {tab === "notes" && <div className="card"><NotesPanel spaceId={space.id} /></div>}
       {tab === "activity" && <div className="card"><ActivityPanel spaceId={space.id} /></div>}
       {tab === "archive" && <div className="card"><ArchivePanel me={me} spaceId={space.id} /></div>}
       {tab === "fields" && <div className="card"><FieldsPanel spaceId={space.id} isOwner={space.my_role === "owner"} /></div>}
+      {open && <TaskModal task={open} me={me} spaceId={space.id} onClose={() => setOpen(null)} onChanged={load} />}
     </div>
   )
 }
@@ -1353,6 +1606,44 @@ function ListView({ me, list, spaceId, onBack }: { me: Me; list: List; spaceId: 
   const [filterQuery, setFilterQuery] = useState<FilterQuery | null>(null)
   const [loadError, setLoadError] = useState("")
   const [createError, setCreateError] = useState("")
+  // Bulk selection and the right-click menu exist because changing one field on one task used to
+  // mean opening the modal — which also knocked the focus timer off screen.
+  const [selected, setSelected] = useState<Set<number>>(new Set())
+  const [menu, setMenu] = useState<{ task: Task; x: number; y: number } | null>(null)
+  const { confirm, confirmElement } = useConfirm()
+
+  function toggleSelect(t: Task) {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(t.id)) next.delete(t.id)
+      else next.add(t.id)
+      return next
+    })
+  }
+
+  // patchMany applies the same change to every selected task. Sent sequentially rather than in
+  // one request: there is no bulk endpoint, and a partial failure this way still leaves the
+  // successful ones applied instead of rolling everything back invisibly.
+  async function patchMany(patch: Record<string, unknown>) {
+    const ids = [...selected]
+    let failed = 0
+    for (const id of ids) {
+      try { await api.patch(`/api/tasks/${id}`, patch) } catch { failed++ }
+    }
+    setSelected(new Set())
+    if (failed > 0) setCreateError(tr("bulk.partial").replace("{n}", String(failed)))
+    load()
+  }
+
+  async function archiveMany() {
+    const ids = [...selected]
+    for (const id of ids) {
+      await api.del(`/api/tasks/${id}`).catch(() => {})
+    }
+    setSelected(new Set())
+    window.dispatchEvent(new CustomEvent("todorio:focus-changed"))
+    load()
+  }
 
   // Both load() and the create-task submit below used to swallow errors entirely
   // (`.catch(() => {})`), so a failed request looked identical to "the list is just empty" or
@@ -1370,6 +1661,9 @@ function ListView({ me, list, spaceId, onBack }: { me: Me; list: List; spaceId: 
 
   async function toggle(task: Task) {
     await api.patch(`/api/tasks/${task.id}`, { status: task.completed_at ? "open" : "done" }).catch(() => {})
+    // Completing a task closes its focus session server-side; tell the sidebar timer to
+    // re-read now instead of ticking on until its next poll.
+    window.dispatchEvent(new CustomEvent("todorio:focus-changed"))
     load()
   }
 
@@ -1397,13 +1691,62 @@ function ListView({ me, list, spaceId, onBack }: { me: Me; list: List; spaceId: 
       <FiltersBar listId={list.id} statuses={statuses} onFilter={setFilterQuery} />
 
       {loadError && <p className="error-text">{tr("task.load_error")}: {loadError}</p>}
+      {confirmElement}
+
+      {/* Bulk bar appears only with a selection, so it never takes space it hasn't earned. */}
+      {selected.size > 0 && (
+        <div className="bulk-bar">
+          <b>{tr("bulk.selected").replace("{n}", String(selected.size))}</b>
+          <select className="input" style={{ width: "auto" }} defaultValue=""
+            onChange={(e) => { if (e.target.value) { patchMany({ status: e.target.value }); e.target.value = "" } }}>
+            <option value="">{tr("task.status")}</option>
+            {statuses.map((s) => (
+              <option key={s} value={s}>{DEFAULT_STATUSES.includes(s) ? tr("task.status." + s) : s}</option>
+            ))}
+          </select>
+          <select className="input" style={{ width: "auto" }} defaultValue=""
+            onChange={(e) => { if (e.target.value) { patchMany({ priority: e.target.value }); e.target.value = "" } }}>
+            <option value="">{tr("task.priority")}</option>
+            <option value="low">{tr("task.priority.low")}</option>
+            <option value="normal">{tr("task.priority.normal")}</option>
+            <option value="high">{tr("task.priority.high")}</option>
+            <option value="urgent">{tr("task.priority.urgent")}</option>
+          </select>
+          <input className="input" type="date" style={{ width: "auto" }}
+            title={tr("task.due_at")}
+            onChange={(e) => {
+              if (e.target.value) patchMany({ due_at: new Date(e.target.value).toISOString() })
+            }} />
+          <button className="nav-btn" onClick={() => patchMany({ clear_due_at: true })}>
+            {tr("bulk.clear_due")}
+          </button>
+          <button className="nav-btn" onClick={() => patchMany({ assignee_id: me.id })}>
+            {tr("bulk.assign_me")}
+          </button>
+          <button className="nav-btn" style={{ color: "var(--due-overdue)" }}
+            onClick={() => confirm({
+              title: tr("bulk.confirm_archive_title").replace("{n}", String(selected.size)),
+              body: tr("confirm.archive_body"),
+              confirmLabel: tr("task.archive"), danger: true, action: archiveMany,
+            })}>
+            {tr("task.archive")}
+          </button>
+          <button className="nav-btn" style={{ marginLeft: "auto" }} onClick={() => setSelected(new Set())}>
+            {tr("bulk.clear_selection")}
+          </button>
+        </div>
+      )}
 
       {viewMode === "list" && filteredRoots.map((task) => (
         <div key={task.id}>
-          <TaskRow task={task} onToggle={toggle} onOpen={setOpen} meId={me.id} />
+          <TaskRow task={task} onToggle={toggle} onOpen={setOpen} meId={me.id}
+            selected={selected.has(task.id)} onSelect={toggleSelect}
+            onContext={(t, x, y) => setMenu({ task: t, x, y })} />
           {tasks.filter((s) => s.parent_id === task.id).map((sub) => (
             <div key={sub.id} style={{ marginLeft: 28 }}>
-              <TaskRow task={sub} onToggle={toggle} onOpen={setOpen} meId={me.id} />
+              <TaskRow task={sub} onToggle={toggle} onOpen={setOpen} meId={me.id}
+                selected={selected.has(sub.id)} onSelect={toggleSelect}
+                onContext={(t, x, y) => setMenu({ task: t, x, y })} />
             </div>
           ))}
         </div>
@@ -1438,6 +1781,17 @@ function ListView({ me, list, spaceId, onBack }: { me: Me; list: List; spaceId: 
           gets no use. Shown once under the field rather than as a tooltip. */}
       <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>{tr("task.quickadd_hint")}</div>
       {createError && <p className="error-text">{createError}</p>}
+      {menu && (
+        <TaskContextMenu task={menu.task} x={menu.x} y={menu.y} statuses={statuses} meId={me.id}
+          onClose={() => setMenu(null)}
+          onPatch={async (patch) => {
+            await api.patch(`/api/tasks/${menu.task.id}`, patch).catch((e) => setCreateError((e as Error).message))
+            if (patch.status === "done") window.dispatchEvent(new CustomEvent("todorio:focus-changed"))
+            setMenu(null)
+            load()
+          }}
+          onOpenFull={() => { setOpen(menu.task); setMenu(null) }} />
+      )}
       {open && <TaskModal task={open} me={me} spaceId={spaceId} onClose={() => setOpen(null)} onChanged={load} />}
     </div>
   )
@@ -1492,6 +1846,7 @@ export function NotificationsPage({ onRead }: { onRead: () => void }) {
 // ---------- admin panel ----------
 
 export function AdminPage({ me }: { me: Me }) {
+  const { confirm, confirmElement } = useConfirm()
   const [users, setUsers] = useState<any[]>([])
   const [tempPass, setTempPass] = useState<{ user: string; pass: string } | null>(null)
   const load = () => api.get("/api/admin/users").then((r) => setUsers(r.users)).catch(() => {})
@@ -1499,6 +1854,7 @@ export function AdminPage({ me }: { me: Me }) {
 
   return (
     <div className="card">
+      {confirmElement}
       <h2>{trFormal("admin.users")}</h2>
       {tempPass && (
         <div className="card" style={{ borderColor: "var(--accent)", marginBottom: 12 }}>
@@ -1523,13 +1879,23 @@ export function AdminPage({ me }: { me: Me }) {
           )}
           {u.status === "active" && u.role !== "root" && (
             <>
-              <button className="nav-btn" onClick={async () => { await api.post(`/api/admin/users/${u.id}/status`, { status: "blocked" }); load() }}>
+              <button className="nav-btn" onClick={() => confirm({
+                title: trFormal("confirm.block_title").replace("{user}", u.username),
+                body: trFormal("confirm.block_body"),
+                confirmLabel: trFormal("admin.block"), danger: true,
+                action: async () => { await api.post(`/api/admin/users/${u.id}/status`, { status: "blocked" }); load() },
+              })}>
                 {trFormal("admin.block")}
               </button>
-              <button className="nav-btn" onClick={async () => {
-                const r = await api.post(`/api/admin/users/${u.id}/reset-password`)
-                setTempPass({ user: u.username, pass: r.temp_password })
-              }}>
+              <button className="nav-btn" onClick={() => confirm({
+                title: trFormal("confirm.reset_pw_title").replace("{user}", u.username),
+                body: trFormal("confirm.reset_pw_body"),
+                confirmLabel: trFormal("admin.reset_password"), danger: true,
+                action: async () => {
+                  const r = await api.post(`/api/admin/users/${u.id}/reset-password`)
+                  setTempPass({ user: u.username, pass: r.temp_password })
+                },
+              })}>
                 {trFormal("admin.reset_password")}
               </button>
             </>

@@ -93,6 +93,10 @@ func (a *API) uploadAttachment(w http.ResponseWriter, r *http.Request, targetTyp
 		}
 	}
 
+	if !a.enforceAction(w, r, u.ID, "upload", "limits.actions.uploads_per_hour", 0) {
+		return
+	}
+
 	maxMB := a.intSetting(r.Context(), "limits.uploads.max_file_size_mb", 10)
 	if maxMB > 0 {
 		r.Body = http.MaxBytesReader(w, r.Body, int64(maxMB)<<20)
@@ -157,6 +161,7 @@ func (a *API) uploadAttachment(w http.ResponseWriter, r *http.Request, targetTyp
 		errJSON(w, http.StatusInternalServerError, "database error")
 		return
 	}
+	a.countAction(r.Context(), u.ID, "upload")
 	writeJSON(w, http.StatusCreated, map[string]any{"id": id, "mime_type": mime, "size_bytes": size})
 }
 

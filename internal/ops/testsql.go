@@ -188,6 +188,17 @@ func schemaChecks() []schemaCheck {
 			query: `SELECT NOT EXISTS(SELECT 1 FROM information_schema.columns
 				WHERE table_name='users' AND column_name='theme_scheme')`,
 		},
+		col("tasks", "review_state"), // 0009 — review workflow
+		col("tasks", "review_note"),
+		col("comments", "parent_id"), // 0009 — threaded replies
+		{
+			label: "task_watchers table exists (0009)",
+			query: `SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name='task_watchers')`,
+		},
+		{
+			label: "action_counters table exists (0009)",
+			query: `SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name='action_counters')`,
+		},
 		{
 			label: "tasks_schedule_idx exists (0007)",
 			query: `SELECT EXISTS(SELECT 1 FROM pg_indexes WHERE indexname='tasks_schedule_idx')`,
@@ -359,7 +370,7 @@ func allChecks() []sqlCheck {
 				usr.username, t.start_at, t.due_at, t.progress,
 				(SELECT count(*) FROM tasks s WHERE s.parent_id=t.id AND s.archived_at IS NULL AND s.completed_at IS NOT NULL)::int,
 				(SELECT count(*) FROM tasks s WHERE s.parent_id=t.id AND s.archived_at IS NULL)::int,
-				COALESCE(t.blocked_by, '{}'), t.completed_at
+				COALESCE(t.blocked_by, '{}'), t.completed_at, lm.permission
 			FROM tasks t
 			JOIN lists l ON l.id = t.list_id
 			LEFT JOIN list_members lm ON lm.list_id = l.id AND lm.user_id = $2
@@ -484,6 +495,21 @@ func allChecks() []sqlCheck {
 			WHERE fs.user_id = $1 AND fs.ended_at IS NULL
 			ORDER BY fs.started_at DESC LIMIT 1`,
 			func(f *fixture) []any { return []any{f.userID} }),
+		// Completing or archiving a task must end its focus session, or the sidebar timer keeps
+		// ticking against finished work (a real reported bug).
+		exec("close focus on task completion", `
+			UPDATE focus_sessions
+			SET ended_at = now(), duration_seconds = EXTRACT(EPOCH FROM (now() - started_at))::int
+			WHERE task_id = $1 AND ended_at IS NULL
+			RETURNING user_id`,
+			func(f *fixture) []any { return []any{f.taskID} }),
+		exec("close focus on archive (task tree)", `
+			UPDATE focus_sessions
+			SET ended_at = now(), duration_seconds = EXTRACT(EPOCH FROM (now() - started_at))::int
+			WHERE ended_at IS NULL
+			  AND task_id IN (SELECT id FROM tasks WHERE id = $1 OR parent_id = $1)
+			RETURNING task_id`,
+			func(f *fixture) []any { return []any{f.taskID} }),
 		exec("focus session stop", `
 			UPDATE focus_sessions SET ended_at=now(), duration_seconds=EXTRACT(EPOCH FROM (now()-started_at))::int
 			WHERE user_id=$1 AND ended_at IS NULL`,
@@ -522,6 +548,123 @@ func allChecks() []sqlCheck {
 		exec("restore a task", `UPDATE tasks SET archived_at=NULL, archived_by=NULL WHERE id=$1`,
 			func(f *fixture) []any { return []any{f.taskID} }),
 
+		// --- watchers / review / replies / rate limits (0009) ---
+		exec("watch a task (idempotent)", `
+			INSERT INTO task_watchers(task_id, user_id) VALUES($1,$2) ON CONFLICT DO NOTHING`,
+			func(f *fixture) []any { return []any{f.taskID, f.userID} }),
+		query("list watchers", `
+			SELECT u.id, u.username, COALESCE(u.display_name, u.username)
+			FROM task_watchers tw JOIN users u ON u.id = tw.user_id
+			WHERE tw.task_id = $1 AND u.archived_at IS NULL
+			ORDER BY tw.created_at`,
+			func(f *fixture) []any { return []any{f.taskID} }),
+		query("watcher fan-out (skips actor + assignee)", `
+			SELECT tw.user_id FROM task_watchers tw
+			JOIN tasks t ON t.id = tw.task_id
+			WHERE tw.task_id = $1 AND tw.user_id <> $2
+			  AND COALESCE(t.assignee_id, 0) <> tw.user_id`,
+			func(f *fixture) []any { return []any{f.taskID, f.userID} }),
+		exec("submit for review", `
+			UPDATE tasks SET status='review', review_state='pending', review_by=NULL,
+				review_at=now(), review_note=NULL, updated_at=now()
+			WHERE id=$1`,
+			func(f *fixture) []any { return []any{f.taskID} }),
+		exec("decide review (accept/return)", `
+			UPDATE tasks SET
+				review_state=$2, review_by=$3, review_at=now(), review_note=NULLIF($4,''),
+				status=$5,
+				completed_at = CASE WHEN $2='accepted' THEN COALESCE(completed_at, now()) ELSE NULL END,
+				updated_at=now()
+			WHERE id=$1`,
+			func(f *fixture) []any { return []any{f.taskID, "returned", f.userID, "needs work", "in_progress"} }),
+		exec("threaded comment reply", `
+			INSERT INTO comments(task_id, author_id, body, parent_id) VALUES($1,$2,$3,$4)`,
+			func(f *fixture) []any { return []any{f.taskID, f.userID, "reply", f.commentID} }),
+		query("comments with reply threading", `
+			SELECT c.id, c.parent_id, c.body FROM comments c
+			WHERE c.task_id=$1 AND c.deleted_at IS NULL
+			ORDER BY COALESCE(c.parent_id, c.id), c.id`,
+			func(f *fixture) []any { return []any{f.taskID} }),
+		exec("action counter increment", `
+			INSERT INTO action_counters(user_id, action, bucket_hour, count)
+			VALUES($1,$2,date_trunc('hour', now()),1)
+			ON CONFLICT (user_id, action, bucket_hour) DO UPDATE SET count = action_counters.count + 1`,
+			func(f *fixture) []any { return []any{f.userID, "task_create"} }),
+		query("action counter read", `
+			SELECT COALESCE(sum(count),0)::int FROM action_counters
+			WHERE user_id=$1 AND action=$2 AND bucket_hour > now() - interval '1 hour'`,
+			func(f *fixture) []any { return []any{f.userID, "task_create"} }),
+		exec("action counter prune", `DELETE FROM action_counters WHERE bucket_hour < now() - interval '48 hours'`,
+			func(f *fixture) []any { return nil }),
+
+		// --- export / import + integrity (this round) ---
+		query("export: tasks with assignee username", `
+			SELECT t.id, t.parent_id, t.title, t.description, t.status, COALESCE(t.priority,'normal'),
+				u.username, t.start_at, t.due_at, t.weight, t.progress, t.custom_fields, t.completed_at
+			FROM tasks t
+			LEFT JOIN users u ON u.id = t.assignee_id
+			WHERE t.list_id=$1 AND t.archived_at IS NULL
+			ORDER BY t.position, t.id`,
+			func(f *fixture) []any { return []any{f.listID} }),
+		query("export: comments with author", `
+			SELECT u.username, c.body, c.is_system, c.created_at
+			FROM comments c JOIN users u ON u.id = c.author_id
+			WHERE c.task_id=$1 AND c.deleted_at IS NULL ORDER BY c.created_at`,
+			func(f *fixture) []any { return []any{f.taskID} }),
+		exec("import: task with remapped parent", `
+			INSERT INTO tasks(list_id, parent_id, title, description, status, priority,
+				assignee_id, start_at, due_at, weight, progress, custom_fields, completed_at, creator_id)
+			VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13,$14)`,
+			func(f *fixture) []any {
+				return []any{f.listID, nil, "imported", "", "open", "normal",
+					nil, nil, nil, 1, nil, "{}", nil, f.userID}
+			}),
+		query("integrity: start after deadline", `
+			SELECT count(*) FROM tasks WHERE start_at IS NOT NULL AND due_at IS NOT NULL AND start_at > due_at`,
+			func(f *fixture) []any { return nil }),
+		query("integrity: orphaned list members", `
+			SELECT count(*) FROM list_members lm LEFT JOIN lists l ON l.id = lm.list_id WHERE l.id IS NULL`,
+			func(f *fixture) []any { return nil }),
+		query("integrity: orphaned subtasks", `
+			SELECT count(*) FROM tasks t WHERE t.parent_id IS NOT NULL
+			  AND NOT EXISTS (SELECT 1 FROM tasks p WHERE p.id = t.parent_id)`,
+			func(f *fixture) []any { return nil }),
+		query("integrity: stale blocked_by ids", `
+			SELECT count(*) FROM tasks t
+			WHERE COALESCE(array_length(t.blocked_by,1),0) > 0
+			  AND EXISTS (
+			    SELECT 1 FROM unnest(t.blocked_by) AS dep
+			    WHERE NOT EXISTS (SELECT 1 FROM tasks x WHERE x.id = dep)
+			  )`,
+			func(f *fixture) []any { return nil }),
+		query("integrity: dependency cycles", `
+			SELECT count(*) FROM tasks a JOIN tasks b ON b.id = ANY(a.blocked_by)
+			WHERE a.id = ANY(b.blocked_by)`,
+			func(f *fixture) []any { return nil }),
+		query("integrity: long-open focus sessions", `
+			SELECT count(*) FROM focus_sessions WHERE ended_at IS NULL AND started_at < now() - interval '24 hours'`,
+			func(f *fixture) []any { return nil }),
+		query("captions: all locales populated", `
+			SELECT locale, count(*) FROM stat_captions GROUP BY locale ORDER BY locale`,
+			func(f *fixture) []any { return nil }),
+		query("notification collapse lookup", `
+			SELECT id FROM notifications
+			WHERE user_id=$1 AND kind=$2 AND read_at IS NULL
+			  AND payload->>'task_id' = $3
+			  AND created_at > now() - make_interval(secs => $4)
+			ORDER BY created_at DESC LIMIT 1`,
+			func(f *fixture) []any { return []any{f.userID, "comment", "1", 120} }),
+
+		query("onboarding progress lookup", `
+			SELECT l.id,
+				(SELECT count(*) FROM tasks t WHERE t.list_id=l.id AND t.archived_at IS NULL),
+				(SELECT count(*) FROM tasks t WHERE t.list_id=l.id AND t.archived_at IS NULL AND t.completed_at IS NOT NULL)
+			FROM lists l
+			JOIN list_members lm ON lm.list_id = l.id AND lm.user_id = $1 AND lm.permission = 'owner'
+			WHERE l.name = 'Onboarding quests' AND l.archived_at IS NULL
+			ORDER BY l.id LIMIT 1`,
+			func(f *fixture) []any { return []any{f.userID} }),
+
 		// --- settings ---
 		exec("system setting upsert", `
 			INSERT INTO system_settings(key,value,updated_at) VALUES($1,$2::jsonb,now())
@@ -544,5 +687,8 @@ const taskSelectSQL = `
 				'user_id', u.id, 'username', u.username, 'avatar_path', u.avatar_path, 'started_at', fs.started_at
 			) ORDER BY fs.started_at)
 			FROM focus_sessions fs JOIN users u ON u.id = fs.user_id
-			WHERE fs.task_id = t.id AND fs.ended_at IS NULL), '[]')
-	FROM tasks t`
+			WHERE fs.task_id = t.id AND fs.ended_at IS NULL), '[]'),
+		t.review_state, rv.username, t.review_at, t.review_note,
+		(SELECT count(*) FROM task_watchers tw WHERE tw.task_id = t.id)::int
+	FROM tasks t
+	LEFT JOIN users rv ON rv.id = t.review_by`

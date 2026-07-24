@@ -1,5 +1,236 @@
 # Changelog
 
+## Unreleased — Gantt drag/resize, critical path, onboarding progress, attachment delete, browser notifications
+
+No new migrations in this batch (the Timeline endpoint gained one extra `LEFT JOIN`-sourced field,
+no schema change). `todorio testsql` now covers 56 queries against a real PostgreSQL 16.2.
+
+### Added — drag-and-drop rescheduling on the Timeline / Gantt (spec section 12)
+
+The chart was read-only: seeing a bar told you the schedule, changing it meant opening the task.
+A bar's body can now be dragged to move it, and either edge dragged to resize it, both via native
+Pointer Events (mouse and touch, single code path) with the pixel delta rounded to whole days at
+the chart's current zoom level.
+
+- **Moving** a bar (drag its body) is only offered when both ends are already real dates. A bar
+  with only a deadline (or only a start) renders "implied" — hatched, per the existing convention
+  — specifically so a guessed range never looks like one the user set. Letting a body-drag on such
+  a bar silently invent the missing date would do exactly that, so the body is inert there; only
+  the edges are live.
+- **Resizing** either edge is always offered (regardless of implied state) and always writes
+  exactly the one date that edge represents — dragging the blank edge of an implied bar is an
+  unambiguous "set this date" action, unlike grabbing the middle.
+- A live preview (day-accurate, no network calls mid-drag) follows the pointer; the PATCH fires
+  once on release, and a plain click that never moved the pointer still opens the task — the two
+  are told apart by whether the drag actually crossed a day boundary, not by a timer.
+- Handles are hover-revealed (same treatment as the attachment remove button below) rather than
+  permanently visible clutter, and only rendered for bars the caller can actually edit — the
+  Timeline endpoint now reports `can_edit` per task, mirroring `listPermission(...) >= editor`.
+  `handleUpdateTask` re-checks that permission itself regardless, so this is a UI affordance, not
+  the security boundary.
+- Verified end-to-end in a real headless browser against the live server: dragging a due-only
+  bar's start handle sets exactly the expected `start_at` and leaves `due_at` untouched; moving a
+  fully-scheduled bar shifts both ends by the same delta; a plain click still opens the task modal.
+
+### Added — critical path highlighting on the Timeline (spec section 12)
+
+An opt-in "Critical path" checkbox runs a textbook CPM forward/backward pass (earliest/latest
+start and finish, then zero-slack) over whatever's currently loaded in the chart, and outlines the
+zero-slack bars and the dependency arrows between them.
+
+`blocked_by` is a free-form array with no DB constraint against cycles — `ops.go`'s own integrity
+check exists for exactly that reason. The graph is topologically sorted with Kahn's algorithm
+first; anything left over once the queue drains is part of a cycle and is excluded from the CPM
+math entirely (with a small note shown to the user) rather than risking an infinite recursion or a
+silently wrong slack value.
+
+### Fixed — Timeline bars didn't open the task modal
+
+`TimelineView` accepted an `onOpenTask` callback but `SpaceView` never passed one, so clicking a
+bar did nothing at all — a pre-existing gap, not a regression from the drag work above. `SpaceView`
+now fetches the full task on click and renders it through the same `TaskModal` every other view
+uses, refreshing the space's lists/pulse on change like `ListView` already does.
+
+### Added — browser system notifications (spec section 12: "push-уведомления браузера")
+
+A lightweight implementation on purpose: the spec's own wording ("работает в открытой вкладке")
+describes the `Notification` API firing from an open tab, not full Web Push — which would require
+routing through an external push relay (FCM/Autopush), contradicting the project's no-external-
+services stance. A toggle in profile settings requests permission and reflects the current state;
+it's hidden entirely over plain HTTP or in a browser without the API, and unchecking it explains
+(rather than pretends to do) that revoking a granted permission is the browser's own setting, not
+this page's.
+
+### Added — onboarding quest progress bar (spec section 12)
+
+The guided quest list (and the "add it to a new list on approval" step) already existed with no
+visible progress. `GET /api/onboarding/progress` reports done/total for the caller's own quest
+list; a dismissible bar above "My Tasks" shows it and disappears once every quest is done or the
+user dismisses it (remembered per-browser, not server-side — this is a one-time nudge, not a
+setting worth a database column).
+
+### Added — delete an attachment (spec section 7)
+
+Attachments could be added but never removed short of deleting the whole task/comment. Each
+thumbnail now has a hover-revealed remove button behind a confirmation dialog (reversible in the
+sense that it's a deliberate two-step action, but the file itself is gone for good, so it isn't
+wired through the type-to-confirm path — that's reserved for whole-task/list/space deletion).
+
+## Unreleased — confirmations, bulk operations, right-click task menu
+
+No new migrations in this batch — all frontend, on top of the schema from 0009/0010.
+
+### Added — right-click menu on a task row
+
+Changing one field used to mean opening the whole task modal. Right-clicking a row in the list
+view now gives status, priority, a deadline (today / tomorrow / in a week / none), assign-or-
+unassign, and "open task" — the case that prompted this, since the modal was both slow and (before
+the timer became global) knocked the focus session off screen.
+
+Rendered through a portal so a scrolling ancestor can't clip it, and clamped to the viewport so a
+right-click near the bottom edge stays fully visible. The task's current status and priority are
+highlighted, so the menu doubles as a read-out. Escape or any outside click dismisses it.
+
+### Added — bulk operations
+
+A selection checkbox on each row in the list view; selecting anything reveals an action bar for
+status, priority, deadline (set or clear), assign-to-me, and archive. The bar only exists while
+something is selected, so it never takes space it hasn't earned.
+
+Changes are sent per task rather than through a bulk endpoint (there isn't one). That's deliberate:
+a partial failure leaves the successful ones applied and reports how many didn't make it, instead
+of silently rolling back work the user believes is done.
+
+### Added — real confirmation dialogs (spec section 10)
+
+`window.confirm` was doing this job in four places and missing entirely in several others. There
+is now a proper dialog, and for genuinely irreversible actions it is **type-to-confirm**: the
+button stays disabled until the exact name is typed.
+
+- Type-to-confirm: permanently deleting a task, list, or space.
+- Plain confirm: archiving a task, archiving a note, bulk archive, blocking a user, resetting
+  someone's password — all previously one unguarded click.
+- Type-to-confirm is reserved for the no-undo cases on purpose. Requiring it everywhere trains
+  people to type past it without reading, which defeats the point.
+
+## Unreleased — Markdown notes, watchers, review workflow, captions, portability
+
+Second batch. Two new migrations (0009, 0010); 0001–0008 untouched. Every new SQL statement was
+executed against a real PostgreSQL 16.2 before shipping — `todorio testsql` now covers 55 queries.
+
+### Added — Markdown rendering for notes (spec section 12)
+
+Notes were described as "Markdown pages" but the body was only ever shown in a textarea; the
+markup was never rendered. There is now an Edit/Preview toggle, opening in preview when the note
+already has content.
+
+The renderer (`web/src/markdown.tsx`) is hand-written rather than a library, for a specific
+reason: it emits **React elements, never HTML strings**, so there is no `dangerouslySetInnerHTML`
+anywhere and note text cannot inject markup. Verified against a live attack payload in a real
+browser — `<img onerror>` and `<script>` in a note produce zero elements and zero alerts, and
+`[label](javascript:...)` is refused as a link while a normal https link still works. Unsupported
+syntax degrades to plain text instead of vanishing.
+
+Supported: headings, ordered/unordered lists, blockquotes, fenced and inline code, bold, italic,
+strikethrough, links, horizontal rules, paragraphs.
+
+### Added — watchers (spec section 5)
+
+A task field the spec listed but that never existed. A watcher follows a task without owning it
+and receives the same status/deadline/assignee/comment notifications. Watching grants no extra
+access — you can only watch what you can already see, so it can't be used to subscribe into a
+private list. Fan-out skips the actor and the assignee, so nobody is notified twice.
+
+### Added — review workflow with accept/return (spec section 5)
+
+"На проверке" was previously just a status string with no semantics. It now records a real
+decision: who submitted, who decided, when, and why. Accepting completes the task (and stops any
+focus timer on it); returning sends it back to in_progress with the reviewer's note. **A return
+requires a reason** — sending work back with no explanation tells the author nothing.
+
+### Added — threaded comment replies (spec section 7)
+
+One level deep on purpose: replying to a reply attaches to the same thread root rather than
+drifting indefinitely to the right. A parent is validated to belong to the same task, so a crafted
+id can't graft a reply onto a conversation in a task the caller can't see.
+
+### Added — dynamic stat captions for all 13 locales (spec section 14)
+
+The caption engine worked but content covered only ru-RU (30 phrases) and en-US (10) across 4 of
+7 categories, so 11 of 13 locales showed a blank caption. Migration 0010 adds **728 phrases** —
+4 per part, per category, per locale — written idiomatically per language rather than translated
+from English, as the spec requires. Tone is matched per category: nothing congratulatory appears
+next to overdue work. No emoji.
+
+### Added — export and import
+
+A self-hosted product shouldn't be the thing that traps your data. `GET /api/spaces/{id}/export`
+produces one readable JSON document (lists, tasks, subtasks, comments, notes, settings);
+`POST /api/spaces/import` rebuilds it into a **new** space inside one transaction.
+
+- Import always creates a new space rather than merging — a merge would have to guess whether a
+  same-named list is the same list, and guessing wrong silently mangles real data.
+- Assignees are stored as usernames and resolved against the destination server; an unknown user
+  means the task arrives unassigned rather than pointing at a stranger.
+- Attachment *metadata* is exported but not the bytes: base64-inlining images would turn a modest
+  space into a hundred-megabyte file. The files themselves are covered by `todorio backup create`.
+
+### Added — integrity checks in `todorio status`
+
+Nine read-only checks for inconsistencies no single request would notice: orphaned list/space
+members, tasks whose list is gone, subtasks with a missing parent, comments on deleted tasks,
+stale `blocked_by` ids, **mutual dependency cycles** (previously creatable, and they render as
+circular arrows on the Gantt), tasks starting after their deadline, focus sessions left open over
+24 hours, and attachment rows whose file is missing from disk. Each reports a count and what to do
+about it. Nothing is repaired automatically — the operator decides.
+
+### Added — action rate limits (spec section 10)
+
+`limits.actions.tasks_per_hour` and `limits.actions.uploads_per_hour`, both defaulting to 0
+(unlimited), counted in hourly buckets per user. Guards against a broken script creating thousands
+of rows. Fails open on a database hiccup: a guardrail shouldn't block legitimate work. Stale
+buckets are pruned daily by the worker.
+
+### Changed — notification bursts are collapsed
+
+Editing a task's status, then its deadline, then its assignee within a minute produced three
+separate bell entries. An unread notification of the same kind about the same task inside
+`limits.notify.collapse_seconds` (default 120) is now refreshed in place. Only **unread** ones are
+merged — rewriting something already seen would make the history unreliable.
+
+### Added — confirmation before archiving a note
+
+## Unreleased — focus timer stopped on task completion, About page content
+
+### Fixed — the focus timer kept running after a task was completed
+
+Nothing anywhere closed a task's focus session when the task was finished, so the sidebar clock
+went on billing time against work that was already done.
+
+Fixed server-side rather than in the UI, so it holds for every client and every path into
+completion:
+
+- `closeFocusForTask` ends every open session on a task — for **all** users, not just the
+  caller: if two people were focused on it, both timers have to stop. Elapsed time already
+  worked is preserved (`duration_seconds` is computed on close), so it still counts in stats.
+- `closeFocusForTaskTree` covers a task **and its subtasks**, matching the archive cascade.
+- Wired into completion (`status = done`) and archiving.
+- The frontend fires a `todorio:focus-changed` event from all four completion paths (list
+  checkbox, "My tasks" checkbox, the modal's status dropdown, the modal's archive button) so
+  the sidebar clock disappears immediately instead of at its next 60-second poll.
+- Two new `testsql` checks cover both queries — 34/34 now pass against real PostgreSQL.
+
+### Changed — About page
+
+- The version shown is whatever the build injects via `-ldflags` (unchanged): the release
+  workflow passes the git tag, so tagging `v0.2.1` displays `v0.2.1` with no source edit.
+- Added "Source code" and "Donate" rows, defaulting to
+  `https://github.com/DanMotive/Todorio` and `https://boosty.to/danter1/about`.
+- Both are root-editable branding settings (`branding.source_url`, `branding.donate_url`), so
+  they can be changed or blanked — a blank value hides its row rather than showing a dead label.
+- Only `http(s)` URLs are rendered as links. These fields are root-editable text, so a
+  `javascript:` or `data:` URL typed into one must never become clickable.
+
 ## Unreleased — `todorio testsql`, focus timer fix
 
 First of two batches. This one is about verification and a real bug, not new features.

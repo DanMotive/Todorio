@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { api, type Me, type Note, type ActivityEvent, type SearchResult, type SettingDef, type ActiveFocus, type Inbox, type InboxItem } from "./api"
 import { tr, trFormal, getFormattingLocale } from "./i18n"
+import { renderMarkdown } from "./markdown"
 import {
   IconAlertTriangle, IconAlertCircle, IconInfo, IconPin, IconMessage, IconCheckCircle,
   IconBarChart, IconAward, IconPaperclip, IconLock, IconUserPlus, IconCircle, IconFileText,
@@ -193,10 +194,24 @@ export function AttachmentsBlock({ taskId, commentId, compact }: {
   const [items, setItems] = useState<Attachment[]>([])
   const [busy, setBusy] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+  const { confirm, confirmElement } = useConfirm()
   const base = commentId !== undefined ? `/api/comments/${commentId}` : `/api/tasks/${taskId}`
   const load = () =>
     api.get(`${base}/attachments`).then((r) => setItems(r.attachments)).catch(() => {})
   useEffect(() => { load() }, [taskId, commentId])
+
+  // Deleting an attachment had no UI at all — the DELETE endpoint existed and was simply
+  // unreachable. It is a genuine loss (the image is gone, not archived), so it goes through the
+  // same confirmation dialog as every other permanent action, plain rather than type-to-confirm:
+  // one small image is a much lower-stakes loss than a whole task or space.
+  function removeAttachment(id: number) {
+    confirm({
+      title: tr("attach.confirm_delete_title"),
+      confirmLabel: tr("task.archive"),
+      danger: true,
+      action: async () => { await api.del(`/api/attachments/${id}`).catch(() => {}); load() },
+    })
+  }
 
   const upload = async (f: File) => {
     setBusy(true)
@@ -218,12 +233,19 @@ export function AttachmentsBlock({ taskId, commentId, compact }: {
   const thumb = compact ? 56 : 84
   return (
     <div style={{ margin: compact ? "4px 0" : "8px 0 12px" }}>
+      {confirmElement}
       <div style={{ display: "flex", gap: compact ? 6 : 8, flexWrap: "wrap" }}>
         {items.map((a) => (
-          <a key={a.id} href={`/api/attachments/${a.id}`} target="_blank" rel="noreferrer">
-            <img src={`/api/attachments/${a.id}`} alt={`#${a.id}`}
-              style={{ width: thumb, height: thumb, objectFit: "cover", borderRadius: 8 }} />
-          </a>
+          <div key={a.id} className="attach-thumb" style={{ width: thumb, height: thumb }}>
+            <a href={`/api/attachments/${a.id}`} target="_blank" rel="noreferrer">
+              <img src={`/api/attachments/${a.id}`} alt={`#${a.id}`}
+                style={{ width: thumb, height: thumb, objectFit: "cover", borderRadius: 8 }} />
+            </a>
+            <button className="attach-remove" title={tr("attach.remove")}
+              onClick={() => removeAttachment(a.id)}>
+              <IconX size={11} />
+            </button>
+          </div>
         ))}
       </div>
       <label className="nav-btn row"
@@ -407,9 +429,14 @@ export function PublicListPage({ token }: { token: string }) {
 // ---------- notes (Markdown pages inside a space) ----------
 
 function NoteModal({ note, onClose, onChanged }: { note: Note; onClose: () => void; onChanged: () => void }) {
+  const { confirm, confirmElement } = useConfirm()
   const [title, setTitle] = useState(note.title)
   const [body, setBody] = useState(note.body || "")
   const [saved, setSaved] = useState(true)
+  // Notes are Markdown pages (spec section 12), but until now the body was only ever shown in a
+  // textarea — the markup was never rendered. Opens in preview when there's already content to
+  // read, and in edit mode for an empty note where there is nothing to preview.
+  const [preview, setPreview] = useState(!!(note.body && note.body.trim()))
 
   async function save() {
     await api.patch(`/api/notes/${note.id}`, { title, body }).catch(() => {})
@@ -424,12 +451,35 @@ function NoteModal({ note, onClose, onChanged }: { note: Note; onClose: () => vo
 
   return (
     <ModalShell onClose={onClose} maxWidth={640}>
+        {confirmElement}
         <input className="input" style={{ fontSize: 18, fontWeight: 600, marginBottom: 10 }}
           value={title} onChange={(e) => { setTitle(e.target.value); setSaved(false) }} />
-        <textarea className="input" style={{ minHeight: 260, fontFamily: "inherit", resize: "vertical" }}
-          value={body} onChange={(e) => { setBody(e.target.value); setSaved(false) }} />
+        <div className="row" style={{ gap: 4, marginBottom: 8 }}>
+          <button className={"nav-btn" + (!preview ? " active" : "")} onClick={() => setPreview(false)}>
+            {tr("notes.edit")}
+          </button>
+          <button className={"nav-btn" + (preview ? " active" : "")} onClick={() => setPreview(true)}>
+            {tr("notes.preview")}
+          </button>
+          <span className="muted" style={{ marginLeft: "auto", fontSize: 12 }}>{tr("notes.md_hint")}</span>
+        </div>
+        {preview ? (
+          <div className="md-view">
+            {body.trim()
+              ? renderMarkdown(body)
+              : <p className="muted">{tr("notes.empty_body")}</p>}
+          </div>
+        ) : (
+          <textarea className="input" style={{ minHeight: 260, fontFamily: "inherit", resize: "vertical" }}
+            value={body} onChange={(e) => { setBody(e.target.value); setSaved(false) }} />
+        )}
         <div className="row" style={{ marginTop: 12, justifyContent: "space-between" }}>
-          <button className="nav-btn" style={{ color: "var(--due-overdue)" }} onClick={remove}>{tr("task.archive")}</button>
+          <button className="nav-btn" style={{ color: "var(--due-overdue)" }}
+            onClick={() => confirm({
+              title: tr("notes.confirm_archive").replace("{title}", title),
+              body: tr("confirm.archive_body"),
+              confirmLabel: tr("task.archive"), danger: true, action: remove,
+            })}>{tr("task.archive")}</button>
           <div className="row">
             {!saved && <span className="muted">{tr("notes.unsaved")}</span>}
             <button className="btn" onClick={save}>{tr("notes.save")}</button>
@@ -523,6 +573,7 @@ export function ArchivePanel({ me, spaceId }: { me: Me; spaceId: number }) {
   const [tasks, setTasks] = useState<ArchivedTask[]>([])
   const [retentionDays, setRetentionDays] = useState("30")
 
+  const { confirm, confirmElement } = useConfirm()
   const load = () => api.get(`/api/spaces/${spaceId}/archive`).then((r) => {
     setLists(r.lists); setTasks(r.tasks); setRetentionDays(String(r.retention_days))
   }).catch(() => {})
@@ -530,13 +581,21 @@ export function ArchivePanel({ me, spaceId }: { me: Me; spaceId: number }) {
 
   async function restoreList(id: number) { await api.post(`/api/lists/${id}/restore`).catch(() => {}); load() }
   async function restoreTask(id: number) { await api.post(`/api/tasks/${id}/restore`).catch(() => {}); load() }
-  async function deleteListForever(id: number, name: string) {
-    if (!window.confirm(tr("archive.confirm_delete").replace("{name}", name))) return
-    await api.del(`/api/lists/${id}/permanent`).catch(() => {}); load()
+  // Permanent deletion has no undo, so it asks the user to type the name rather than accepting a
+  // single click (spec section 10 requires confirmation for exactly these actions).
+  function deleteListForever(id: number, name: string) {
+    confirm({
+      title: tr("confirm.delete_forever_title"), body: tr("confirm.delete_forever_body"),
+      confirmLabel: tr("archive.delete_forever"), requireText: name, danger: true,
+      action: async () => { await api.del(`/api/lists/${id}/permanent`).catch(() => {}); load() },
+    })
   }
-  async function deleteTaskForever(id: number, title: string) {
-    if (!window.confirm(tr("archive.confirm_delete").replace("{name}", title))) return
-    await api.del(`/api/tasks/${id}/permanent`).catch(() => {}); load()
+  function deleteTaskForever(id: number, title: string) {
+    confirm({
+      title: tr("confirm.delete_forever_title"), body: tr("confirm.delete_forever_body"),
+      confirmLabel: tr("archive.delete_forever"), requireText: title, danger: true,
+      action: async () => { await api.del(`/api/tasks/${id}/permanent`).catch(() => {}); load() },
+    })
   }
 
   if (lists.length === 0 && tasks.length === 0) {
@@ -544,6 +603,7 @@ export function ArchivePanel({ me, spaceId }: { me: Me; spaceId: number }) {
   }
   return (
     <div>
+      {confirmElement}
       <p className="muted" style={{ marginTop: 0, fontSize: 12 }}>{tr("archive.hint").replace("{days}", retentionDays)}</p>
       {lists.map((l) => (
         <div key={"list-" + l.id} className="task-row" style={{ cursor: "default" }}>
@@ -580,6 +640,7 @@ type ArchivedSpace = { id: number; name: string; archived_at: string; archived_b
 export function ArchivedSpacesPanel({ me }: { me: Me }) {
   const [spaces, setSpaces] = useState<ArchivedSpace[]>([])
   const [retentionDays, setRetentionDays] = useState("30")
+  const { confirm, confirmElement } = useConfirm()
 
   const load = () => api.get("/api/archive/spaces").then((r) => {
     setSpaces(r.spaces); setRetentionDays(String(r.retention_days))
@@ -587,14 +648,18 @@ export function ArchivedSpacesPanel({ me }: { me: Me }) {
   useEffect(() => { load() }, [])
 
   async function restore(id: number) { await api.post(`/api/spaces/${id}/restore`).catch(() => {}); load() }
-  async function deleteForever(id: number, name: string) {
-    if (!window.confirm(tr("archive.confirm_delete").replace("{name}", name))) return
-    await api.del(`/api/spaces/${id}/permanent`).catch(() => {}); load()
+  function deleteForever(id: number, name: string) {
+    confirm({
+      title: tr("confirm.delete_forever_title"), body: tr("confirm.delete_space_body"),
+      confirmLabel: tr("archive.delete_forever"), requireText: name, danger: true,
+      action: async () => { await api.del(`/api/spaces/${id}/permanent`).catch(() => {}); load() },
+    })
   }
 
   if (spaces.length === 0) return <p className="muted row" style={{ gap: 6 }}><IconArchive size={14} /> {tr("archive.empty")}</p>
   return (
     <div>
+      {confirmElement}
       {spaces.map((s) => (
         <div key={s.id} className="task-row" style={{ cursor: "default" }}>
           <span className="task-title row" style={{ gap: 6 }}><IconArchive size={14} /> {s.name}</span>
@@ -1185,14 +1250,23 @@ export function FieldsPanel({ spaceId, isOwner }: { spaceId: number; isOwner: bo
 
 // ---------- About page (spec section 18: "также на странице «О сайте» (версия, разработчик)") ----------
 
-export function AboutPage({ siteName, version, developerName, developerUrl, aboutText, onBack }: {
+export function AboutPage({ siteName, version, developerName, developerUrl, aboutText,
+  sourceUrl, donateUrl, onBack }: {
   siteName: string
   version?: string
   developerName?: string
   developerUrl?: string
   aboutText?: string
+  sourceUrl?: string
+  donateUrl?: string
   onBack: () => void
 }) {
+  // Only http(s) links are rendered. A branding field is root-editable text, so a
+  // "javascript:" or "data:" URL typed into it must never become a clickable link.
+  const safe = (u?: string) => (u && /^https?:\/\//i.test(u) ? u : "")
+  const src = safe(sourceUrl)
+  const donate = safe(donateUrl)
+  const devLink = safe(developerUrl)
   return (
     <div>
       <div className="row" style={{ marginBottom: 12 }}>
@@ -1210,14 +1284,26 @@ export function AboutPage({ siteName, version, developerName, developerUrl, abou
           <span className="muted" style={{ minWidth: 110 }}>{tr("about.version")}</span>
           <span>{version || "—"}</span>
         </div>
-        <div className="row" style={{ gap: 8, fontSize: 14 }}>
+        <div className="row" style={{ gap: 8, fontSize: 14, marginBottom: 6 }}>
           <span className="muted" style={{ minWidth: 110 }}>{tr("about.developer")}</span>
           <span>
-            {developerUrl
-              ? <a href={developerUrl} target="_blank" rel="noreferrer noopener">{developerName || "DanMotive"}</a>
+            {devLink
+              ? <a href={devLink} target="_blank" rel="noreferrer noopener">{developerName || "DanMotive"}</a>
               : (developerName || "DanMotive")}
           </span>
         </div>
+        {src && (
+          <div className="row" style={{ gap: 8, fontSize: 14, marginBottom: 6 }}>
+            <span className="muted" style={{ minWidth: 110 }}>{tr("about.source")}</span>
+            <a href={src} target="_blank" rel="noreferrer noopener">{src.replace(/^https?:\/\//, "")}</a>
+          </div>
+        )}
+        {donate && (
+          <div className="row" style={{ gap: 8, fontSize: 14 }}>
+            <span className="muted" style={{ minWidth: 110 }}>{tr("about.donate")}</span>
+            <a href={donate} target="_blank" rel="noreferrer noopener">{donate.replace(/^https?:\/\//, "")}</a>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -1319,4 +1405,73 @@ export function InboxPage({ onOpenTask }: { onOpenTask?: (item: InboxItem) => vo
       })}
     </div>
   )
+}
+
+// ---------- confirmation dialog (spec section 10) ----------
+
+// A real dialog instead of window.confirm, for two reasons: the native prompt can't be styled or
+// localised consistently, and for genuinely irreversible actions a single OK click is too cheap.
+//
+// `requireText` turns it into a type-to-confirm: the button stays disabled until the user types
+// the exact name. Reserved for actions that destroy data with no undo (permanent delete, deleting
+// a space) — using it everywhere would train people to copy-paste past it without reading.
+export function ConfirmDialog({ title, body, confirmLabel, requireText, danger, onConfirm, onCancel }: {
+  title: string
+  body?: string
+  confirmLabel: string
+  requireText?: string
+  danger?: boolean
+  onConfirm: () => void
+  onCancel: () => void
+}) {
+  const [typed, setTyped] = useState("")
+  const ready = !requireText || typed.trim() === requireText.trim()
+
+  return (
+    <ModalShell onClose={onCancel} maxWidth={440}>
+      <h3 className="row" style={{ marginTop: 0, gap: 6 }}>
+        {danger && <IconAlertTriangle size={17} style={{ color: "var(--due-overdue)" }} />}
+        {title}
+      </h3>
+      {body && <p className="muted" style={{ marginTop: 0 }}>{body}</p>}
+      {requireText && (
+        <>
+          <p style={{ fontSize: 13, marginBottom: 6 }}>
+            {tr("confirm.type_to_proceed").replace("{name}", requireText)}
+          </p>
+          <input className="input" value={typed} autoFocus
+            onChange={(e) => setTyped(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && ready) onConfirm() }} />
+        </>
+      )}
+      <div className="row" style={{ marginTop: 14, justifyContent: "flex-end", gap: 8 }}>
+        <button className="nav-btn" onClick={onCancel}>{tr("confirm.cancel")}</button>
+        <button className="btn" disabled={!ready}
+          style={danger ? { background: "var(--due-overdue)", opacity: ready ? 1 : 0.5 } : { opacity: ready ? 1 : 0.5 }}
+          onClick={onConfirm}>
+          {confirmLabel}
+        </button>
+      </div>
+    </ModalShell>
+  )
+}
+
+// useConfirm gives any component a single piece of state plus a render slot, so adding a guarded
+// action doesn't mean adding three useStates each time.
+export function useConfirm() {
+  const [pending, setPending] = useState<{
+    title: string; body?: string; confirmLabel: string
+    requireText?: string; danger?: boolean; action: () => void | Promise<void>
+  } | null>(null)
+
+  const element = pending ? (
+    <ConfirmDialog
+      title={pending.title} body={pending.body} confirmLabel={pending.confirmLabel}
+      requireText={pending.requireText} danger={pending.danger}
+      onCancel={() => setPending(null)}
+      onConfirm={async () => { const a = pending.action; setPending(null); await a() }}
+    />
+  ) : null
+
+  return { confirm: setPending, confirmElement: element }
 }

@@ -81,10 +81,17 @@ func (a *API) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/tasks/{id}/restore", a.handleRestoreTask)
 	mux.HandleFunc("DELETE /api/tasks/{id}/permanent", a.handleDeleteTaskPermanent)
 	mux.HandleFunc("GET /api/tasks/{id}/versions", a.handleListTaskVersions)
+	// --- watchers and review workflow (spec section 5) ---
+	mux.HandleFunc("POST /api/tasks/{id}/watch", a.handleWatchTask)
+	mux.HandleFunc("DELETE /api/tasks/{id}/watch", a.handleUnwatchTask)
+	mux.HandleFunc("GET /api/tasks/{id}/watchers", a.handleListWatchers)
+	mux.HandleFunc("POST /api/tasks/{id}/review/submit", a.handleSubmitReview)
+	mux.HandleFunc("POST /api/tasks/{id}/review/decide", a.handleDecideReview)
 	mux.HandleFunc("POST /api/tasks/{id}/versions/{version_id}/restore", a.handleRestoreTaskVersion)
 	mux.HandleFunc("GET /api/my/tasks", a.handleMyTasks)
 	mux.HandleFunc("GET /api/inbox", a.handleInbox)
 	mux.HandleFunc("GET /api/my/stats", a.handleMyStats)
+	mux.HandleFunc("GET /api/onboarding/progress", a.handleOnboardingProgress)
 
 	// --- social interactions ---
 	mux.HandleFunc("GET /api/tasks/{id}/comments", a.handleListComments)
@@ -102,6 +109,10 @@ func (a *API) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/spaces/{id}/pulse", a.handlePulse)
 	mux.HandleFunc("GET /api/spaces/{id}/stats", a.handleStats)
 	mux.HandleFunc("GET /api/spaces/{id}/timeline", a.handleTimeline)
+
+	// --- export / import (data portability) ---
+	mux.HandleFunc("GET /api/spaces/{id}/export", a.handleExportSpace)
+	mux.HandleFunc("POST /api/spaces/import", a.handleImportSpace)
 
 	// --- TOTP (2FA for root/admins) ---
 	mux.HandleFunc("POST /api/me/totp/setup", a.handleTOTPSetup)
@@ -369,6 +380,37 @@ func (a *API) notify(r *http.Request, userID int64, kind string, payload map[str
 		return
 	}
 	b, _ := json.Marshal(payload)
+
+	// Coalesce a burst about the same task. Editing a task's status, then its deadline, then its
+	// assignee within a minute used to produce three separate bell entries; the recipient only
+	// needs to know the task changed. An unread notification of the same kind about the same task
+	// inside the collapse window is refreshed in place instead of adding a new row.
+	//
+	// Only unread ones are merged: something already seen must not be silently rewritten, or the
+	// history of what happened becomes unreliable. task_id is compared out of the JSON payload,
+	// so kinds without a task (e.g. "approved") never collapse.
+	if window := a.intSetting(r.Context(), "limits.notify.collapse_seconds", 120); window > 0 {
+		if taskID, ok := payload["task_id"]; ok {
+			var existing int64
+			err := a.DB.Pool.QueryRow(r.Context(), `
+				SELECT id FROM notifications
+				WHERE user_id=$1 AND kind=$2 AND read_at IS NULL
+				  AND payload->>'task_id' = $3
+				  AND created_at > now() - make_interval(secs => $4)
+				ORDER BY created_at DESC LIMIT 1`,
+				userID, kind, fmt.Sprint(taskID), window).Scan(&existing)
+			if err == nil {
+				_, _ = a.DB.Pool.Exec(r.Context(),
+					`UPDATE notifications SET payload=$2, created_at=now() WHERE id=$1`, existing, string(b))
+				if a.inDoNotDisturb(r.Context(), userID) {
+					return
+				}
+				a.Bus.Publish([]int64{userID}, events.Event{Type: "notification", Data: map[string]any{"kind": kind, "payload": payload}})
+				return
+			}
+		}
+	}
+
 	_, _ = a.DB.Pool.Exec(r.Context(),
 		`INSERT INTO notifications(user_id, kind, payload) VALUES($1,$2,$3)`, userID, kind, string(b))
 	if a.inDoNotDisturb(r.Context(), userID) {

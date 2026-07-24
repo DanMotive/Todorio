@@ -76,6 +76,10 @@ func Run(cfg config.Config, version string) error {
 			"footer_text":       database.Setting(r.Context(), "branding.footer_text", ""),
 			"show_product_name": database.Setting(r.Context(), "branding.show_product_name", "true") != "false",
 			"about_text":        database.Setting(r.Context(), "branding.about_text", ""),
+			// Shown on the About page. Defaults point at the real project; root can change or
+			// blank them, and a blank value simply hides the row.
+			"source_url": database.Setting(r.Context(), "branding.source_url", "https://github.com/DanMotive/Todorio"),
+			"donate_url": database.Setting(r.Context(), "branding.donate_url", "https://boosty.to/danter1/about"),
 			// Empty means "no custom logo" — the frontend falls back to the bundled SVG.
 			"logo_path":             database.Setting(r.Context(), "branding.logo_path", ""),
 			"version":               version,

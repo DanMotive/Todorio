@@ -33,6 +33,7 @@ func Run(ctx context.Context, d *db.DB, bus *events.Bus) {
 			warnPendingCleanup(ctx, d, bus)
 			cleanupArchive(ctx, d)
 			cleanupSessions(ctx, d)
+			cleanupActionCounters(ctx, d)
 		}
 	}
 }
@@ -259,4 +260,18 @@ func cleanupArchive(ctx context.Context, d *db.DB) {
 
 func cleanupSessions(ctx context.Context, d *db.DB) {
 	_, _ = d.Pool.Exec(ctx, `DELETE FROM sessions WHERE expires_at < now()`)
+}
+
+// cleanupActionCounters drops hourly rate-limit buckets that no limit check can still read.
+// actionAllowed only looks one hour back, so anything older is dead weight; 48 hours of slack
+// keeps a little history for debugging without letting the table grow forever.
+func cleanupActionCounters(ctx context.Context, d *db.DB) {
+	res, err := d.Pool.Exec(ctx, `DELETE FROM action_counters WHERE bucket_hour < now() - interval '48 hours'`)
+	if err != nil {
+		log.Printf("worker: cleanupActionCounters: %v", err)
+		return
+	}
+	if n := res.RowsAffected(); n > 0 {
+		log.Printf("worker: pruned %d stale action counter rows", n)
+	}
 }

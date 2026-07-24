@@ -176,6 +176,9 @@ func Status(cfg config.Config, version string) error {
 		warn("pg_dump not found — install postgresql-client for backups")
 	}
 
+	// data integrity (only when the DB is reachable)
+	integrityChecks(cfg)
+
 	// server URL, ready to copy
 	scheme := "http"
 	if cfg.HTTPS {
@@ -517,4 +520,132 @@ func ResetRoot(cfg config.Config, newUsername string, yes bool) error {
 	fmt.Println("  ", term.Yellow("NOTE"), "The password is shown ONCE and is not written to logs.")
 	fmt.Println("   The site will require changing it on next login. All previous root sessions were logged out.")
 	return nil
+}
+
+// integrityChecks looks for inconsistencies that no single request would ever notice but that
+// make the product behave oddly: orphaned membership rows, schedules that run backwards, broken
+// attachment paths, and dependency cycles.
+//
+// Every check is read-only and reports rather than repairs. Silently "fixing" a user's data
+// during a status command would be the wrong call — the operator decides what to do.
+func integrityChecks(cfg config.Config) {
+	fmt.Println()
+	fmt.Println(term.Bold("Data integrity"))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	d, err := db.Connect(ctx, cfg.DatabaseURL)
+	if err != nil {
+		warn("skipped — database unreachable")
+		return
+	}
+	defer d.Pool.Close()
+
+	type check struct {
+		label string
+		query string
+		// hint explains what to do when the count is non-zero.
+		hint string
+	}
+	checks := []check{
+		{
+			"tasks scheduled to start after their deadline",
+			`SELECT count(*) FROM tasks WHERE start_at IS NOT NULL AND due_at IS NOT NULL AND start_at > due_at`,
+			"these draw backwards bars on the Timeline; fix the dates on those tasks",
+		},
+		{
+			"list members pointing at a missing list",
+			`SELECT count(*) FROM list_members lm LEFT JOIN lists l ON l.id = lm.list_id WHERE l.id IS NULL`,
+			"safe to delete; they grant access to nothing",
+		},
+		{
+			"space members pointing at a missing space",
+			`SELECT count(*) FROM space_members sm LEFT JOIN spaces s ON s.id = sm.space_id WHERE s.id IS NULL`,
+			"safe to delete",
+		},
+		{
+			"tasks whose list no longer exists",
+			`SELECT count(*) FROM tasks t LEFT JOIN lists l ON l.id = t.list_id WHERE l.id IS NULL`,
+			"unreachable in the UI; export or delete them",
+		},
+		{
+			"subtasks whose parent no longer exists",
+			`SELECT count(*) FROM tasks t WHERE t.parent_id IS NOT NULL
+			   AND NOT EXISTS (SELECT 1 FROM tasks p WHERE p.id = t.parent_id)`,
+			"they behave as root tasks; clear parent_id to make that explicit",
+		},
+		{
+			"comments on a task that no longer exists",
+			`SELECT count(*) FROM comments c LEFT JOIN tasks t ON t.id = c.task_id WHERE t.id IS NULL`,
+			"safe to delete",
+		},
+		{
+			"tasks blocked by a task that no longer exists",
+			`SELECT count(*) FROM tasks t
+			 WHERE COALESCE(array_length(t.blocked_by,1),0) > 0
+			   AND EXISTS (
+			     SELECT 1 FROM unnest(t.blocked_by) AS dep
+			     WHERE NOT EXISTS (SELECT 1 FROM tasks x WHERE x.id = dep)
+			   )`,
+			"the stale ids are ignored but clutter the task; remove them",
+		},
+		{
+			"tasks that directly block each other (dependency cycle)",
+			`SELECT count(*) FROM tasks a JOIN tasks b ON b.id = ANY(a.blocked_by)
+			 WHERE a.id = ANY(b.blocked_by)`,
+			"neither task can ever be unblocked; break one side of the pair",
+		},
+		{
+			"focus sessions left open for more than 24 hours",
+			`SELECT count(*) FROM focus_sessions WHERE ended_at IS NULL AND started_at < now() - interval '24 hours'`,
+			"probably a browser closed mid-session; they inflate focus totals",
+		},
+	}
+
+	problems := 0
+	for _, c := range checks {
+		var n int
+		if err := d.Pool.QueryRow(ctx, c.query).Scan(&n); err != nil {
+			warn(c.label + ": could not check (" + firstLine(err.Error()) + ")")
+			continue
+		}
+		if n == 0 {
+			ok(c.label + ": none")
+		} else {
+			bad(fmt.Sprintf("%s: %d — %s", c.label, n, c.hint))
+			problems++
+		}
+	}
+
+	// Attachment rows whose file is missing on disk. Checked in Go rather than SQL because only
+	// the filesystem knows.
+	rows, err := d.Pool.Query(ctx, `SELECT file_path FROM attachments`)
+	if err == nil {
+		missing := 0
+		total := 0
+		for rows.Next() {
+			var rel string
+			if rows.Scan(&rel) != nil {
+				continue
+			}
+			total++
+			if _, serr := os.Stat(filepath.Join(cfg.UploadsDir, rel)); serr != nil {
+				missing++
+			}
+		}
+		rows.Close()
+		if missing == 0 {
+			ok(fmt.Sprintf("attachment files present: %d/%d", total-missing, total))
+		} else {
+			bad(fmt.Sprintf("attachments with a missing file: %d of %d — restore from a backup or delete the rows", missing, total))
+			problems++
+		}
+	}
+
+	fmt.Println()
+	if problems == 0 {
+		ok("no integrity problems found")
+	} else {
+		warn(fmt.Sprintf("%d integrity issue(s) above — nothing was changed automatically", problems))
+	}
 }

@@ -76,6 +76,63 @@ func (a *API) endOpenFocusSession(r *http.Request, userID int64) *int64 {
 	return taskID
 }
 
+// closeFocusForTask ends every open focus session tied to a task, for every user, and announces
+// it. Called when a task is completed or archived: continuing to bill time against work that is
+// finished is simply wrong, and the timer would keep ticking in the sidebar with nothing left to
+// track. Sessions are closed for all users, not just the caller — if two people were focused on
+// the task, both of their timers have to stop.
+//
+// The elapsed time already worked is preserved (duration_seconds is computed on close), so the
+// user still gets credit for it in their stats.
+func (a *API) closeFocusForTask(r *http.Request, taskID int64, u *auth.User) {
+	rows, err := a.DB.Pool.Query(r.Context(), `
+		UPDATE focus_sessions
+		SET ended_at = now(), duration_seconds = EXTRACT(EPOCH FROM (now() - started_at))::int
+		WHERE task_id = $1 AND ended_at IS NULL
+		RETURNING user_id`, taskID)
+	if err != nil {
+		dbFail(r, "close focus for task", err)
+		return
+	}
+	var closed int
+	for rows.Next() {
+		var uid int64
+		if rows.Scan(&uid) == nil {
+			closed++
+		}
+	}
+	rows.Close()
+	if closed > 0 {
+		a.announceFocus(r, taskID, "focus.stopped", u)
+	}
+}
+
+// closeFocusForTaskTree is closeFocusForTask extended to a task and its subtasks, matching the
+// archive cascade (a task is archived together with its children).
+func (a *API) closeFocusForTaskTree(r *http.Request, taskID int64, u *auth.User) {
+	rows, err := a.DB.Pool.Query(r.Context(), `
+		UPDATE focus_sessions
+		SET ended_at = now(), duration_seconds = EXTRACT(EPOCH FROM (now() - started_at))::int
+		WHERE ended_at IS NULL
+		  AND task_id IN (SELECT id FROM tasks WHERE id = $1 OR parent_id = $1)
+		RETURNING task_id`, taskID)
+	if err != nil {
+		dbFail(r, "close focus for task tree", err)
+		return
+	}
+	seen := map[int64]bool{}
+	for rows.Next() {
+		var tid *int64
+		if rows.Scan(&tid) == nil && tid != nil {
+			seen[*tid] = true
+		}
+	}
+	rows.Close()
+	for tid := range seen {
+		a.announceFocus(r, tid, "focus.stopped", u)
+	}
+}
+
 // announceFocus resolves a task's list and broadcasts a presence event to everyone with access to
 // it, so an open board updates live instead of only on next reload.
 func (a *API) announceFocus(r *http.Request, taskID int64, eventType string, u *auth.User) {

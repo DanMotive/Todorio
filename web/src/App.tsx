@@ -17,6 +17,8 @@ type Bootstrap = {
   show_product_name?: boolean
   about_text?: string
   logo_path?: string
+  source_url?: string
+  donate_url?: string
   version?: string
   default_locale: string
   locales_enabled?: string[]
@@ -29,6 +31,34 @@ function applyTheme(color: string, visual: string) {
   const el = document.documentElement
   el.dataset.color = color
   el.dataset.visual = visual
+}
+
+// System browser notifications (spec section 12): "работает в открытой вкладке ... системные
+// push-уведомления браузера — только при HTTPS". Read literally, this is the Notification API
+// fired from an already-open tab, NOT full Web Push.
+//
+// That distinction is deliberate, not a shortcut: real Web Push delivers through the browser
+// vendor's own relay (Google's FCM for Chrome, Mozilla's autopush, ...) even when the tab is
+// closed — which means routing every notification through a third party. That directly
+// contradicts the product's first stated principle ("приватность: все данные на своём сервере,
+// без внешних сервисов"). The spec's own wording ("in an open tab") matches the lighter
+// mechanism, so that's what this is: zero external services, works the moment HTTPS + permission
+// are granted, and stops the moment the tab is closed — which is an honest trade-off to state,
+// not a hidden one.
+function notifyBrowser(raw: string) {
+  if (typeof Notification === "undefined") return
+  if (Notification.permission !== "granted") return
+  // Only when the tab genuinely isn't the one the user is looking at — a notification while
+  // they're already staring at the bell icon would be redundant.
+  if (document.visibilityState === "visible") return
+  let kind = "", payload: any = {}
+  try { const d = JSON.parse(raw); kind = d.kind; payload = d.payload || {} } catch { return }
+  const title = tr("profile.type." + kind) || tr("nav.notifications")
+  const body = payload.title || payload.task_title || (payload.by ? "@" + payload.by : "")
+  try {
+    const n = new Notification(title, { body, tag: "todorio-" + kind, icon: "/icons/icon-192.png" })
+    n.onclick = () => { window.focus(); n.close() }
+  } catch { /* some browsers reject Notification() outside a user gesture context; ignore */ }
 }
 
 function beep() {
@@ -134,9 +164,10 @@ export default function App() {
   useEffect(() => {
     if (!me || me.status !== "active") return
     const es = new EventSource("/api/events")
-    es.addEventListener("notification", () => {
+    es.addEventListener("notification", (e) => {
       setUnread((n) => n + 1)
       if (soundOnRef.current) beep()
+      notifyBrowser(e.data)
     })
     esRef.current = es
     return () => es.close()
@@ -317,7 +348,8 @@ export default function App() {
         {view === "settings" && <SettingsPage me={me} theme={theme} onUpdateTheme={updateTheme} onProfileSaved={setProfile} />}
         {view === "about" && (
           <AboutPage siteName={siteName} version={boot?.version} developerName={boot?.developer_name}
-            developerUrl={boot?.developer_url} aboutText={boot?.about_text} onBack={() => setView("my")} />
+            developerUrl={boot?.developer_url} aboutText={boot?.about_text}
+            sourceUrl={boot?.source_url} donateUrl={boot?.donate_url} onBack={() => setView("my")} />
         )}
         {view === "admin" && (
           <>

@@ -132,6 +132,36 @@ export function ForcedPasswordChange({ me, onDone }: { me: Me; onDone: () => voi
   )
 }
 
+// Browser system notifications (spec section 12): a toggle in the profile that requests
+// Notification permission. Only offered when it can actually work — over HTTPS (or localhost,
+// where browsers also allow it for development) and when the API exists at all. See App.tsx's
+// notifyBrowser for why this is the Notification API from an open tab, not full Web Push.
+function BrowserNotificationRow() {
+  const [supported] = useState(() => typeof window !== "undefined" && "Notification" in window)
+  const [secure] = useState(() =>
+    location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1")
+  const [perm, setPerm] = useState(() => (supported ? Notification.permission : "denied"))
+
+  if (!supported || !secure) return null
+
+  return (
+    <label className="row" style={{ gap: 8, marginBottom: 10 }}>
+      <input type="checkbox" checked={perm === "granted"}
+        onChange={async (e) => {
+          if (!e.target.checked) {
+            // There is no API to revoke permission from the page; explain instead of pretending.
+            alert(tr("profile.browser_notif_revoke_hint"))
+            return
+          }
+          const result = await Notification.requestPermission()
+          setPerm(result)
+        }} />
+      {tr("profile.browser_notif")}
+      {perm === "denied" && <span className="muted" style={{ fontSize: 12 }}>{tr("profile.browser_notif_blocked")}</span>}
+    </label>
+  )
+}
+
 export function SettingsPage({ me, theme, onUpdateTheme, onProfileSaved }: {
   me: Me; theme: ThemeState; onUpdateTheme: (patch: Partial<ThemeState>) => void; onProfileSaved: (p: Profile) => void
 }) {
@@ -315,6 +345,7 @@ export function SettingsPage({ me, theme, onUpdateTheme, onProfileSaved }: {
           onChange={(e) => saveNotifyPrefs({ sound: e.target.checked })} />
         {tr("nav.sound")}
       </label>
+      <BrowserNotificationRow />
       <div style={{ marginBottom: 12 }}>
         <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>{tr("profile.notif_types")}</div>
         {NOTIFY_TYPES.map((k) => (

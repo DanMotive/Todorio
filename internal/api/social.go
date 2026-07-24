@@ -34,10 +34,12 @@ func (a *API) handleListComments(w http.ResponseWriter, r *http.Request) {
 	rows, err := a.DB.Pool.Query(r.Context(), `
 		SELECT c.id, c.author_id, u.username, c.body, c.created_at, c.edited_at, c.is_system,
 			COALESCE((SELECT json_agg(json_build_object('emoji', rx.emoji, 'user_id', rx.user_id))
-				FROM reactions rx WHERE rx.target_type='comment' AND rx.target_id=c.id), '[]'::json)
+				FROM reactions rx WHERE rx.target_type='comment' AND rx.target_id=c.id), '[]'::json),
+			c.parent_id
 		FROM comments c JOIN users u ON u.id=c.author_id
 		WHERE c.task_id=$1 AND c.deleted_at IS NULL
-		ORDER BY c.created_at`, taskID)
+		-- Group replies under their thread root, then chronologically within the thread.
+		ORDER BY COALESCE(c.parent_id, c.id), c.parent_id NULLS FIRST, c.created_at`, taskID)
 	if err != nil {
 		errJSON(w, http.StatusInternalServerError, "database error")
 		return
@@ -50,10 +52,12 @@ func (a *API) handleListComments(w http.ResponseWriter, r *http.Request) {
 		var createdAt, reactions any
 		var editedAt *time.Time
 		var isSystem bool
-		if rows.Scan(&id, &authorID, &username, &body, &createdAt, &editedAt, &isSystem, &reactions) == nil {
+		var parentID *int64
+		if rows.Scan(&id, &authorID, &username, &body, &createdAt, &editedAt, &isSystem, &reactions, &parentID) == nil {
 			comments = append(comments, map[string]any{
 				"id": id, "author_id": authorID, "author": username, "body": body,
 				"created_at": createdAt, "edited_at": editedAt, "is_system": isSystem, "reactions": reactions,
+				"parent_id": parentID,
 			})
 		}
 	}
@@ -99,10 +103,33 @@ func (a *API) handleCreateComment(w http.ResponseWriter, r *http.Request) {
 	}
 	var in struct {
 		Body string `json:"body"`
+		// ParentID makes this a reply (migration 0009). Threads are one level deep on purpose:
+		// a reply to a reply is flattened onto the same thread, which keeps the feed readable
+		// instead of drifting indefinitely to the right.
+		ParentID *int64 `json:"parent_id"`
 	}
 	if err := readJSON(r, &in); err != nil || in.Body == "" {
 		errJSON(w, http.StatusBadRequest, "comment cannot be empty")
 		return
+	}
+	// A parent must exist on THIS task — otherwise a crafted id could graft a reply onto a
+	// conversation in a task the caller can't even see.
+	var parentAuthor *int64
+	if in.ParentID != nil {
+		var pTask int64
+		var pParent *int64
+		var pAuthor int64
+		if a.DB.Pool.QueryRow(r.Context(),
+			`SELECT task_id, parent_id, author_id FROM comments WHERE id=$1 AND deleted_at IS NULL`,
+			*in.ParentID).Scan(&pTask, &pParent, &pAuthor) != nil || pTask != taskID {
+			errJSON(w, http.StatusBadRequest, "the comment being replied to was not found in this task")
+			return
+		}
+		// Flatten: replying to a reply attaches to the original thread root.
+		if pParent != nil {
+			in.ParentID = pParent
+		}
+		parentAuthor = &pAuthor
 	}
 	maxLen := a.intSetting(r.Context(), "limits.content.comment_max_len", 4000)
 	if maxLen > 0 && len(in.Body) > maxLen {
@@ -111,8 +138,9 @@ func (a *API) handleCreateComment(w http.ResponseWriter, r *http.Request) {
 	}
 	var id int64
 	if err := a.DB.Pool.QueryRow(r.Context(),
-		`INSERT INTO comments(task_id, author_id, body) VALUES($1,$2,$3) RETURNING id`,
-		taskID, u.ID, in.Body).Scan(&id); err != nil {
+		`INSERT INTO comments(task_id, author_id, body, parent_id) VALUES($1,$2,$3,$4) RETURNING id`,
+		taskID, u.ID, in.Body, in.ParentID).Scan(&id); err != nil {
+		dbFail(r, "create comment", err)
 		errJSON(w, http.StatusInternalServerError, "database error")
 		return
 	}
@@ -129,12 +157,21 @@ func (a *API) handleCreateComment(w http.ResponseWriter, r *http.Request) {
 			recipients[mid] = true
 		}
 	}
+	// The person being replied to is the most directly concerned party.
+	if parentAuthor != nil {
+		recipients[*parentAuthor] = true
+	}
 	delete(recipients, u.ID)
 	for rid := range recipients {
 		a.notify(r, rid, "comment", map[string]any{
 			"task_id": taskID, "task_title": title, "comment_id": id, "by": u.Username,
 		})
 	}
+	// Watchers follow the discussion too; notifyWatchers skips the actor and the assignee, and
+	// anyone already in `recipients` is filtered there as well.
+	a.notifyWatchers(r, taskID, u.ID, "comment", map[string]any{
+		"task_id": taskID, "task_title": title, "comment_id": id, "by": u.Username,
+	})
 	a.publishToListMembers(r, listID, events.Event{Type: "comment.created", Data: map[string]any{"task_id": taskID, "comment_id": id}})
 	writeJSON(w, http.StatusCreated, map[string]any{"id": id})
 }

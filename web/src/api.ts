@@ -59,6 +59,12 @@ export type Task = {
   subtasks_done: number
   subtasks_total: number
   active_focus: ActiveFocus[]
+  // Review workflow + watchers (migration 0009). review_state is null when never submitted.
+  review_state: "pending" | "accepted" | "returned" | null
+  review_by: string | null
+  review_at: string | null
+  review_note: string | null
+  watcher_count: number
 }
 
 export type Space = { id: number; name: string; my_role: string }
@@ -92,6 +98,9 @@ export type TimelineItem = {
   start: string; end: string; implied: boolean
   progress: number; overdue: boolean; done: boolean
   blocked_by: number[]; completed_at: string | null
+  // Editor-or-above on this bar's own list — mirrors the server's listPermission check, so the
+  // chart can offer drag/resize only where a PATCH would actually be accepted.
+  can_edit: boolean
 }
 export type Timeline = {
   from: string; to: string

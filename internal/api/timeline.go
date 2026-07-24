@@ -44,6 +44,12 @@ type timelineItem struct {
 	Done        bool       `json:"done"`
 	BlockedBy   []int64    `json:"blocked_by"`
 	CompletedAt *time.Time `json:"completed_at"`
+	// CanEdit mirrors listPermission(...) >= editor, computed from the list_members row already
+	// joined for the visibility check below — no extra query per row. The frontend uses it to
+	// decide whether a bar can be dragged/resized; handleUpdateTask re-checks the same
+	// permission server-side regardless, so this is purely a UI affordance, not the security
+	// boundary.
+	CanEdit bool `json:"can_edit"`
 }
 
 type timelineLink struct {
@@ -101,12 +107,13 @@ func (a *API) handleTimeline(w http.ResponseWriter, r *http.Request) {
 
 	// Only lists the caller can actually see: private lists they're not a member of must not
 	// leak into the chart. Mirrors the visibility rule in handleListLists.
+	isAdmin := u.IsAdmin()
 	rows, err := a.DB.Pool.Query(r.Context(), `
 		SELECT t.id, t.list_id, l.name, t.parent_id, t.title, t.status, t.priority,
 			usr.username, t.start_at, t.due_at, t.progress,
 			(SELECT count(*) FROM tasks s WHERE s.parent_id=t.id AND s.archived_at IS NULL AND s.completed_at IS NOT NULL)::int,
 			(SELECT count(*) FROM tasks s WHERE s.parent_id=t.id AND s.archived_at IS NULL)::int,
-			COALESCE(t.blocked_by, '{}'), t.completed_at
+			COALESCE(t.blocked_by, '{}'), t.completed_at, lm.permission
 		FROM tasks t
 		JOIN lists l ON l.id = t.list_id
 		LEFT JOIN list_members lm ON lm.list_id = l.id AND lm.user_id = $2
@@ -120,7 +127,7 @@ func (a *API) handleTimeline(w http.ResponseWriter, r *http.Request) {
 		  AND COALESCE(t.start_at, t.due_at) < $6
 		  AND COALESCE(t.due_at, t.start_at) >= $5
 		ORDER BY COALESCE(t.start_at, t.due_at), t.id`,
-		spaceID, u.ID, u.IsAdmin(), listFilter, from, to)
+		spaceID, u.ID, isAdmin, listFilter, from, to)
 	if err != nil {
 		dbFail(r, "timeline", err)
 		errJSON(w, http.StatusInternalServerError, "database error")
@@ -136,12 +143,14 @@ func (a *API) handleTimeline(w http.ResponseWriter, r *http.Request) {
 			startAt, dueAt  *time.Time
 			progress        *int
 			subDone, subAll int
+			perm            *string
 		)
 		if rows.Scan(&it.ID, &it.ListID, &it.ListName, &it.ParentID, &it.Title, &it.Status, &it.Priority,
 			&it.Assignee, &startAt, &dueAt, &progress, &subDone, &subAll,
-			&it.BlockedBy, &it.CompletedAt) != nil {
+			&it.BlockedBy, &it.CompletedAt, &perm) != nil {
 			continue
 		}
+		it.CanEdit = isAdmin || (perm != nil && permAtLeast(*perm, "editor"))
 		switch {
 		case startAt != nil && dueAt != nil:
 			it.Start, it.End = *startAt, *dueAt
