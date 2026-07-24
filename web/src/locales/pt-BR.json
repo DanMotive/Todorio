@@ -284,5 +284,11 @@
   "task.history_empty": "Não há versões anteriores.",
   "task.history_restore": "Restaurar",
   "task.history_confirm_restore": "Restaurar esta versão? Os valores atuais serão substituídos (e também salvos no histórico).",
-  "mystats.disabled": "As estatísticas estão desativadas neste servidor."
+  "mystats.disabled": "As estatísticas estão desativadas neste servidor.",
+  "focus.presence.now": "agora mesmo",
+  "focus.presence.m": "há {n} min",
+  "focus.presence.h": "há {n} h",
+  "focus.presence.you": "Você",
+  "focus.presence.one": "{name} está trabalhando nisso · {time}",
+  "focus.presence.many": "{name} e mais {n} estão trabalhando nisso · {time}"
 }

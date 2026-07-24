@@ -284,5 +284,11 @@
   "task.history_empty": "이전 버전이 없습니다.",
   "task.history_restore": "복원",
   "task.history_confirm_restore": "이 버전을 복원하시겠습니까? 현재 값이 교체됩니다(이 또한 기록에 저장됩니다).",
-  "mystats.disabled": "이 서버에서는 통계가 비활성화되어 있습니다."
+  "mystats.disabled": "이 서버에서는 통계가 비활성화되어 있습니다.",
+  "focus.presence.now": "방금",
+  "focus.presence.m": "{n}분 전",
+  "focus.presence.h": "{n}시간 전",
+  "focus.presence.you": "나",
+  "focus.presence.one": "{name}님이 지금 이 작업을 하고 있어요 · {time}",
+  "focus.presence.many": "{name}님 외 {n}명이 이 작업을 하고 있어요 · {time}"
 }

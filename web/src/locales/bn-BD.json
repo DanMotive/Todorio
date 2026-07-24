@@ -284,5 +284,11 @@
   "task.history_empty": "কোনো পূর্ববর্তী সংস্করণ নেই।",
   "task.history_restore": "পুনরুদ্ধার করুন",
   "task.history_confirm_restore": "এই সংস্করণটি পুনরুদ্ধার করবেন? বর্তমান মানগুলো প্রতিস্থাপিত হবে (এবং ইতিহাসেও সংরক্ষিত হবে)।",
-  "mystats.disabled": "এই সার্ভারে পরিসংখ্যান নিষ্ক্রিয় করা আছে।"
+  "mystats.disabled": "এই সার্ভারে পরিসংখ্যান নিষ্ক্রিয় করা আছে।",
+  "focus.presence.now": "এইমাত্র",
+  "focus.presence.m": "{n} মিনিট আগে",
+  "focus.presence.h": "{n} ঘণ্টা আগে",
+  "focus.presence.you": "আপনি",
+  "focus.presence.one": "{name} এখন এটি নিয়ে কাজ করছেন · {time}",
+  "focus.presence.many": "{name} এবং আরও {n} জন এটি নিয়ে কাজ করছেন · {time}"
 }

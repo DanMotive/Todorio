@@ -146,18 +146,52 @@ and a bugfix bundle). No `.git` history was touched — only source files, per u
   total, so it can't drift from what's actually on disk. `todorio status` now also reports current
   uploads usage in MB.
 
+### Fixed — release pipeline build failure
+
+- The first real GitHub Actions release run (triggered after writing the release guide in this
+  pass) failed at `tsc -b`: `IconX`'s call site in the new saved-filters bar (`FiltersBar`) passed
+  an `onClick` handler, but `IconProps` never declared one, so the type checker rejected it —
+  exactly the class of error this sandboxed environment can't catch without a local `tsc`. Fixed
+  at the source rather than at the call site: `IconProps` now accepts an optional `onClick` and
+  `base()` forwards it to the underlying `<svg>`, so every icon in the set supports a click handler
+  going forward, not just `IconX`. Confirmed by grep that this was the only call site affected.
+
+### Added — task presence ("who's working on this right now")
+
+- Starting a focus session on a task (the existing focus-mode timer, spec section on time
+  tracking) now doubles as a live presence signal. Every task read (list, kanban, table, my tasks,
+  my week, the task modal) carries an `active_focus` array of whoever currently has that task open
+  in focus mode, and when they started — a single `json_agg` subquery on `taskSelect`, so every
+  existing endpoint picked it up for free instead of needing a new one. Ending a session, or
+  starting a new one on a different task, closes the old one automatically, exactly as before.
+- Shown as a small colored dot + "*{name} is working on this · {time}*" caption: full caption on
+  list rows/kanban cards/my-tasks/my-week, dot-only with names on hover in the compact table view,
+  full caption again (auto-refreshed every 20s while open) in the task modal. Deliberately **not an
+  emoji** — the dot reuses the same plain-colored-indicator language as the Space Pulse mood dot
+  (see `pulse.go`'s own comment: avoiding the OS/browser emoji font is exactly why Pulse used a CSS
+  dot instead of 🟢/🟡/🔴 — this is the same call, made consistently across the app).
+- `focus.started` / `focus.stopped` are also broadcast on the existing SSE bus to everyone with
+  access to the task's list, so the plumbing is ready for instant cross-tab updates later. The
+  shipped frontend doesn't subscribe to them yet — it refreshes on normal reloads plus the task
+  modal's 20s poll, which is enough freshness for a presence caption without restructuring the
+  single app-wide `EventSource` connection. A natural, self-contained follow-up if instant
+  cross-tab presence is ever wanted.
+
 ### Verification
 
-- `go build ./...`, `go vet ./...`, `gofmt -l .`, and `go test ./...` (including a new
-  `TestRoutesRegisterWithoutConflict` guarding against `net/http` mux pattern collisions when adding
-  nested routes) all pass clean on every round in this pass.
+- `go build ./...`, `go vet ./...`, `gofmt -l .`, and `go test ./...` (including
+  `TestRoutesRegisterWithoutConflict`) all pass clean on every round in this pass, including the
+  two rounds above.
 - All 13 base locales carry identical key sets (verified by a script comparing key counts and
   diffing against every static and dynamic `tr()`/`trFormal()` call site in the frontend) — zero
-  missing translations for any string introduced in this pass.
-- The frontend still could not be `npm install`ed / built in this environment (no registry access),
-  so TypeScript/React changes were verified by brace/paren balance checks and careful manual review,
-  not by the compiler or a browser. Run `cd web && npm install && npm run build` and smoke-test
-  before your next release.
+  missing translations for any string introduced in this pass, including this round's 6 new
+  `focus.presence.*` keys.
+- The frontend still could not be fully `npm install`ed / built in this environment — the sandbox's
+  network access is now (as of this round) requested for `registry.npmjs.org` specifically to close
+  this gap, pending approval. Until it's granted, TypeScript/React changes are verified by
+  brace/paren balance checks plus careful manual review, not by the compiler or a browser. Run
+  `cd web && npm install && npm run build` and smoke-test before your next release — this is
+  exactly the step that would have caught the `IconX` build failure above before it reached CI.
 
 ## Unreleased — stabilization pass
 

@@ -1,7 +1,7 @@
 // Additional Todorio blocks: announcements, digest, statistics, attachments, TOTP, notes,
 // activity feed, focus timer, search, server settings.
 import { useEffect, useRef, useState } from "react"
-import { api, type Me, type Note, type ActivityEvent, type SearchResult, type SettingDef } from "./api"
+import { api, type Me, type Note, type ActivityEvent, type SearchResult, type SettingDef, type ActiveFocus } from "./api"
 import { tr, trFormal, getFormattingLocale } from "./i18n"
 import {
   IconAlertTriangle, IconAlertCircle, IconInfo, IconPin, IconMessage, IconCheckCircle,
@@ -610,6 +610,47 @@ export function FocusWidget({ taskId }: { taskId?: number }) {
       </button>
       {running && <span className="muted row" style={{ gap: 4, display: "inline-flex" }}><IconClock size={13} /> {fmt(elapsed)}</span>}
     </div>
+  )
+}
+
+// ---------- presence: "who's working on this right now" ----------
+// A caption + timestamp for teammates actively focused on a task (spec ask), built on the same
+// focus_sessions rows FocusWidget above already writes — an open session with a task_id attached
+// is "presence" for anyone else looking at that task. Deliberately a plain colored dot, not an
+// emoji: same reasoning as Space Pulse's mood indicator (icons.tsx's header comment) — this app
+// draws its own status dots so they render identically for every teammate.
+
+function timeAgo(iso: string): string {
+  const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000)
+  if (mins < 1) return tr("focus.presence.now")
+  if (mins < 60) return tr("focus.presence.m").replace("{n}", String(mins))
+  return tr("focus.presence.h").replace("{n}", String(Math.floor(mins / 60)))
+}
+
+// meId lets the caption say "You" instead of echoing the viewer's own username back at them.
+export function presenceLabel(active: ActiveFocus[] | undefined, meId?: number): string | null {
+  if (!active || active.length === 0) return null
+  const first = active[0]
+  const name = meId != null && first.user_id === meId ? tr("focus.presence.you") : first.username
+  const time = timeAgo(first.started_at)
+  return active.length === 1
+    ? tr("focus.presence.one").replace("{name}", name).replace("{time}", time)
+    : tr("focus.presence.many").replace("{name}", name).replace("{n}", String(active.length - 1)).replace("{time}", time)
+}
+
+// Compact by default (dot + text) for cards/rows; pass showLabel={false} for a dot-only badge
+// where space is tight (e.g. a table row) — the full caption still shows on hover via title.
+export function FocusPresence({ active, meId, showLabel = true }: {
+  active: ActiveFocus[] | undefined; meId?: number; showLabel?: boolean
+}) {
+  const label = presenceLabel(active, meId)
+  if (!label) return null
+  const names = (active || []).map((f) => f.username).join(", ")
+  return (
+    <span className="focus-caption" title={names}>
+      <span className="focus-dot" />
+      {showLabel && <span>{label}</span>}
+    </span>
   )
 }
 

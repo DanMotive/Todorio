@@ -284,5 +284,11 @@
   "task.history_empty": "Алдыңғы нұсқалар жоқ.",
   "task.history_restore": "Қалпына келтіру",
   "task.history_confirm_restore": "Осы нұсқаны қалпына келтіру керек пе? Ағымдағы мәндер ауыстырылады (олар да тарихта сақталады).",
-  "mystats.disabled": "Бұл серверде статистика өшірілген."
+  "mystats.disabled": "Бұл серверде статистика өшірілген.",
+  "focus.presence.now": "жаңа ғана",
+  "focus.presence.m": "{n} мин",
+  "focus.presence.h": "{n} сағ",
+  "focus.presence.you": "Сіз",
+  "focus.presence.one": "{name} қазір осы тапсырмамен жұмыс істеп жатыр · {time}",
+  "focus.presence.many": "{name} және тағы {n} адам жұмыс істеп жатыр · {time}"
 }

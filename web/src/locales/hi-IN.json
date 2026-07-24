@@ -284,5 +284,11 @@
   "task.history_empty": "कोई पिछला संस्करण नहीं है।",
   "task.history_restore": "पुनर्स्थापित करें",
   "task.history_confirm_restore": "यह संस्करण पुनर्स्थापित करें? मौजूदा मान बदल दिए जाएंगे (और इतिहास में भी सहेजे जाएंगे)।",
-  "mystats.disabled": "इस सर्वर पर आँकड़े अक्षम हैं।"
+  "mystats.disabled": "इस सर्वर पर आँकड़े अक्षम हैं।",
+  "focus.presence.now": "अभी",
+  "focus.presence.m": "{n} मिनट पहले",
+  "focus.presence.h": "{n} घंटे पहले",
+  "focus.presence.you": "आप",
+  "focus.presence.one": "{name} अभी इस पर काम कर रहे हैं · {time}",
+  "focus.presence.many": "{name} और {n} अन्य लोग इस पर काम कर रहे हैं · {time}"
 }

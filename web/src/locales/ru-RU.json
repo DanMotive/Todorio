@@ -284,5 +284,11 @@
   "task.history_empty": "Предыдущих версий нет.",
   "task.history_restore": "Восстановить",
   "task.history_confirm_restore": "Восстановить эту версию? Текущие значения будут заменены (и тоже сохранятся в истории).",
-  "mystats.disabled": "Статистика отключена на этом сервере."
+  "mystats.disabled": "Статистика отключена на этом сервере.",
+  "focus.presence.now": "только что",
+  "focus.presence.m": "{n} мин",
+  "focus.presence.h": "{n} ч",
+  "focus.presence.you": "Вы",
+  "focus.presence.one": "{name} сейчас работает над этим · {time}",
+  "focus.presence.many": "{name} и ещё {n} работают над этим · {time}"
 }

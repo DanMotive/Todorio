@@ -2,9 +2,9 @@
 import { useEffect, useState } from "react"
 import {
   api, REACTIONS, DEFAULT_STATUSES,
-  type List, type Me, type Pulse, type Space, type Task, type Workflow,
+  type List, type Me, type Pulse, type Space, type Task, type Workflow, type ActiveFocus,
 } from "./api"
-import { AttachmentsBlock, StatsCard, FocusWidget, NotesPanel, ActivityPanel, ArchivePanel, ArchivedSpacesPanel, FieldsPanel, type FieldDef } from "./extras"
+import { AttachmentsBlock, StatsCard, FocusWidget, FocusPresence, NotesPanel, ActivityPanel, ArchivePanel, ArchivedSpacesPanel, FieldsPanel, type FieldDef } from "./extras"
 import { tr, trFormal, setLocale, getLocale, getFormattingLocale, SUPPORTED } from "./i18n"
 import {
   IconStar, IconRefresh, IconLock, IconX, IconUser, IconPause, IconSlash, IconClock,
@@ -142,9 +142,9 @@ export function PendingPage({ onLogout }: { onLogout: () => void }) {
 
 // ---------- tasks ----------
 
-function TaskRow({ task, onToggle, onOpen, favorite, onToggleFavorite }: {
+function TaskRow({ task, onToggle, onOpen, favorite, onToggleFavorite, meId }: {
   task: Task; onToggle: (t: Task) => void; onOpen: (t: Task) => void
-  favorite?: boolean; onToggleFavorite?: (t: Task) => void
+  favorite?: boolean; onToggleFavorite?: (t: Task) => void; meId?: number
 }) {
   const done = !!task.completed_at
   return (
@@ -154,6 +154,7 @@ function TaskRow({ task, onToggle, onOpen, favorite, onToggleFavorite }: {
       {task.subtasks_total > 0 && (
         <span className="muted">{task.subtasks_done}/{task.subtasks_total}</span>
       )}
+      <FocusPresence active={task.active_focus} meId={meId} />
       {task.due_at && <span className={"due " + dueClass(task.due_at)}>{dueLabel(task.due_at)}</span>}
       {onToggleFavorite && (
         <button className="nav-btn" style={{ padding: "2px 6px", color: favorite ? "var(--due-soon)" : undefined }} title={tr("favorites.toggle")}
@@ -220,6 +221,18 @@ export function TaskModal({ task, me, spaceId, onClose, onChanged }: {
   const [newKey, setNewKey] = useState("")
   const [newValue, setNewValue] = useState("")
   const [fieldSchema, setFieldSchema] = useState<FieldDef[]>([])
+
+  // Presence: the `task` prop is a snapshot from whenever the parent list last loaded it (the
+  // modal doesn't otherwise refresh while open), so "who's working on this" and its elapsed time
+  // would freeze at open-time forever without this. A light poll is enough for a presence caption
+  // — nobody needs sub-second precision for "is Ivan still on this".
+  const [activeFocus, setActiveFocus] = useState<ActiveFocus[]>(task.active_focus || [])
+  useEffect(() => {
+    setActiveFocus(task.active_focus || [])
+    const refresh = () => api.get(`/api/tasks/${task.id}`).then((r) => setActiveFocus(r.task?.active_focus || [])).catch(() => {})
+    const iv = setInterval(refresh, 20000)
+    return () => clearInterval(iv)
+  }, [task.id])
 
   const load = () => api.get(`/api/tasks/${task.id}/comments`).then((r) => setComments(r.comments)).catch(() => {})
   useEffect(() => { load() }, [task.id])
@@ -461,6 +474,7 @@ export function TaskModal({ task, me, spaceId, onClose, onChanged }: {
         <TaskHistorySection taskId={task.id} onRestored={onChanged} />
 
         <FocusWidget taskId={task.id} />
+        <FocusPresence active={activeFocus} meId={me.id} />
 
         <div className="section-title">{tr("task.comments")}</div>
         <AttachmentsBlock taskId={task.id} />
@@ -535,9 +549,9 @@ export function TaskModal({ task, me, spaceId, onClose, onChanged }: {
 
 // ---------- "My tasks" ----------
 
-function MyWeekView({ tasks, favorites, onOpen, onToggle, onToggleFavorite }: {
+function MyWeekView({ tasks, favorites, onOpen, onToggle, onToggleFavorite, meId }: {
   tasks: Task[]; favorites: Set<number>; onOpen: (t: Task) => void; onToggle: (t: Task) => void
-  onToggleFavorite: (t: Task) => void
+  onToggleFavorite: (t: Task) => void; meId?: number
 }) {
   const now = new Date()
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
@@ -564,7 +578,7 @@ function MyWeekView({ tasks, favorites, onOpen, onToggle, onToggleFavorite }: {
       <div className="section-title row" style={{ margin: "0 0 6px", fontSize: 13, gap: 5 }}>{label}</div>
       {list.map((t) => (
         <TaskRow key={t.id} task={t} onToggle={onToggle} onOpen={onOpen}
-          favorite={favorites.has(t.id)} onToggleFavorite={onToggleFavorite} />
+          favorite={favorites.has(t.id)} onToggleFavorite={onToggleFavorite} meId={meId} />
       ))}
     </div>
   )
@@ -692,14 +706,14 @@ export function MyTasksPage({ me }: { me: Me }) {
               {subFiltered.length === 0 && <p className="muted">{tr("my.empty")}</p>}
               {subFiltered.map((task) => (
                 <TaskRow key={task.id} task={task} onToggle={toggle} onOpen={setOpen}
-                  favorite={favorites.has(task.id)} onToggleFavorite={toggleFavorite} />
+                  favorite={favorites.has(task.id)} onToggleFavorite={toggleFavorite} meId={me.id} />
               ))}
             </>
           )}
         </>
       )}
       {tab === "week" && (
-        <MyWeekView tasks={tasks} favorites={favorites} onOpen={setOpen} onToggle={toggle} onToggleFavorite={toggleFavorite} />
+        <MyWeekView tasks={tasks} favorites={favorites} onOpen={setOpen} onToggle={toggle} onToggleFavorite={toggleFavorite} meId={me.id} />
       )}
       {tab === "stats" && <MyStatsPanel />}
       {open && <TaskModal task={open} me={me} onClose={() => setOpen(null)} onChanged={load} />}
@@ -840,8 +854,8 @@ function SpaceView({ me, space, onBack }: { me: Me; space: Space; onBack: () => 
 
 // ---------- Kanban board (drag cards between the space's workflow statuses) ----------
 
-function KanbanBoard({ tasks, statuses, onOpen, onDrop }: {
-  tasks: Task[]; statuses: string[]; onOpen: (t: Task) => void; onDrop: (task: Task, status: string) => void
+function KanbanBoard({ tasks, statuses, onOpen, onDrop, meId }: {
+  tasks: Task[]; statuses: string[]; onOpen: (t: Task) => void; onDrop: (task: Task, status: string) => void; meId?: number
 }) {
   return (
     <div className="kanban-board" style={{ gridTemplateColumns: `repeat(${statuses.length}, 1fr)` }}>
@@ -867,6 +881,7 @@ function KanbanBoard({ tasks, statuses, onOpen, onDrop }: {
                 {t.priority && <span className="muted" style={{ fontSize: 11 }}>{tr("task.priority." + t.priority)}</span>}
                 {t.due_at && <span className={"due " + dueClass(t.due_at)}>{dueLabel(t.due_at)}</span>}
                 {t.subtasks_total > 0 && <span className="muted" style={{ fontSize: 11 }}>{t.subtasks_done}/{t.subtasks_total}</span>}
+                <FocusPresence active={t.active_focus} meId={meId} />
               </div>
             </div>
           ))}
@@ -878,8 +893,8 @@ function KanbanBoard({ tasks, statuses, onOpen, onDrop }: {
 
 // ---------- Table view ----------
 
-function TableView({ tasks, onOpen, onToggle }: {
-  tasks: Task[]; onOpen: (t: Task) => void; onToggle: (t: Task) => void
+function TableView({ tasks, onOpen, onToggle, meId }: {
+  tasks: Task[]; onOpen: (t: Task) => void; onToggle: (t: Task) => void; meId?: number
 }) {
   return (
     <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
@@ -898,7 +913,9 @@ function TableView({ tasks, onOpen, onToggle }: {
             <td style={{ padding: "8px 6px" }} onClick={(e) => e.stopPropagation()}>
               <input type="checkbox" checked={!!t.completed_at} onChange={() => onToggle(t)} />
             </td>
-            <td style={{ padding: "8px 6px", textDecoration: t.completed_at ? "line-through" : "none", opacity: t.completed_at ? 0.55 : 1 }}>{t.title}</td>
+            <td style={{ padding: "8px 6px", textDecoration: t.completed_at ? "line-through" : "none", opacity: t.completed_at ? 0.55 : 1 }}>
+              <span className="row" style={{ gap: 6, display: "inline-flex" }}>{t.title} <FocusPresence active={t.active_focus} meId={meId} showLabel={false} /></span>
+            </td>
             <td style={{ padding: "8px 6px" }}>{DEFAULT_STATUSES.includes(t.status) ? tr("task.status." + t.status) : t.status}</td>
             <td style={{ padding: "8px 6px" }}>{tr("task.priority." + t.priority)}</td>
             <td style={{ padding: "8px 6px" }}>{t.due_at ? <span className={"due " + dueClass(t.due_at)}>{dueLabel(t.due_at)}</span> : ""}</td>
@@ -1115,16 +1132,16 @@ function ListView({ me, list, spaceId, onBack }: { me: Me; list: List; spaceId: 
 
       {viewMode === "list" && filteredRoots.map((task) => (
         <div key={task.id}>
-          <TaskRow task={task} onToggle={toggle} onOpen={setOpen} />
+          <TaskRow task={task} onToggle={toggle} onOpen={setOpen} meId={me.id} />
           {tasks.filter((s) => s.parent_id === task.id).map((sub) => (
             <div key={sub.id} style={{ marginLeft: 28 }}>
-              <TaskRow task={sub} onToggle={toggle} onOpen={setOpen} />
+              <TaskRow task={sub} onToggle={toggle} onOpen={setOpen} meId={me.id} />
             </div>
           ))}
         </div>
       ))}
-      {viewMode === "kanban" && <KanbanBoard tasks={filteredRoots} statuses={statuses} onOpen={setOpen} onDrop={moveToStatus} />}
-      {viewMode === "table" && <TableView tasks={filteredRoots} onOpen={setOpen} onToggle={toggle} />}
+      {viewMode === "kanban" && <KanbanBoard tasks={filteredRoots} statuses={statuses} onOpen={setOpen} onDrop={moveToStatus} meId={me.id} />}
+      {viewMode === "table" && <TableView tasks={filteredRoots} onOpen={setOpen} onToggle={toggle} meId={me.id} />}
       {viewMode === "calendar" && <CalendarView tasks={filteredRoots} onOpen={setOpen} />}
 
       <form className="row" style={{ marginTop: 12 }} onSubmit={async (e) => {

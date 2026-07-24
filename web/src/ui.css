@@ -119,6 +119,28 @@
 }
 .pulse-score-num { font-size: 18px; font-weight: 700; }
 
+/* Presence: who's actively focused on a task right now ("working on this" signal from spec) —
+   same plain-colored-dot language as Space Pulse above, not an emoji, just sized for inline use
+   next to a task's title instead of a standalone 44px indicator. */
+.focus-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--pulse-ok);
+  flex-shrink: 0;
+}
+:root[data-visual="rich"] .focus-dot { animation: pulse-ring-sm 2s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .focus-dot { animation: none !important; }
+}
+@keyframes pulse-ring-sm {
+  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--pulse-ok) 45%, transparent); }
+  70%  { box-shadow: 0 0 0 5px color-mix(in srgb, var(--pulse-ok) 0%, transparent); }
+  100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--pulse-ok) 0%, transparent); }
+}
+.focus-caption { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; opacity: 0.85; }
+
 .signal { display: inline-flex; align-items: center; gap: 4px; margin-right: 14px; font-size: 13px; opacity: 0.85; }
 
 .center-page {

@@ -284,5 +284,11 @@
   "task.history_empty": "没有之前的版本。",
   "task.history_restore": "恢复",
   "task.history_confirm_restore": "恢复此版本？当前的值将被替换（同时也会保存到历史记录中）。",
-  "mystats.disabled": "此服务器上的统计功能已禁用。"
+  "mystats.disabled": "此服务器上的统计功能已禁用。",
+  "focus.presence.now": "刚刚",
+  "focus.presence.m": "{n}分钟前",
+  "focus.presence.h": "{n}小时前",
+  "focus.presence.you": "你",
+  "focus.presence.one": "{name} 正在处理这个任务 · {time}",
+  "focus.presence.many": "{name} 和另外 {n} 人正在处理这个任务 · {time}"
 }

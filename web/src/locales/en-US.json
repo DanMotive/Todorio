@@ -284,5 +284,11 @@
   "task.history_empty": "No previous versions.",
   "task.history_restore": "Restore",
   "task.history_confirm_restore": "Restore this version? Current values will be replaced (and saved to history too).",
-  "mystats.disabled": "Statistics are disabled on this server."
+  "mystats.disabled": "Statistics are disabled on this server.",
+  "focus.presence.now": "just now",
+  "focus.presence.m": "{n}m",
+  "focus.presence.h": "{n}h",
+  "focus.presence.you": "You",
+  "focus.presence.one": "{name} is working on this · {time}",
+  "focus.presence.many": "{name} +{n} more are working on this · {time}"
 }

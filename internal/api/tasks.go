@@ -29,15 +29,24 @@ type taskRow struct {
 	UpdatedAt    time.Time       `json:"updated_at"`
 	SubtaskDone  int             `json:"subtasks_done"`
 	SubtaskAll   int             `json:"subtasks_total"`
+	ActiveFocus  json.RawMessage `json:"active_focus"`
 }
 
+// active_focus is who (if anyone) currently has an open focus session on this task — the
+// presence/"working on this right now" signal from spec, kept as a json_agg subquery so it rides
+// along on every existing task read (list, my-tasks, single task) instead of needing N+1 calls.
 const taskSelect = `
 	SELECT t.id, t.list_id, t.parent_id, t.title, t.description, t.status, t.priority,
 		t.assignee_id, t.creator_id, t.due_at, t.weight, t.progress,
 		COALESCE(t.blocked_by, '{}'), t.custom_fields, t.recurrence,
 		t.completed_at, t.created_at, t.updated_at,
 		(SELECT count(*) FROM tasks s WHERE s.parent_id=t.id AND s.archived_at IS NULL AND s.completed_at IS NOT NULL)::int,
-		(SELECT count(*) FROM tasks s WHERE s.parent_id=t.id AND s.archived_at IS NULL)::int
+		(SELECT count(*) FROM tasks s WHERE s.parent_id=t.id AND s.archived_at IS NULL)::int,
+		COALESCE((SELECT json_agg(json_build_object(
+				'user_id', u.id, 'username', u.username, 'avatar_path', u.avatar_path, 'started_at', fs.started_at
+			) ORDER BY fs.started_at)
+			FROM focus_sessions fs JOIN users u ON u.id = fs.user_id
+			WHERE fs.task_id = t.id AND fs.ended_at IS NULL), '[]')
 	FROM tasks t`
 
 func scanTask(row interface{ Scan(...any) error }) (taskRow, error) {
@@ -45,7 +54,7 @@ func scanTask(row interface{ Scan(...any) error }) (taskRow, error) {
 	err := row.Scan(&t.ID, &t.ListID, &t.ParentID, &t.Title, &t.Description, &t.Status, &t.Priority,
 		&t.AssigneeID, &t.CreatorID, &t.DueAt, &t.Weight, &t.Progress,
 		&t.BlockedBy, &t.CustomFields, &t.Recurrence,
-		&t.CompletedAt, &t.CreatedAt, &t.UpdatedAt, &t.SubtaskDone, &t.SubtaskAll)
+		&t.CompletedAt, &t.CreatedAt, &t.UpdatedAt, &t.SubtaskDone, &t.SubtaskAll, &t.ActiveFocus)
 	return t, err
 }
 

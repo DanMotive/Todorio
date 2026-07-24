@@ -284,5 +284,11 @@
   "task.history_empty": "Папярэдніх версій няма.",
   "task.history_restore": "Аднавіць",
   "task.history_confirm_restore": "Аднавіць гэтую версію? Бягучыя значэнні будуць заменены (і таксама захаваюцца ў гісторыі).",
-  "mystats.disabled": "Статыстыка адключана на гэтым серверы."
+  "mystats.disabled": "Статыстыка адключана на гэтым серверы.",
+  "focus.presence.now": "толькі што",
+  "focus.presence.m": "{n} хв",
+  "focus.presence.h": "{n} гадз",
+  "focus.presence.you": "Вы",
+  "focus.presence.one": "{name} зараз працуе над гэтым · {time}",
+  "focus.presence.many": "{name} і яшчэ {n} працуюць над гэтым · {time}"
 }

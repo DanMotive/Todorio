@@ -19,7 +19,9 @@ Todorio is a private, self-hosted task manager for personal use and small teams.
 - Comments (with editing), @mentions, reactions (👍 ✅ 🎉 🔥 👀 ❓ ❗ ❌ 😭 ⭐), image attachments
 - In-app notifications, due-date badges, "Do Not Disturb" mode, "while you were away" digest
 - An archive with restore, a 3-day warning before permanent cleanup, and root-only permanent delete
-- Focus mode / time tracking, global search across tasks/notes/comments, keyboard shortcuts (`?` for help)
+- Focus mode / time tracking, with live presence ("Ivan is working on this · 12m", not an emoji —
+  a plain colored dot like Space Pulse's) visible to teammates on every task view
+- Global search across tasks/notes/comments, keyboard shortcuts (`?` for help)
 - 13 locales (language-country format) + IT styles `ru-RU-it`, `en-US-it`
 - 5 color themes (red/blue/green/yellow/gray), light + dark, "cozy"/"lite" density modes
 - SSE realtime updates, working PWA install button (requires HTTPS)

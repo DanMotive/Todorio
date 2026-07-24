@@ -4,7 +4,12 @@
 // alignment), which looks inconsistent and unprofessional; these render identically everywhere.
 import type { SVGProps } from "react"
 
-export type IconProps = { size?: number; className?: string; style?: React.CSSProperties }
+export type IconProps = {
+  size?: number
+  className?: string
+  style?: React.CSSProperties
+  onClick?: React.MouseEventHandler<SVGSVGElement>
+}
 
 function base(p: IconProps): SVGProps<SVGSVGElement> {
   return {
@@ -18,6 +23,7 @@ function base(p: IconProps): SVGProps<SVGSVGElement> {
     strokeLinejoin: "round",
     className: p.className,
     style: p.style,
+    onClick: p.onClick,
   }
 }
 

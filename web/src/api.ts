@@ -35,6 +35,8 @@ export type Me = {
   must_change_password: boolean
 }
 
+export type ActiveFocus = { user_id: number; username: string; avatar_path: string | null; started_at: string }
+
 export type Task = {
   id: number
   list_id: number
@@ -55,6 +57,7 @@ export type Task = {
   updated_at: string
   subtasks_done: number
   subtasks_total: number
+  active_focus: ActiveFocus[]
 }
 
 export type Space = { id: number; name: string; my_role: string }
