@@ -3,7 +3,7 @@ import { api, type Me, type Profile } from "./api"
 import "./theme.css"
 import "./ui.css"
 import { AdminPage, AuthPage, MyTasksPage, NotificationsPage, PendingPage, SpacesPage } from "./views"
-import { AboutPage, AnnouncementsBanner, InboxPage, ModalShell, DigestModal, InvitesCard, SearchPage, ServerSettingsCard, TemplatesAdminCard, AnnouncementsAdminCard } from "./extras"
+import { AboutPage, AnnouncementsBanner, GlobalFocusTimer, InboxPage, ModalShell, DigestModal, InvitesCard, SearchPage, ServerSettingsCard, TemplatesAdminCard, AnnouncementsAdminCard } from "./extras"
 import { Avatar, SettingsPage, ForcedPasswordChange } from "./settings"
 import { detectLocale, setLocale, tr } from "./i18n"
 import { IconInbox, IconKeyboard, IconMenu, IconSliders } from "./icons"
@@ -293,14 +293,16 @@ export default function App() {
               )}
             </button>
 
+            <button className="ctrl-btn" title={tr("help.shortcuts")} onClick={() => setShowHelp(true)}>
+              <IconKeyboard size={16} />
+            </button>
+
             <button className="ctrl-btn" title={tr("nav.logout")} onClick={logout}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
             </button>
           </div>
 
-          <button className="nav-btn row" style={{ marginTop: 4, fontSize: 12, gap: 5 }} onClick={() => setShowHelp(true)}>
-            <IconKeyboard size={14} /> {tr("help.shortcuts")}
-          </button>
+          <GlobalFocusTimer />
         </div>
       </aside>
 

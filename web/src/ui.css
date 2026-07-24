@@ -431,3 +431,25 @@ a:hover { text-decoration-color: var(--accent); }
 .timeline-links { position: absolute; top: 0; left: 0; pointer-events: none; z-index: 1; }
 .timeline-link path { stroke: var(--text-muted); stroke-width: 1.5; opacity: 0.75; }
 .timeline-arrowhead { fill: var(--text-muted); stroke: none; opacity: 0.75; }
+
+/* Always-visible focus timer in the sidebar. It has to read at a glance without competing
+   with the nav, hence the accent-tinted strip rather than another button. */
+.focus-bar {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 8px;
+  padding: 6px 8px;
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  font-size: 13px;
+}
+.focus-clock { font-variant-numeric: tabular-nums; font-weight: 600; }
+.focus-task {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.75;
+  font-size: 12px;
+}

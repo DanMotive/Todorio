@@ -161,6 +161,7 @@ func (a *API) Routes(mux *http.ServeMux) {
 	// --- focus mode ---
 	mux.HandleFunc("POST /api/focus/start", a.handleStartFocus)
 	mux.HandleFunc("POST /api/focus/stop", a.handleStopFocus)
+	mux.HandleFunc("GET /api/focus/current", a.handleCurrentFocus)
 	mux.HandleFunc("GET /api/focus/stats", a.handleFocusStats)
 
 	// --- activity feed ---

@@ -1,5 +1,44 @@
 # Changelog
 
+## Unreleased — `todorio testsql`, focus timer fix
+
+First of two batches. This one is about verification and a real bug, not new features.
+
+### Added — `todorio testsql` (temporary diagnostic)
+
+Every non-trivial SQL query in the product now runs against the real database on demand, inside
+**one transaction that is always rolled back**. Writes are exercised so INSERT/UPDATE statements
+are genuinely validated, but nothing is committed — safe to run against production.
+
+This closes a risk that had been carried for several rounds: the development sandbox has no
+PostgreSQL, so queries could only be checked by compiling the surrounding Go. `go build` cannot
+catch a misspelled column or a broken JOIN — exactly the bug class that shipped once before
+(`tasks.position` referenced by a query no migration created; every list read 500'd).
+
+It verifies: 12 schema columns added by later migrations, the applied-migration list, and 32
+queries covering tasks, weighted list progress, Pulse, Timeline, Inbox, stats/leaderboard,
+attachments on both targets, templates with audience, focus sessions, profile reads/writes,
+search, activity, archive, and settings upsert. Each check runs in its own savepoint, so one
+failure doesn't abort the rest.
+
+`internal/ops/testsql.go` keeps a copy of `taskSelect` (the original is unexported in another
+package). A copy that silently drifts would be worse than no check at all, so a unit test
+compares the two verbatim and fails the build if they diverge.
+
+### Fixed — focus timer reset when leaving a task
+
+`FocusWidget` lived inside the task modal and kept elapsed time in local component state.
+Closing the modal unmounted it, so the timer appeared to reset even though the server session
+was still open — the user reported this as "focus mode gets knocked off".
+
+- New `GET /api/focus/current` returns the open session with a server-computed elapsed time, so
+  the clock is correct across navigation, a reload, and even another device.
+- New `GlobalFocusTimer` in the sidebar shows a ticking clock, the task name, and a stop button
+  from anywhere in the app. `FocusWidget` is now only a start/stop control and holds no timing
+  state of its own.
+- The "Shortcuts" text button moved into the icon-button row next to rich/lite, sound, and
+  logout.
+
 ## Unreleased — dark-only theme, Inbox with smart quick-add
 
 Two changes on top of the previous pass: the light colour scheme was removed at the user's

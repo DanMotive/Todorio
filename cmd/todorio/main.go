@@ -90,6 +90,8 @@ func usage() {
 	cmdLine("todorio server branding set K V", "Branding (site_name, browser_title, developer_name, ...)")
 	cmdLine("todorio server locales enable L", "Enable a locale (e.g. tr-TR)")
 	fmt.Println()
+	cmdLine("todorio testsql", "Verify every SQL query against the DB (read-only, temporary)")
+	fmt.Println()
 	cmdLine("todorio version", "")
 
 	fmt.Println()
@@ -150,6 +152,18 @@ func main() {
 			}
 		}
 		if err := ops.ResetRoot(cfg, newUsername, yes); err != nil {
+			fail(err)
+		}
+	case "testsql":
+		// Temporary diagnostic: runs every non-trivial SQL query against the real database
+		// inside a transaction that is always rolled back. Added because the development
+		// sandbox has no PostgreSQL, so queries were only ever checked by compiling the Go
+		// around them — which cannot catch a bad column name or a broken JOIN.
+		cfg, err := config.Load()
+		if err != nil {
+			fail(fmt.Errorf("config not found — run `todorio setup` first: %w", err))
+		}
+		if err := ops.TestSQL(cfg); err != nil {
 			fail(err)
 		}
 	case "backup":

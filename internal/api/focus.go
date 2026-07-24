@@ -11,6 +11,7 @@ package api
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/DanMotive/Todorio/internal/auth"
 	"github.com/DanMotive/Todorio/internal/events"
@@ -85,6 +86,45 @@ func (a *API) announceFocus(r *http.Request, taskID int64, eventType string, u *
 	a.publishToListMembers(r, listID, events.Event{
 		Type: eventType,
 		Data: map[string]any{"task_id": taskID, "user_id": u.ID, "username": u.Username},
+	})
+}
+
+// GET /api/focus/current — the caller's open focus session, if any.
+//
+// Needed because the timer UI used to keep its state purely in the component: closing the task
+// modal unmounted it and the running timer appeared to reset, even though the server session was
+// still open. The elapsed time is derived from started_at here, so the clock survives navigation,
+// a page reload, and even a different device.
+func (a *API) handleCurrentFocus(w http.ResponseWriter, r *http.Request) {
+	u := a.requireUser(w, r)
+	if u == nil {
+		return
+	}
+	var (
+		id        int64
+		taskID    *int64
+		taskTitle *string
+		startedAt time.Time
+	)
+	err := a.DB.Pool.QueryRow(r.Context(), `
+		SELECT fs.id, fs.task_id, t.title, fs.started_at
+		FROM focus_sessions fs
+		LEFT JOIN tasks t ON t.id = fs.task_id
+		WHERE fs.user_id = $1 AND fs.ended_at IS NULL
+		ORDER BY fs.started_at DESC LIMIT 1`, u.ID).Scan(&id, &taskID, &taskTitle, &startedAt)
+	if err != nil {
+		// No open session is the normal case, not an error.
+		writeJSON(w, http.StatusOK, map[string]any{"running": false})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"running":    true,
+		"id":         id,
+		"task_id":    taskID,
+		"task_title": taskTitle,
+		"started_at": startedAt,
+		// Server-computed so a client with a skewed clock still shows the right elapsed time.
+		"elapsed_seconds": int(time.Since(startedAt).Seconds()),
 	})
 }
 

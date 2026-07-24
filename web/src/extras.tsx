@@ -613,39 +613,108 @@ export function ArchivedSpacesPanel({ me }: { me: Me }) {
 
 // ---------- focus mode / time tracking ----------
 
+// FocusWidget — the per-task start/stop control inside the task modal.
+//
+// The elapsed time is NOT kept here. The component unmounts whenever the modal closes, so any
+// local timer appeared to reset even though the server session was still running — that was a
+// real bug, not cosmetic. The single source of truth is the server (GET /api/focus/current);
+// this widget only issues start/stop and then tells the app shell to refresh, which renders
+// the always-visible ticking timer in the sidebar.
 export function FocusWidget({ taskId }: { taskId?: number }) {
   const [running, setRunning] = useState(false)
-  const [elapsed, setElapsed] = useState(0)
-  const [startedAt, setStartedAt] = useState<number | null>(null)
+  const [busy, setBusy] = useState(false)
 
-  useEffect(() => {
-    if (!running || startedAt == null) return
-    const id = setInterval(() => setElapsed(Math.floor((Date.now() - startedAt) / 1000)), 1000)
-    return () => clearInterval(id)
-  }, [running, startedAt])
+  const sync = () =>
+    api.get("/api/focus/current")
+      .then((r) => setRunning(!!r.running && (taskId === undefined || r.task_id === taskId)))
+      .catch(() => {})
+  useEffect(() => { sync() }, [taskId])
 
-  async function start() {
-    await api.post("/api/focus/start", taskId ? { task_id: taskId } : {}).catch(() => {})
-    setStartedAt(Date.now())
-    setElapsed(0)
-    setRunning(true)
-  }
-  async function stop() {
-    await api.post("/api/focus/stop").catch(() => {})
-    setRunning(false)
-  }
-  function fmt(s: number) {
-    const m = Math.floor(s / 60).toString().padStart(2, "0")
-    const ss = (s % 60).toString().padStart(2, "0")
-    return `${m}:${ss}`
+  async function toggle() {
+    setBusy(true)
+    try {
+      if (running) {
+        await api.post("/api/focus/stop").catch(() => {})
+      } else {
+        await api.post("/api/focus/start", taskId ? { task_id: taskId } : {}).catch(() => {})
+      }
+      await sync()
+      // Tell the global timer to re-read immediately instead of waiting for its poll.
+      window.dispatchEvent(new CustomEvent("todorio:focus-changed"))
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
     <div className="row" style={{ margin: "10px 0", gap: 8 }}>
-      <button className={"nav-btn row" + (running ? " active" : "")} style={{ gap: 5, display: "inline-flex" }} onClick={running ? stop : start}>
-        {running ? <IconPause size={13} /> : <IconPlay size={13} />} {running ? tr("focus.stop") : tr("focus.start")}
+      <button className={"nav-btn row" + (running ? " active" : "")}
+        style={{ gap: 5, display: "inline-flex" }} disabled={busy} onClick={toggle}>
+        {running ? <IconPause size={13} /> : <IconPlay size={13} />}
+        {running ? tr("focus.stop") : tr("focus.start")}
       </button>
-      {running && <span className="muted row" style={{ gap: 4, display: "inline-flex" }}><IconClock size={13} /> {fmt(elapsed)}</span>}
+    </div>
+  )
+}
+
+// GlobalFocusTimer — the always-visible ticking clock in the sidebar (user ask: "focus mode
+// should keep running and ticking somewhere in the interface").
+//
+// Elapsed time is derived from the server's started_at, so it stays correct across navigation,
+// a page reload, and a different device. It polls slowly as a safety net and re-reads instantly
+// on the custom event fired by FocusWidget.
+export function GlobalFocusTimer() {
+  const [state, setState] = useState<{ running: boolean; startedAt?: number; title?: string | null }>({ running: false })
+  const [, force] = useState(0)
+
+  const load = () =>
+    api.get("/api/focus/current").then((r) => {
+      setState(r.running
+        ? { running: true, startedAt: new Date(r.started_at).getTime(), title: r.task_title }
+        : { running: false })
+    }).catch(() => {})
+
+  useEffect(() => {
+    load()
+    const onChanged = () => load()
+    window.addEventListener("todorio:focus-changed", onChanged)
+    // A slow poll catches a session started in another tab or on another device.
+    const poll = setInterval(load, 60000)
+    return () => {
+      window.removeEventListener("todorio:focus-changed", onChanged)
+      clearInterval(poll)
+    }
+  }, [])
+
+  // Re-render once a second only while a session is actually open.
+  useEffect(() => {
+    if (!state.running) return
+    const id = setInterval(() => force((n) => n + 1), 1000)
+    return () => clearInterval(id)
+  }, [state.running])
+
+  if (!state.running || !state.startedAt) return null
+
+  const secs = Math.max(0, Math.floor((Date.now() - state.startedAt) / 1000))
+  const h = Math.floor(secs / 3600)
+  const m = Math.floor((secs % 3600) / 60).toString().padStart(2, "0")
+  const ss = (secs % 60).toString().padStart(2, "0")
+  const clock = h > 0 ? `${h}:${m}:${ss}` : `${m}:${ss}`
+
+  async function stop() {
+    await api.post("/api/focus/stop").catch(() => {})
+    await load()
+    window.dispatchEvent(new CustomEvent("todorio:focus-changed"))
+  }
+
+  return (
+    <div className="focus-bar" title={state.title || tr("focus.start")}>
+      <span className="focus-dot" />
+      <span className="focus-clock">{clock}</span>
+      {state.title && <span className="focus-task">{state.title}</span>}
+      <button className="ctrl-btn" style={{ marginLeft: "auto" }} title={tr("focus.stop")} onClick={stop}>
+        <IconPause size={13} />
+      </button>
     </div>
   )
 }
