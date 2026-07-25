@@ -24,3 +24,13 @@ var Migrations embed.FS
 
 //go:embed all:web/dist
 var Web embed.FS
+
+// Locales embeds the frontend's own translation files (source, not build output — always
+// present regardless of whether `npm run build` has run). The server reuses these verbatim for
+// notification text it has to compose itself (Telegram delivery, spec follow-up: "дать сайту
+// ключ, он будет сам сообщения слать") instead of maintaining a second, separately-translated
+// copy of the same "New comment" / "Status changed" / etc. strings that could drift from what
+// the notification bell already shows for the exact same event.
+//
+//go:embed web/src/locales/*.json
+var Locales embed.FS

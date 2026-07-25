@@ -407,5 +407,19 @@
   "profile.browser_notif_revoke_hint": "Щоб вимкнути сповіщення браузера, скористайтеся налаштуваннями сайту в самому браузері — ця сторінка не може відкликати вже надані дозволи.",
   "timeline.critical_path": "Критичний шлях",
   "timeline.critical_path_cycle": "Частина залежностей утворює цикл — для них критичний шлях не можна порахувати повністю.",
-  "timeline.drag_hint": "Перетягніть смугу, щоб перенести завдання, або її край — щоб змінити тривалість."
+  "timeline.drag_hint": "Перетягніть смугу, щоб перенести завдання, або її край — щоб змінити тривалість.",
+  "notif.kind.announcement": "Оголошення",
+  "notif.kind.review_requested": "Завдання надіслано на перевірку",
+  "notif.kind.review_accepted": "Перевірку прийнято",
+  "notif.kind.review_returned": "Повернено на доопрацювання",
+  "notif.days_suffix": " (через {days} дн.)",
+  "settings.secret_configured": "Задано — залиште порожнім, щоб не змінювати, або вставте новий токен для заміни",
+  "settings.secret_not_configured": "Не задано",
+  "profile.telegram_connect": "Підключити Telegram",
+  "profile.telegram_connect_hint": "Отримуйте сповіщення як повідомлення Telegram.",
+  "profile.telegram_open_bot": "Відкрити в Telegram",
+  "profile.telegram_waiting": "Очікуємо, поки ви натиснете Start у Telegram…",
+  "profile.telegram_connected": "Telegram підключено",
+  "profile.telegram_disconnect": "Відключити",
+  "profile.telegram_enabled_toggle": "Надсилати сповіщення в Telegram"
 }

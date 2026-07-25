@@ -92,6 +92,9 @@ func (a *API) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/inbox", a.handleInbox)
 	mux.HandleFunc("GET /api/my/stats", a.handleMyStats)
 	mux.HandleFunc("GET /api/onboarding/progress", a.handleOnboardingProgress)
+	mux.HandleFunc("GET /api/telegram/status", a.handleTelegramStatus)
+	mux.HandleFunc("POST /api/telegram/link", a.handleTelegramLink)
+	mux.HandleFunc("POST /api/telegram/unlink", a.handleTelegramUnlink)
 
 	// --- social interactions ---
 	mux.HandleFunc("GET /api/tasks/{id}/comments", a.handleListComments)
@@ -417,6 +420,10 @@ func (a *API) notify(r *http.Request, userID int64, kind string, payload map[str
 		return
 	}
 	a.Bus.Publish([]int64{userID}, events.Event{Type: "notification", Data: map[string]any{"kind": kind, "payload": payload}})
+	// Telegram (if configured and linked) only on a genuinely new notification, not on every
+	// collapse-refresh above — a burst of edits to one task should ping a phone once, not once
+	// per edit, even though the in-app bell/SSE already re-fires on each refresh.
+	a.sendTelegram(r.Context(), userID, kind, payload)
 }
 
 // notifyTypeEnabled reports whether userID wants this notification kind at all (default: on).

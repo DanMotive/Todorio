@@ -407,5 +407,19 @@
   "profile.browser_notif_revoke_hint": "ব্রাউজার বিজ্ঞপ্তি বন্ধ করতে আপনার ব্রাউজারের সাইট সেটিংস ব্যবহার করুন — এই পেজ থেকে আগে দেওয়া অনুমতি প্রত্যাহার করা যায় না।",
   "timeline.critical_path": "ক্রিটিক্যাল পাথ",
   "timeline.critical_path_cycle": "কিছু নির্ভরতা চক্র তৈরি করে, তাই সেগুলোর জন্য ক্রিটিক্যাল পাথ পুরোপুরি হিসাব করা যায় না।",
-  "timeline.drag_hint": "কাজের সময়সূচি বদলাতে বার টেনে আনুন, অথবা সময়কাল পরিবর্তন করতে এর প্রান্ত টেনে আনুন।"
+  "timeline.drag_hint": "কাজের সময়সূচি বদলাতে বার টেনে আনুন, অথবা সময়কাল পরিবর্তন করতে এর প্রান্ত টেনে আনুন।",
+  "notif.kind.announcement": "ঘোষণা",
+  "notif.kind.review_requested": "কাজ পর্যালোচনার জন্য জমা দেওয়া হয়েছে",
+  "notif.kind.review_accepted": "পর্যালোচনা অনুমোদিত",
+  "notif.kind.review_returned": "পরিবর্তনের জন্য ফেরত পাঠানো হয়েছে",
+  "notif.days_suffix": " ({days} দিনে)",
+  "settings.secret_configured": "সেট করা আছে — পরিবর্তন না করতে খালি রাখুন, বা প্রতিস্থাপনের জন্য নতুন টোকেন পেস্ট করুন",
+  "settings.secret_not_configured": "সেট করা নেই",
+  "profile.telegram_connect": "Telegram সংযুক্ত করুন",
+  "profile.telegram_connect_hint": "Telegram বার্তা হিসেবে বিজ্ঞপ্তি পান।",
+  "profile.telegram_open_bot": "Telegram-এ খুলুন",
+  "profile.telegram_waiting": "আপনি Telegram-এ Start চাপার অপেক্ষায়…",
+  "profile.telegram_connected": "Telegram সংযুক্ত হয়েছে",
+  "profile.telegram_disconnect": "সংযোগ বিচ্ছিন্ন করুন",
+  "profile.telegram_enabled_toggle": "Telegram-এ বিজ্ঞপ্তি পাঠান"
 }

@@ -1,8 +1,44 @@
 package api
 
 import (
+	"context"
 	"net/http"
+	"strings"
 )
+
+// userLocale resolves the caller's own locale preference for locale-dependent content the
+// server itself picks (stat captions, Telegram notification text) — deliberately the viewer's
+// own profile language, never a single site-wide value, so what one person sees never depends
+// on what language someone else (or root) happened to set.
+func (a *API) userLocale(ctx context.Context, userID int64) string {
+	var locale *string
+	_ = a.DB.Pool.QueryRow(ctx, `SELECT locale FROM users WHERE id=$1`, userID).Scan(&locale)
+	raw := ""
+	if locale != nil {
+		raw = *locale
+	}
+	return a.normalizeLocale(raw)
+}
+
+// normalizeLocale maps a raw stored locale value (possibly empty, possibly an "-it" tone
+// overlay, possibly something no longer in allLocales) down to one of the 13 base locales that
+// server-generated content (stat_captions, notif.* strings) is actually available in.
+//
+// "-it" tone overlays (web/src/i18n.ts) are a UI-string slang variant of the same base
+// language, not a separate language those rows were ever generated for — resolve to the base
+// locale underneath one.
+func (a *API) normalizeLocale(raw string) string {
+	if raw == "" {
+		raw = a.Cfg.DefaultLocale
+	}
+	raw = strings.TrimSuffix(raw, "-it")
+	for _, l := range allLocales {
+		if l == raw {
+			return raw
+		}
+	}
+	return "en-US"
+}
 
 // GET /api/spaces/{id}/stats?period=week|month — space statistics:
 // per-member (done, weighted contribution), "top performer", and a random two-part caption.
@@ -76,7 +112,7 @@ func (a *API) handleStats(w http.ResponseWriter, r *http.Request) {
 
 	// Two-part caption: deterministic "random" pick per day (seed = space_id + day of year),
 	// so the caption doesn't change on every page refresh.
-	locale := a.DB.Setting(r.Context(), "branding.stats_locale", "en-US")
+	locale := a.userLocale(r.Context(), u.ID)
 	var part1, part2 string
 	_ = a.DB.Pool.QueryRow(r.Context(), `
 		SELECT text FROM stat_captions WHERE locale=$1 AND category=$2 AND part=1

@@ -407,5 +407,19 @@
   "profile.browser_notif_revoke_hint": "Чтобы отключить уведомления браузера, используйте настройки сайта в самом браузере — эта страница не может отозвать уже выданное разрешение.",
   "timeline.critical_path": "Критический путь",
   "timeline.critical_path_cycle": "Часть зависимостей образует цикл — для них критический путь не может быть посчитан полностью.",
-  "timeline.drag_hint": "Перетащите полосу, чтобы перенести задачу, или её край — чтобы изменить длительность."
+  "timeline.drag_hint": "Перетащите полосу, чтобы перенести задачу, или её край — чтобы изменить длительность.",
+  "notif.kind.announcement": "Объявление",
+  "notif.kind.review_requested": "Задача отправлена на проверку",
+  "notif.kind.review_accepted": "Проверка принята",
+  "notif.kind.review_returned": "Возвращена на доработку",
+  "notif.days_suffix": " (через {days} дн.)",
+  "settings.secret_configured": "Задан — оставьте пустым, чтобы не менять, или вставьте новый токен для замены",
+  "settings.secret_not_configured": "Не задан",
+  "profile.telegram_connect": "Подключить Telegram",
+  "profile.telegram_connect_hint": "Получайте уведомления в виде сообщений Telegram.",
+  "profile.telegram_open_bot": "Открыть в Telegram",
+  "profile.telegram_waiting": "Ждём, когда вы нажмёте Start в Telegram…",
+  "profile.telegram_connected": "Telegram подключён",
+  "profile.telegram_disconnect": "Отключить",
+  "profile.telegram_enabled_toggle": "Отправлять уведомления в Telegram"
 }

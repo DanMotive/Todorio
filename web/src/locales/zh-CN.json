@@ -407,5 +407,19 @@
   "profile.browser_notif_revoke_hint": "如需关闭浏览器通知，请在浏览器的网站设置中操作——本页面无法撤销已授予的权限。",
   "timeline.critical_path": "关键路径",
   "timeline.critical_path_cycle": "部分依赖关系构成了循环，无法为其完整计算关键路径。",
-  "timeline.drag_hint": "拖动条形可重新安排任务时间，拖动其边缘可调整时长。"
+  "timeline.drag_hint": "拖动条形可重新安排任务时间，拖动其边缘可调整时长。",
+  "notif.kind.announcement": "公告",
+  "notif.kind.review_requested": "任务已提交审核",
+  "notif.kind.review_accepted": "审核已通过",
+  "notif.kind.review_returned": "已退回修改",
+  "notif.days_suffix": "（{days}天后）",
+  "settings.secret_configured": "已配置——留空以保持不变，或粘贴新令牌以替换",
+  "settings.secret_not_configured": "未配置",
+  "profile.telegram_connect": "连接 Telegram",
+  "profile.telegram_connect_hint": "以 Telegram 消息形式接收通知。",
+  "profile.telegram_open_bot": "在 Telegram 中打开",
+  "profile.telegram_waiting": "等待您在 Telegram 中点击 Start…",
+  "profile.telegram_connected": "已连接 Telegram",
+  "profile.telegram_disconnect": "断开连接",
+  "profile.telegram_enabled_toggle": "将通知发送到 Telegram"
 }

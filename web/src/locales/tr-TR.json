@@ -407,5 +407,19 @@
   "profile.browser_notif_revoke_hint": "Tarayıcı bildirimlerini kapatmak için tarayıcınızın site ayarlarını kullanın — bu sayfa daha önce verilmiş bir izni geri alamaz.",
   "timeline.critical_path": "Kritik yol",
   "timeline.critical_path_cycle": "Bazı bağımlılıklar bir döngü oluşturuyor, bu yüzden onlar için kritik yol tam olarak hesaplanamıyor.",
-  "timeline.drag_hint": "Bir çubuğu sürükleyerek yeniden planlayın, kenarlarını sürükleyerek yeniden boyutlandırın."
+  "timeline.drag_hint": "Bir çubuğu sürükleyerek yeniden planlayın, kenarlarını sürükleyerek yeniden boyutlandırın.",
+  "notif.kind.announcement": "Duyuru",
+  "notif.kind.review_requested": "Görev incelemeye gönderildi",
+  "notif.kind.review_accepted": "İnceleme kabul edildi",
+  "notif.kind.review_returned": "Düzeltme için geri gönderildi",
+  "notif.days_suffix": " ({days} gün sonra)",
+  "settings.secret_configured": "Ayarlandı — değiştirmemek için boş bırakın, değiştirmek için yeni bir jeton yapıştırın",
+  "settings.secret_not_configured": "Ayarlanmadı",
+  "profile.telegram_connect": "Telegram'ı bağla",
+  "profile.telegram_connect_hint": "Bildirimleri Telegram mesajı olarak al.",
+  "profile.telegram_open_bot": "Telegram'da aç",
+  "profile.telegram_waiting": "Telegram'da Start'a basmanız bekleniyor…",
+  "profile.telegram_connected": "Telegram bağlandı",
+  "profile.telegram_disconnect": "Bağlantıyı kes",
+  "profile.telegram_enabled_toggle": "Bildirimleri Telegram'a gönder"
 }

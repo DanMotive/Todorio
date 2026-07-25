@@ -407,5 +407,19 @@
   "profile.browser_notif_revoke_hint": "Браузер хабарландыруларын өшіру үшін браузердің өз сайт параметрлерін пайдаланыңыз — бұл бет бұрын берілген рұқсатты қайтарып ала алмайды.",
   "timeline.critical_path": "Сыни жол",
   "timeline.critical_path_cycle": "Кейбір тәуелділіктер циклді құрайды, сондықтан олар үшін сыни жолды толық есептеу мүмкін емес.",
-  "timeline.drag_hint": "Тапсырманы басқа мерзімге ауыстыру үшін жолақты, ұзақтығын өзгерту үшін оның шетін сүйреңіз."
+  "timeline.drag_hint": "Тапсырманы басқа мерзімге ауыстыру үшін жолақты, ұзақтығын өзгерту үшін оның шетін сүйреңіз.",
+  "notif.kind.announcement": "Хабарландыру",
+  "notif.kind.review_requested": "Тапсырма тексеруге жіберілді",
+  "notif.kind.review_accepted": "Тексеру қабылданды",
+  "notif.kind.review_returned": "Түзету үшін қайтарылды",
+  "notif.days_suffix": " ({days} күннен кейін)",
+  "settings.secret_configured": "Орнатылған — өзгертпеу үшін бос қалдырыңыз немесе ауыстыру үшін жаңа токен қойыңыз",
+  "settings.secret_not_configured": "Орнатылмаған",
+  "profile.telegram_connect": "Telegram-ды қосу",
+  "profile.telegram_connect_hint": "Хабарландыруларды Telegram хабарламасы түрінде алыңыз.",
+  "profile.telegram_open_bot": "Telegram-да ашу",
+  "profile.telegram_waiting": "Telegram-да Start басуыңызды күтудеміз…",
+  "profile.telegram_connected": "Telegram қосылды",
+  "profile.telegram_disconnect": "Ажырату",
+  "profile.telegram_enabled_toggle": "Хабарландыруларды Telegram-ға жіберу"
 }

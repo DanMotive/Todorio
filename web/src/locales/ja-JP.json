@@ -407,5 +407,19 @@
   "profile.browser_notif_revoke_hint": "ブラウザ通知を無効にするには、ブラウザ側のサイト設定を使用してください。このページから既に許可された権限を取り消すことはできません。",
   "timeline.critical_path": "クリティカルパス",
   "timeline.critical_path_cycle": "一部の依存関係が循環しているため、その部分のクリティカルパスは完全には計算できません。",
-  "timeline.drag_hint": "バーをドラッグして日程を変更するか、端をドラッグして長さを調整できます。"
+  "timeline.drag_hint": "バーをドラッグして日程を変更するか、端をドラッグして長さを調整できます。",
+  "notif.kind.announcement": "お知らせ",
+  "notif.kind.review_requested": "タスクがレビューに提出されました",
+  "notif.kind.review_accepted": "レビューが承認されました",
+  "notif.kind.review_returned": "修正のため差し戻されました",
+  "notif.days_suffix": "（{days}日後）",
+  "settings.secret_configured": "設定済み — 変更しない場合は空欄のまま、置き換える場合は新しいトークンを貼り付けてください",
+  "settings.secret_not_configured": "未設定",
+  "profile.telegram_connect": "Telegramを接続",
+  "profile.telegram_connect_hint": "通知をTelegramのメッセージとして受け取れます。",
+  "profile.telegram_open_bot": "Telegramで開く",
+  "profile.telegram_waiting": "Telegramで「Start」を押すのをお待ちしています…",
+  "profile.telegram_connected": "Telegramに接続済み",
+  "profile.telegram_disconnect": "接続解除",
+  "profile.telegram_enabled_toggle": "通知をTelegramに送信する"
 }

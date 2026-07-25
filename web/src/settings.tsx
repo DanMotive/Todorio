@@ -162,6 +162,92 @@ function BrowserNotificationRow() {
   )
 }
 
+// Telegram notification delivery (spec follow-up: root supplies a bot token, each user links
+// their own chat — see internal/telegram). Hidden entirely while root hasn't configured a bot,
+// same convention as BrowserNotificationRow above: no dead controls for something that can't
+// currently do anything.
+//
+// telegramEnabled/onToggleEnabled are lifted to the parent because that one flag lives in the
+// same notify_prefs blob as sound/types/dnd and is saved through the same save() path — the
+// connect/disconnect flow itself needs no such integration and manages its own state.
+function TelegramLinkRow({ telegramEnabled, onToggleEnabled }: {
+  telegramEnabled: boolean
+  onToggleEnabled: (v: boolean) => void
+}) {
+  const [status, setStatus] = useState<{ enabled: boolean; linked: boolean } | null>(null)
+  const [link, setLink] = useState<{ deep_link: string } | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  const refresh = () => api.get("/api/telegram/status").then(setStatus).catch(() => setStatus({ enabled: false, linked: false }))
+  useEffect(() => { refresh() }, [])
+
+  // While a link is pending, poll every few seconds for the /start message to have landed —
+  // gives a "it just connected itself" feel instead of making the user remember to come back
+  // and click something. Stops on success, on unmount, or after ~2 minutes of nobody finishing.
+  useEffect(() => {
+    if (!link) return
+    let tries = 0
+    const id = window.setInterval(async () => {
+      tries++
+      const r = await api.get("/api/telegram/status").catch(() => null)
+      if (r) setStatus(r)
+      if (r?.linked || tries > 40) { window.clearInterval(id); setLink(null) }
+    }, 3000)
+    return () => window.clearInterval(id)
+  }, [link])
+
+  if (!status?.enabled) return null
+
+  async function connect() {
+    setBusy(true)
+    try {
+      setLink(await api.post("/api/telegram/link"))
+    } catch { /* leave the button available to retry */ }
+    setBusy(false)
+  }
+  async function disconnect() {
+    await api.post("/api/telegram/unlink").catch(() => {})
+    setLink(null)
+    refresh()
+  }
+
+  if (status.linked) {
+    return (
+      <div style={{ marginBottom: 10 }}>
+        <label className="row" style={{ gap: 8, marginBottom: 6 }}>
+          <input type="checkbox" checked={telegramEnabled} onChange={(e) => onToggleEnabled(e.target.checked)} />
+          {tr("profile.telegram_enabled_toggle")}
+        </label>
+        <div className="row" style={{ gap: 10 }}>
+          <span className="row muted" style={{ gap: 5, fontSize: 13 }}>
+            <IconCheckCircle size={13} /> {tr("profile.telegram_connected")}
+          </span>
+          <button className="nav-btn" onClick={disconnect}>{tr("profile.telegram_disconnect")}</button>
+        </div>
+      </div>
+    )
+  }
+
+  if (link) {
+    return (
+      <div style={{ marginBottom: 10 }}>
+        <a className="btn secondary row" style={{ gap: 6, display: "inline-flex", width: "fit-content", textDecoration: "none" }}
+          href={link.deep_link} target="_blank" rel="noreferrer">
+          {tr("profile.telegram_open_bot")}
+        </a>
+        <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>{tr("profile.telegram_waiting")}</div>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <button className="nav-btn" onClick={connect} disabled={busy}>{tr("profile.telegram_connect")}</button>
+      <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>{tr("profile.telegram_connect_hint")}</div>
+    </div>
+  )
+}
+
 export function SettingsPage({ me, theme, onUpdateTheme, onProfileSaved }: {
   me: Me; theme: ThemeState; onUpdateTheme: (patch: Partial<ThemeState>) => void; onProfileSaved: (p: Profile) => void
 }) {
@@ -346,6 +432,8 @@ export function SettingsPage({ me, theme, onUpdateTheme, onProfileSaved }: {
         {tr("nav.sound")}
       </label>
       <BrowserNotificationRow />
+      <TelegramLinkRow telegramEnabled={notifyPrefs.telegram !== false}
+        onToggleEnabled={(v) => saveNotifyPrefs({ telegram: v })} />
       <div style={{ marginBottom: 12 }}>
         <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>{tr("profile.notif_types")}</div>
         {NOTIFY_TYPES.map((k) => (

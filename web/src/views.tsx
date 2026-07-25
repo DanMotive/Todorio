@@ -1828,8 +1828,10 @@ export function NotificationsPage({ onRead }: { onRead: () => void }) {
             {KIND_ICON[n.kind] || null}
             <span>
               {tr("notif.kind." + n.kind)}
-              {n.kind === "due_soon" && n.payload?.days ? ` (${n.payload.days}d)` : ""}
-              {n.kind === "archive_expiring" && n.payload?.days_left ? ` (${n.payload.days_left}d)` : ""}
+              {n.kind === "due_soon" && n.payload?.days
+                ? tr("notif.days_suffix").replace("{days}", String(n.payload.days)) : ""}
+              {n.kind === "archive_expiring" && n.payload?.days_left
+                ? tr("notif.days_suffix").replace("{days}", String(n.payload.days_left)) : ""}
               {n.payload?.title ? ` · «${n.payload.title}»` : ""}
               {n.payload?.task_title ? ` · «${n.payload.task_title}»` : ""}
               {n.payload?.by ? ` · ${tr("notif.by")} @${n.payload.by}` : ""}

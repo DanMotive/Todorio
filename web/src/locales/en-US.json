@@ -407,5 +407,19 @@
   "profile.browser_notif_revoke_hint": "To turn browser notifications off, use your browser's own site settings — this page can't revoke a permission that's already been granted.",
   "timeline.critical_path": "Critical path",
   "timeline.critical_path_cycle": "Some dependencies form a cycle, so the critical path can't be fully computed for them.",
-  "timeline.drag_hint": "Drag a bar to reschedule it, or drag its edges to resize."
+  "timeline.drag_hint": "Drag a bar to reschedule it, or drag its edges to resize.",
+  "notif.kind.announcement": "Announcement",
+  "notif.kind.review_requested": "Task submitted for review",
+  "notif.kind.review_accepted": "Review accepted",
+  "notif.kind.review_returned": "Sent back for changes",
+  "notif.days_suffix": " ({days}d)",
+  "settings.secret_configured": "Configured — leave blank to keep, or paste a new token to replace",
+  "settings.secret_not_configured": "Not set",
+  "profile.telegram_connect": "Connect Telegram",
+  "profile.telegram_connect_hint": "Get notifications as Telegram messages.",
+  "profile.telegram_open_bot": "Open in Telegram",
+  "profile.telegram_waiting": "Waiting for you to press Start in Telegram…",
+  "profile.telegram_connected": "Connected to Telegram",
+  "profile.telegram_disconnect": "Disconnect",
+  "profile.telegram_enabled_toggle": "Send notifications to Telegram"
 }

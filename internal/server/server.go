@@ -19,6 +19,7 @@ import (
 	"github.com/DanMotive/Todorio/internal/db"
 	"github.com/DanMotive/Todorio/internal/demo"
 	"github.com/DanMotive/Todorio/internal/events"
+	"github.com/DanMotive/Todorio/internal/telegram"
 	"github.com/DanMotive/Todorio/internal/worker"
 )
 
@@ -44,6 +45,8 @@ func Run(cfg config.Config, version string) error {
 		log.Println("demo space:", err)
 	}
 	go worker.Run(ctx, database, bus)
+	// Idles (checking every 20s) until root configures a bot token — see internal/telegram.
+	go telegram.Run(ctx, database)
 
 	// --- routes ---
 	mux := http.NewServeMux()

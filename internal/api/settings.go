@@ -5,17 +5,25 @@ package api
 // between the terminal and the root panel, per spec section 10.
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"time"
+
+	"github.com/DanMotive/Todorio/internal/telegram"
 )
 
 type settingDef struct {
 	Key     string   `json:"key"`
 	Label   string   `json:"label"`
-	Type    string   `json:"type"` // text | number | bool | select
+	Type    string   `json:"type"` // text | number | bool | select | secret
 	Default string   `json:"default"`
 	Options []string `json:"options,omitempty"`
+	// Secret settings (currently just the Telegram bot token) are never echoed back by
+	// handleGetSettings — GET always reports an empty value plus is_set, so the token can't leak
+	// into anyone's browser history/screenshots just for opening the settings panel.
+	Secret bool `json:"-"`
 }
 
 var knownSettings = []settingDef{
@@ -63,6 +71,11 @@ var knownSettings = []settingDef{
 	{Key: "onboarding.quests", Label: "Onboarding quests for new users", Type: "select", Default: "on",
 		Options: []string{"on", "off"}},
 	{Key: "pulse.enabled", Label: "Space Pulse enabled", Type: "bool", Default: "true"},
+	// A bot token from @BotFather — root's own key, per spec follow-up ("дать сайту ключ, он
+	// будет сам сообщения слать"). Saving one is validated live against Telegram's getMe (see
+	// handleSetSetting below) so a pasted-wrong token is caught immediately, not discovered
+	// later when notifications silently never arrive.
+	{Key: "telegram.bot_token", Label: "Telegram bot token (from @BotFather)", Type: "secret", Default: "", Secret: true},
 }
 
 var settingKeys = func() map[string]bool {
@@ -94,9 +107,14 @@ func (a *API) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]map[string]any, 0, len(knownSettings))
 	for _, s := range knownSettings {
+		raw := a.DB.Setting(r.Context(), s.Key, s.Default)
+		value := raw
+		if s.Secret {
+			value = "" // never echo a secret back, even to the root who set it
+		}
 		out = append(out, map[string]any{
 			"key": s.Key, "label": s.Label, "type": s.Type, "default": s.Default,
-			"options": s.Options, "value": a.DB.Setting(r.Context(), s.Key, s.Default),
+			"options": s.Options, "value": value, "is_set": raw != "",
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -129,12 +147,42 @@ func (a *API) handleSetSetting(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, http.StatusBadRequest, "invalid value for "+in.Key)
 		return
 	}
+
+	// A bot token is validated live against Telegram before it's ever stored, so a typo'd token
+	// is caught right here instead of being discovered later when notifications silently never
+	// arrive. Saving one also (re)resolves and caches the bot's @username, needed to build each
+	// user's own /start deep link without an extra live API call per person, per visit.
+	if in.Key == "telegram.bot_token" {
+		if in.Value == "" {
+			// An explicit clear (the settings panel's dedicated "Remove" action, never a plain
+			// blur — see extras.tsx) — nothing to validate, and the cached username is now stale.
+			_, _ = a.DB.Pool.Exec(r.Context(), `DELETE FROM system_settings WHERE key='telegram.bot_username'`)
+		} else {
+			ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+			defer cancel()
+			username, err := telegram.GetMe(ctx, in.Value)
+			if err != nil {
+				errJSON(w, http.StatusBadRequest, "could not validate this token with Telegram: "+err.Error())
+				return
+			}
+			if err := a.DB.SetSetting(r.Context(), "telegram.bot_username", mustJSON(username)); err != nil {
+				errJSON(w, http.StatusInternalServerError, "database error")
+				return
+			}
+		}
+	}
+
 	b, _ := json.Marshal(in.Value)
 	if err := a.DB.SetSetting(r.Context(), in.Key, string(b)); err != nil {
 		errJSON(w, http.StatusInternalServerError, "database error")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func mustJSON(v string) string {
+	b, _ := json.Marshal(v)
+	return string(b)
 }
 
 // validSettingValue checks a proposed value against its setting's declared type, so a typo (e.g.

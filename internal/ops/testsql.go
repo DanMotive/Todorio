@@ -203,6 +203,12 @@ func schemaChecks() []schemaCheck {
 			label: "tasks_schedule_idx exists (0007)",
 			query: `SELECT EXISTS(SELECT 1 FROM pg_indexes WHERE indexname='tasks_schedule_idx')`,
 		},
+		col("users", "telegram_chat_id"), // 0011 — Telegram notification linking
+		col("users", "telegram_link_code"),
+		{
+			label: "users_telegram_chat_id_idx exists (0011)",
+			query: `SELECT EXISTS(SELECT 1 FROM pg_indexes WHERE indexname='users_telegram_chat_id_idx')`,
+		},
 	}
 }
 
@@ -663,6 +669,25 @@ func allChecks() []sqlCheck {
 			JOIN list_members lm ON lm.list_id = l.id AND lm.user_id = $1 AND lm.permission = 'owner'
 			WHERE l.name = 'Onboarding quests' AND l.archived_at IS NULL
 			ORDER BY l.id LIMIT 1`,
+			func(f *fixture) []any { return []any{f.userID} }),
+
+		// --- telegram linking (0011) ---
+		exec("telegram: issue link code", `
+			UPDATE users SET telegram_link_code=$2, telegram_link_code_at=now() WHERE id=$1`,
+			func(f *fixture) []any { return []any{f.userID, "abc123deadbeef00"} }),
+		query("telegram: status lookup", `
+			SELECT telegram_chat_id IS NOT NULL FROM users WHERE id=$1`,
+			func(f *fixture) []any { return []any{f.userID} }),
+		query("telegram: notify target (chat+prefs+locale)", `
+			SELECT telegram_chat_id, notify_prefs #>> '{telegram}', locale FROM users WHERE id=$1`,
+			func(f *fixture) []any { return []any{f.userID} }),
+		exec("telegram: process /start match", `
+			UPDATE users SET telegram_chat_id=$2, telegram_link_code=NULL, telegram_link_code_at=NULL
+			WHERE telegram_link_code=$1
+			  AND telegram_link_code_at > now() - interval '15 minutes'`,
+			func(f *fixture) []any { return []any{"abc123deadbeef00", int64(987654321)} }),
+		exec("telegram: unlink", `
+			UPDATE users SET telegram_chat_id=NULL, telegram_link_code=NULL, telegram_link_code_at=NULL WHERE id=$1`,
 			func(f *fixture) []any { return []any{f.userID} }),
 
 		// --- settings ---

@@ -407,5 +407,19 @@
   "profile.browser_notif_revoke_hint": "브라우저 알림을 끄려면 브라우저의 사이트 설정을 사용하세요. 이 페이지에서는 이미 부여된 권한을 취소할 수 없습니다.",
   "timeline.critical_path": "임계 경로",
   "timeline.critical_path_cycle": "일부 의존 관계가 순환 구조를 이루고 있어 해당 부분의 임계 경로를 완전히 계산할 수 없습니다.",
-  "timeline.drag_hint": "막대를 드래그하면 일정이 변경되고, 가장자리를 드래그하면 기간이 조정됩니다."
+  "timeline.drag_hint": "막대를 드래그하면 일정이 변경되고, 가장자리를 드래그하면 기간이 조정됩니다.",
+  "notif.kind.announcement": "공지",
+  "notif.kind.review_requested": "작업이 검토에 제출됨",
+  "notif.kind.review_accepted": "검토 승인됨",
+  "notif.kind.review_returned": "수정을 위해 반려됨",
+  "notif.days_suffix": " ({days}일 후)",
+  "settings.secret_configured": "설정됨 — 변경하지 않으려면 비워 두고, 교체하려면 새 토큰을 붙여넣으세요",
+  "settings.secret_not_configured": "설정 안 됨",
+  "profile.telegram_connect": "Telegram 연결",
+  "profile.telegram_connect_hint": "알림을 Telegram 메시지로 받아보세요.",
+  "profile.telegram_open_bot": "Telegram에서 열기",
+  "profile.telegram_waiting": "Telegram에서 Start를 눌러주세요…",
+  "profile.telegram_connected": "Telegram 연결됨",
+  "profile.telegram_disconnect": "연결 해제",
+  "profile.telegram_enabled_toggle": "Telegram으로 알림 보내기"
 }

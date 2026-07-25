@@ -12,12 +12,16 @@ Todorio is a private, self-hosted task manager for personal use and small teams.
   Disturb preferences, deadline reminders, password/2FA — separate from the root-only server panel
 - Spaces → lists → tasks (subtasks, dependencies, recurrence, checklists), with a per-space schema
   for typed custom fields (text/number/date/select/multiselect/checkbox/user/link/rating)
-- Five task views: List, Kanban board (drag & drop), Table, Calendar, and "My Week" — plus saved,
-  named filters (status/priority/overdue) that apply across all of them
+- Six task views: List, Kanban board (drag & drop), Table, Calendar, Timeline/Gantt (drag to
+  reschedule or resize, critical-path highlighting), and "My Week" — plus saved, named filters
+  (status/priority/overdue) that apply across all of them
 - "My tasks" split into Today / Overdue / In review / No deadline / Mentions
 - Progress bars, configurable workflow statuses, notes (Markdown pages), favorites
 - Comments (with editing), @mentions, reactions (👍 ✅ 🎉 🔥 👀 ❓ ❗ ❌ 😭 ⭐), image attachments
 - In-app notifications, due-date badges, "Do Not Disturb" mode, "while you were away" digest
+- Optional Telegram delivery: root pastes in their own bot token (from @BotFather), each user
+  links their own chat from their profile — fully opt-in, and off by default like every other
+  external integration this project doesn't require
 - An archive with restore, a 3-day warning before permanent cleanup, and root-only permanent delete
 - Focus mode / time tracking, with live presence ("Ivan is working on this · 12m", not an emoji —
   a plain colored dot like Space Pulse's) visible to teammates on every task view

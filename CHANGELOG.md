@@ -1,5 +1,63 @@
 # Changelog
 
+## Unreleased — Telegram notifications, three locale bugs fixed
+
+One new migration (0011): three nullable columns + two partial unique indexes on `users`, nothing
+else. `todorio testsql` now covers 61 queries.
+
+### Fixed — dynamic captions (and two other things) were silently always English
+
+Reported after RC1: personal-stats captions ("Steady as it goes...") never respected a user's own
+language. Root cause: `handleStats` read a `branding.stats_locale` **admin setting that was never
+exposed anywhere** — no CLI command, no settings-panel field — so it permanently held its
+hardcoded `"en-US"` default, for every viewer, regardless of what language they'd actually chosen.
+Fixed to resolve the *viewer's own* `users.locale` instead (falling back to the server's configured
+default, then to en-US), which is what should have happened from the start.
+
+While tracking that down, the same class of bug turned up twice more, both now fixed:
+
+- The notification bell's `notif.kind.*` lookup silently has no entry for `announcement`,
+  `review_requested`, `review_accepted`, or `review_returned` — those four notification kinds were
+  showing their **raw untranslated key string** (e.g. `notif.kind.review_requested`) to every
+  user, in every locale, since the strings simply didn't exist. `check_i18n.py`'s dynamic-prefix
+  check can confirm a prefix isn't *entirely* dead but can't verify every individual suffix is
+  covered — this is exactly the kind of gap that leaves open. Added the missing keys to all 13
+  locales.
+- The "due in Nd" / "expires in Nd" suffix on `due_soon` and `archive_expiring` notifications had
+  the "d" hardcoded in the JSX, in English, unconditionally. Replaced with a templated
+  `notif.days_suffix` key translated per locale.
+
+### Added — Telegram notification delivery
+
+Root pastes in their own bot token from @BotFather; each user who wants delivery links their own
+account from their profile. Consistent with the project's no-required-external-services stance:
+Telegram is external, but the feature is inert until root explicitly configures it and a user
+explicitly opts in — nothing changes for anyone who ignores it.
+
+- **Linking** uses a one-time code, not a numeric chat id nobody has memorized: the profile page
+  shows a `https://t.me/<bot>?start=<code>` button, the user taps it and presses Start, and the
+  bot's own reply carries the code back. The profile page polls quietly for up to ~2 minutes so
+  connecting normally requires no second click once you're back from Telegram.
+- **Receiving that reply uses long-polling (`getUpdates`), not a webhook.** A webhook would need
+  the instance reachable over HTTPS with a certificate Telegram itself accepts — self-signed (the
+  setup wizard's own default) isn't one, and plenty of self-hosted installs sit behind a
+  firewall/VPN with no inbound access at all. Long-polling only ever makes outbound requests,
+  which every deployment already needs just to be a working web app.
+- **Sending reuses the exact same translated strings the notification bell already shows** —
+  `internal/api/notif_text.go` loads the frontend's own `web/src/locales/*.json` (embedded as
+  source) and replays `NotificationsPage`'s rendering logic line-for-line in Go, so a Telegram
+  message reads exactly like the bell entry for the same event, in the recipient's own language,
+  instead of a second, separately-maintained (and inevitably drifting) set of English strings.
+- **Only fires on a genuinely new notification**, not on every collapse-refresh of a repeated one
+  — editing a task's status, then due date, then assignee within a minute is one bell entry and
+  one Telegram ping, not three of either.
+- The bot token is a secret: the settings panel never echoes it back (`GET /api/admin/settings`
+  reports `is_set` instead of the value), and saving one is validated live against Telegram's own
+  `getMe` so a pasted-wrong token is caught immediately instead of silently never working.
+- `sendMessage` goes out as a POST with a form body, not a GET with query parameters — an
+  announcement's free-form admin-written text can run to a few paragraphs, long enough to risk a
+  proxy's URL-length limit if it rode along as a query string instead.
+
 ## Unreleased — Gantt drag/resize, critical path, onboarding progress, attachment delete, browser notifications
 
 No new migrations in this batch (the Timeline endpoint gained one extra `LEFT JOIN`-sourced field,

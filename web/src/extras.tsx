@@ -931,6 +931,10 @@ export function ServerSettingsCard({ me }: { me: Me }) {
   const [allLocales, setAllLocales] = useState<string[]>([])
   const [enabledLocales, setEnabledLocales] = useState<string[]>([])
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  // Forces every secret input to remount (and so drop back to blank) after any save — an
+  // uncontrolled input's defaultValue only applies once, so without this a just-typed token
+  // would keep showing in the field indefinitely instead of going back to a placeholder.
+  const [saveNonce, setSaveNonce] = useState(0)
   const load = () => api.get("/api/admin/settings").then((r) => {
     setSettings(r.settings)
     setAllLocales(r.all_locales)
@@ -944,6 +948,7 @@ export function ServerSettingsCard({ me }: { me: Me }) {
     try {
       await api.post("/api/admin/settings", { key, value })
       setMsg({ ok: true, text: key })
+      setSaveNonce((n) => n + 1)
       load()
     } catch (e) {
       setMsg({ ok: false, text: (e as Error).message })
@@ -977,6 +982,17 @@ export function ServerSettingsCard({ me }: { me: Me }) {
           {(s.type === "text" || s.type === "number") && (
             <input className="input" style={{ width: 220 }} type={s.type === "number" ? "number" : "text"}
               defaultValue={s.value} onBlur={(e) => save(s.key, e.target.value)} />
+          )}
+          {s.type === "secret" && (
+            <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+              <input key={s.key + "-" + saveNonce} className="input" style={{ width: 260 }} type="password"
+                placeholder={s.is_set ? trFormal("settings.secret_configured") : trFormal("settings.secret_not_configured")}
+                defaultValue=""
+                onBlur={(e) => { if (e.target.value) save(s.key, e.target.value) }} />
+              {s.is_set && (
+                <button className="nav-btn" type="button" onClick={() => save(s.key, "")}>{trFormal("attach.remove")}</button>
+              )}
+            </div>
           )}
         </div>
       ))}

@@ -407,5 +407,19 @@
   "profile.browser_notif_revoke_hint": "ब्राउज़र सूचनाएं बंद करने के लिए, अपने ब्राउज़र की साइट सेटिंग का उपयोग करें — यह पेज पहले से दी गई अनुमति वापस नहीं ले सकता।",
   "timeline.critical_path": "क्रिटिकल पाथ",
   "timeline.critical_path_cycle": "कुछ निर्भरताएं एक चक्र बनाती हैं, इसलिए उनके लिए क्रिटिकल पाथ पूरी तरह से नहीं निकाला जा सकता।",
-  "timeline.drag_hint": "कार्य का समय बदलने के लिए पट्टी खींचें, या अवधि बदलने के लिए उसके किनारे खींचें।"
+  "timeline.drag_hint": "कार्य का समय बदलने के लिए पट्टी खींचें, या अवधि बदलने के लिए उसके किनारे खींचें।",
+  "notif.kind.announcement": "घोषणा",
+  "notif.kind.review_requested": "कार्य समीक्षा के लिए भेजा गया",
+  "notif.kind.review_accepted": "समीक्षा स्वीकृत",
+  "notif.kind.review_returned": "बदलाव हेतु वापस भेजा गया",
+  "notif.days_suffix": " ({days} दिन में)",
+  "settings.secret_configured": "सेट है — न बदलने के लिए खाली छोड़ें, या बदलने के लिए नया टोकन पेस्ट करें",
+  "settings.secret_not_configured": "सेट नहीं है",
+  "profile.telegram_connect": "Telegram कनेक्ट करें",
+  "profile.telegram_connect_hint": "सूचनाएं Telegram संदेश के रूप में पाएं।",
+  "profile.telegram_open_bot": "Telegram में खोलें",
+  "profile.telegram_waiting": "Telegram में Start दबाने का इंतज़ार है…",
+  "profile.telegram_connected": "Telegram कनेक्ट हो गया",
+  "profile.telegram_disconnect": "डिस्कनेक्ट करें",
+  "profile.telegram_enabled_toggle": "सूचनाएं Telegram पर भेजें"
 }

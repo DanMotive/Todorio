@@ -407,5 +407,19 @@
   "profile.browser_notif_revoke_hint": "Каб адключыць апавяшчэнні браўзера, скарыстайцеся наладамі сайта ў самім браўзеры — гэтая старонка не можа адклікаць ужо выдадзены дазвол.",
   "timeline.critical_path": "Крытычны шлях",
   "timeline.critical_path_cycle": "Частка залежнасцяў утварае цыкл — для іх крытычны шлях нельга падлічыць цалкам.",
-  "timeline.drag_hint": "Перацягніце палосу, каб перанесці задачу, або яе край — каб змяніць працягласць."
+  "timeline.drag_hint": "Перацягніце палосу, каб перанесці задачу, або яе край — каб змяніць працягласць.",
+  "notif.kind.announcement": "Абвестка",
+  "notif.kind.review_requested": "Задача накіравана на праверку",
+  "notif.kind.review_accepted": "Праверка прынята",
+  "notif.kind.review_returned": "Вернута на дапрацоўку",
+  "notif.days_suffix": " (праз {days} дз.)",
+  "settings.secret_configured": "Зададзена — пакіньце пустым, каб не мяняць, або ўстаўце новы токен для замены",
+  "settings.secret_not_configured": "Не зададзена",
+  "profile.telegram_connect": "Падключыць Telegram",
+  "profile.telegram_connect_hint": "Атрымлівайце апавяшчэнні як паведамленні Telegram.",
+  "profile.telegram_open_bot": "Адкрыць у Telegram",
+  "profile.telegram_waiting": "Чакаем, пакуль вы націснеце Start у Telegram…",
+  "profile.telegram_connected": "Telegram падключаны",
+  "profile.telegram_disconnect": "Адключыць",
+  "profile.telegram_enabled_toggle": "Дасылаць апавяшчэнні ў Telegram"
 }

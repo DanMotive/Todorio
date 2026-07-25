@@ -407,5 +407,19 @@
   "profile.browser_notif_revoke_hint": "Para desativar as notificações do navegador, use as configurações do site no próprio navegador — esta página não pode revogar uma permissão já concedida.",
   "timeline.critical_path": "Caminho crítico",
   "timeline.critical_path_cycle": "Algumas dependências formam um ciclo, então o caminho crítico não pode ser totalmente calculado para elas.",
-  "timeline.drag_hint": "Arraste uma barra para reagendá-la, ou suas bordas para redimensionar."
+  "timeline.drag_hint": "Arraste uma barra para reagendá-la, ou suas bordas para redimensionar.",
+  "notif.kind.announcement": "Anúncio",
+  "notif.kind.review_requested": "Tarefa enviada para revisão",
+  "notif.kind.review_accepted": "Revisão aceita",
+  "notif.kind.review_returned": "Devolvida para ajustes",
+  "notif.days_suffix": " (em {days} d)",
+  "settings.secret_configured": "Configurado — deixe em branco para manter, ou cole um novo token para substituir",
+  "settings.secret_not_configured": "Não configurado",
+  "profile.telegram_connect": "Conectar Telegram",
+  "profile.telegram_connect_hint": "Receba notificações como mensagens do Telegram.",
+  "profile.telegram_open_bot": "Abrir no Telegram",
+  "profile.telegram_waiting": "Aguardando você tocar em Start no Telegram…",
+  "profile.telegram_connected": "Telegram conectado",
+  "profile.telegram_disconnect": "Desconectar",
+  "profile.telegram_enabled_toggle": "Enviar notificações para o Telegram"
 }

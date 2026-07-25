@@ -143,8 +143,11 @@ export type SearchResult =
   | { type: "comment"; id: number; task_id: number; task_title: string; snippet: string }
 
 export type SettingDef = {
-  key: string; label: string; type: "text" | "number" | "bool" | "select"
+  key: string; label: string; type: "text" | "number" | "bool" | "select" | "secret"
   default: string; options?: string[]; value: string
+  // Secret settings (the Telegram bot token) always report value: "" — is_set is how the UI
+  // knows whether one is actually configured without the server ever echoing it back.
+  is_set?: boolean
 }
 
 // Per-user preferences, own settings page (distinct from the root-only ServerSettingsCard).
@@ -153,6 +156,9 @@ export type NotifyPrefs = {
   dnd?: { enabled: boolean; start: string; end: string }
   types?: Record<string, boolean>
   reminders?: { before_days?: number[]; on_due_day?: boolean; daily_overdue?: boolean }
+  // Master switch for Telegram delivery once linked (default true — see settings.tsx's
+  // TelegramLinkRow). Meaningless while unlinked; the server never sends regardless.
+  telegram?: boolean
 }
 
 export type Profile = {
