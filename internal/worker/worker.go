@@ -208,11 +208,21 @@ func warnPendingCleanup(ctx context.Context, d *db.DB, bus *events.Bus) {
 // warnArchiveExpiring is shared by the three archivable entity types. `table` and `titleCol` are
 // always one of the three literal strings above (never user input), so building the query with
 // fmt.Sprintf is safe here — there is no SQL-injection surface.
+//
+// Uses "<=" rather than "=" against the warning threshold date on purpose. The daily ticker in
+// Run() is a plain time.NewTicker(24 * time.Hour) that restarts its countdown from zero every
+// time the process restarts (e.g. the frequent restarts triggered by acme.sh's reloadcmd after
+// each Let's Encrypt IP certificate renewal). That drift means a calendar day can be skipped
+// entirely between two ticks. An exact-date match would then silently and permanently miss the
+// one day an item was eligible for its "3 days before deletion" warning — cleanupArchive still
+// deletes it on schedule, just with no warning ever sent. "<=" plus the NOT EXISTS de-dup below
+// makes this self-healing: whenever the tick does fire, it catches up on every not-yet-warned
+// item at or past the threshold, instead of depending on hitting the exact right day.
 func warnArchiveExpiring(ctx context.Context, d *db.DB, bus *events.Bus, table, titleCol, retentionDays string) {
 	query := fmt.Sprintf(`
 		SELECT e.id, e.%s, e.archived_by FROM %s e
 		WHERE e.archived_at IS NOT NULL AND e.archived_by IS NOT NULL
-			AND e.archived_at::date = CURRENT_DATE - GREATEST($1::int - 3, 0)
+			AND e.archived_at::date <= CURRENT_DATE - GREATEST($1::int - 3, 0)
 			AND NOT EXISTS (
 				SELECT 1 FROM notifications n
 				WHERE n.user_id = e.archived_by AND n.kind = 'archive_expiring'

@@ -444,7 +444,7 @@ export function PublicListPage({ token }: { token: string }) {
 
 // ---------- notes (Markdown pages inside a space) ----------
 
-function NoteModal({ note, spaceId, onClose, onChanged }: {
+export function NoteModal({ note, spaceId, onClose, onChanged }: {
   note: Note; spaceId: number; onClose: () => void; onChanged: () => void
 }) {
   const { confirm, confirmElement } = useConfirm()
@@ -846,7 +846,14 @@ export function FocusPresence({ active, meId, showLabel = true }: {
 
 // ---------- global search ----------
 
-export function SearchPage() {
+export function SearchPage({ onOpenTask, onOpenNote }: {
+  // Opening a task/note needs the full record (search only returns id/title-ish fields), so the
+  // fetch-by-id + modal rendering lives one level up in App.tsx, which already owns `me` and can
+  // import TaskModal (views.tsx) and NoteModal (this file) without creating a circular import
+  // between extras.tsx and views.tsx.
+  onOpenTask: (taskId: number) => void
+  onOpenNote: (noteId: number) => void
+}) {
   const [q, setQ] = useState("")
   const [results, setResults] = useState<SearchResult[]>([])
   const [busy, setBusy] = useState(false)
@@ -867,6 +874,13 @@ export function SearchPage() {
     setBusy(false)
   }
 
+  function openResult(r: SearchResult) {
+    if (r.type === "task") onOpenTask(r.id)
+    else if (r.type === "note") onOpenNote(r.id)
+    // Comments aren't opened on their own — they're shown inside their parent task's modal.
+    else if (r.type === "comment") onOpenTask(r.task_id)
+  }
+
   return (
     <div className="card">
       <h2>{tr("search.title")}</h2>
@@ -874,7 +888,7 @@ export function SearchPage() {
       {busy && <p className="muted">{tr("search.searching")}</p>}
       {!busy && q.trim().length >= 2 && results.length === 0 && <p className="muted">{tr("search.empty")}</p>}
       {results.map((r, i) => (
-        <div key={i} className="task-row" style={{ cursor: "default" }}>
+        <div key={i} className="task-row" style={{ cursor: "pointer" }} onClick={() => openResult(r)}>
           {r.type === "task" && <span className="task-title row" style={{ gap: 6 }}><IconCheckCircle size={14} /> {r.title}</span>}
           {r.type === "note" && <span className="task-title row" style={{ gap: 6 }}><IconFileText size={14} /> {r.title}</span>}
           {r.type === "comment" && <span className="task-title row" style={{ gap: 6 }}><IconMessage size={14} /> «{r.task_title}» — {r.snippet}</span>}

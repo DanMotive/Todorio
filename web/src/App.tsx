@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react"
-import { api, DEVELOPER_NAME, type Me, type Profile } from "./api"
+import { api, DEVELOPER_NAME, type Me, type Profile, type Task, type Note } from "./api"
 import "./theme.css"
 import "./ui.css"
-import { AdminPage, AuthPage, MyTasksPage, NotificationsPage, PendingPage, SpacesPage } from "./views"
-import { AboutPage, AnnouncementsBanner, GlobalFocusTimer, InboxPage, ModalShell, DigestModal, InvitesCard, SearchPage, ServerSettingsCard, TemplatesAdminCard, AnnouncementsAdminCard } from "./extras"
+import { AdminPage, AuthPage, MyTasksPage, NotificationsPage, PendingPage, SpacesPage, TaskModal } from "./views"
+import { AboutPage, AnnouncementsBanner, GlobalFocusTimer, InboxPage, ModalShell, DigestModal, InvitesCard, SearchPage, NoteModal, ServerSettingsCard, TemplatesAdminCard, AnnouncementsAdminCard } from "./extras"
 import { Avatar, SettingsPage, ForcedPasswordChange } from "./settings"
 import { detectLocale, setLocale, tr } from "./i18n"
 import { IconInbox, IconKeyboard, IconMenu, IconSliders } from "./icons"
@@ -102,6 +102,21 @@ export default function App() {
     return () => mq.removeEventListener("change", onChange)
   }, [])
   const esRef = useRef<EventSource | null>(null)
+
+  // Global search opens a task/note in-place regardless of which space/list it belongs to.
+  // The search results only carry id/title-ish fields, so fetch the full record here (this is
+  // the one place that already has `me` and imports both TaskModal and NoteModal) before
+  // rendering the same modals every other page uses.
+  const [searchTask, setSearchTask] = useState<Task | null>(null)
+  const [searchNote, setSearchNote] = useState<Note | null>(null)
+  async function openSearchTask(taskId: number) {
+    const r = await api.get(`/api/tasks/${taskId}`).catch(() => null)
+    if (r?.task) setSearchTask(r.task)
+  }
+  async function openSearchNote(noteId: number) {
+    const r = await api.get(`/api/notes/${noteId}`).catch(() => null)
+    if (r?.note) setSearchNote(r.note)
+  }
 
   // theme: server default <- personal override (localStorage + profile)
   // A theme cached by an older build still carries a `scheme` key. Strip it on read rather
@@ -342,7 +357,14 @@ export default function App() {
         {view === "my" && <MyTasksPage me={me} />}
         {view === "inbox" && <InboxPage />}
         {view === "spaces" && <SpacesPage me={me} />}
-        {view === "search" && <SearchPage />}
+        {view === "search" && <SearchPage onOpenTask={openSearchTask} onOpenNote={openSearchNote} />}
+        {searchTask && me && (
+          <TaskModal task={searchTask} me={me} onClose={() => setSearchTask(null)} onChanged={() => openSearchTask(searchTask.id)} />
+        )}
+        {searchNote && (
+          <NoteModal note={searchNote} spaceId={searchNote.space_id} onClose={() => setSearchNote(null)}
+            onChanged={() => openSearchNote(searchNote.id)} />
+        )}
         {view === "notifications" && <NotificationsPage onRead={() => setUnread(0)} />}
         {view === "settings" && <SettingsPage me={me} theme={theme} onUpdateTheme={updateTheme} onProfileSaved={setProfile} />}
         {view === "about" && (

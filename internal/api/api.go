@@ -291,16 +291,17 @@ func (a *API) enforceSessionLimit(ctx context.Context, userID int64) {
 	if limit <= 0 {
 		return
 	}
-	var count int
-	_ = a.DB.Pool.QueryRow(ctx, `SELECT count(*) FROM sessions WHERE user_id=$1 AND expires_at > now()`, userID).Scan(&count)
-	if count < limit {
-		return
-	}
-	toEvict := count - limit + 1
+	// Previously a separate SELECT count(*) followed by a DELETE ... LIMIT: two parallel logins
+	// could both read the count before either eviction landed, so both saw "under the limit" and
+	// the account ended up with more live sessions than configured. A single statement that
+	// ranks every live session by age and deletes everything past the limit removes the gap
+	// between reading the count and acting on it — there is no longer a separate read to race.
 	_, _ = a.DB.Pool.Exec(ctx, `
 		DELETE FROM sessions WHERE id IN (
-			SELECT id FROM sessions WHERE user_id=$1 AND expires_at > now()
-			ORDER BY created_at ASC LIMIT $2)`, userID, toEvict)
+			SELECT id FROM (
+				SELECT id, row_number() OVER (ORDER BY created_at DESC) AS rn
+				FROM sessions WHERE user_id=$1 AND expires_at > now()
+			) ranked WHERE rn > $2)`, userID, limit)
 }
 
 // dirSize walks root and sums the size of every regular file in it — used for the total server
