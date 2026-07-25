@@ -9,6 +9,7 @@ package api
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"io"
 	"net/http"
 	"os"
@@ -20,6 +21,14 @@ import (
 func (a *API) handleUploadAvatar(w http.ResponseWriter, r *http.Request) {
 	u := a.requireUser(w, r)
 	if u == nil {
+		return
+	}
+
+	// Same hourly upload counter the attachment endpoint uses. Avatars were left out of it,
+	// which made this the one unmetered way to write files: replacing your avatar in a loop
+	// fills the disk at whatever rate the network allows, and each replacement is a fresh write
+	// even though only the newest file is kept.
+	if !a.enforceAction(w, r, u.ID, "upload", "limits.actions.uploads_per_hour", 0) {
 		return
 	}
 
@@ -51,6 +60,25 @@ func (a *API) handleUploadAvatar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Strip metadata and reject oversized canvases, as for task attachments. An avatar is the
+	// most widely visible image on the server — it renders next to every task and comment the
+	// user touches — so a selfie's GPS tag here reaches the largest possible audience.
+	payload, exactSize, err := sanitizeUpload(mime, io.MultiReader(newBytesReader(head[:n]), file))
+	if err != nil {
+		if errors.Is(err, ErrImageTooLarge) {
+			errJSON(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		errJSON(w, http.StatusInternalServerError, "read error")
+		return
+	}
+	if exactSize >= 0 {
+		if err := a.checkStorageQuota(r.Context(), exactSize); err != nil {
+			errJSON(w, http.StatusInsufficientStorage, err.Error())
+			return
+		}
+	}
+
 	rnd := make([]byte, 8)
 	_, _ = rand.Read(rnd)
 	rel := filepath.Join("avatars", strconv.FormatInt(u.ID, 10)+"-"+hex.EncodeToString(rnd)+ext)
@@ -64,7 +92,7 @@ func (a *API) handleUploadAvatar(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, http.StatusInternalServerError, "storage unavailable")
 		return
 	}
-	if _, err := io.Copy(dst, io.MultiReader(newBytesReader(head[:n]), file)); err != nil {
+	if _, err := io.Copy(dst, payload); err != nil {
 		dst.Close()
 		_ = os.Remove(abs)
 		errJSON(w, http.StatusInternalServerError, "write error")
@@ -82,6 +110,7 @@ func (a *API) handleUploadAvatar(w http.ResponseWriter, r *http.Request) {
 	if oldPath != nil && *oldPath != "" {
 		_ = os.Remove(filepath.Join(a.Cfg.UploadsDir, *oldPath))
 	}
+	a.countAction(r.Context(), u.ID, "upload")
 	writeJSON(w, http.StatusOK, map[string]any{"avatar_path": rel})
 }
 

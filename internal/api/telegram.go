@@ -23,15 +23,23 @@ func (a *API) handleTelegramStatus(w http.ResponseWriter, r *http.Request) {
 	if u == nil {
 		return
 	}
+	// A personal bot makes the feature usable for this user even when root never configured a
+	// server-wide one, so both are considered before reporting Telegram as unavailable.
+	personalBot := a.personalBotUsername(r.Context(), u.ID)
 	token := a.DB.Setting(r.Context(), "telegram.bot_token", "")
-	if token == "" {
-		writeJSON(w, http.StatusOK, map[string]any{"enabled": false, "linked": false})
+	if token == "" && personalBot == "" {
+		writeJSON(w, http.StatusOK, map[string]any{"enabled": false, "linked": false, "personal_bot": ""})
 		return
 	}
 	var linked bool
 	_ = a.DB.Pool.QueryRow(r.Context(),
 		`SELECT telegram_chat_id IS NOT NULL FROM users WHERE id=$1`, u.ID).Scan(&linked)
-	writeJSON(w, http.StatusOK, map[string]any{"enabled": true, "linked": linked})
+	// Only the bot's public @name is reported; the token never leaves the server.
+	writeJSON(w, http.StatusOK, map[string]any{
+		"enabled":      true,
+		"linked":       linked,
+		"personal_bot": personalBot,
+	})
 }
 
 // POST /api/telegram/link — issues a fresh one-time code and the deep link to hand it to the
@@ -98,7 +106,12 @@ func (a *API) handleTelegramUnlink(w http.ResponseWriter, r *http.Request) {
 // written, long before a Telegram API round trip would finish, so the outbound call gets its own
 // short-lived context instead of inheriting one that's already ending.
 func (a *API) sendTelegram(ctx context.Context, userID int64, kind string, payload map[string]any) {
-	token := a.DB.Setting(ctx, "telegram.bot_token", "")
+	// A user's own bot takes precedence over the server-wide one: they configured it
+	// deliberately, and their chat id belongs to that bot, not to root's.
+	token := a.personalBotToken(ctx, userID)
+	if token == "" {
+		token = a.DB.Setting(ctx, "telegram.bot_token", "")
+	}
 	if token == "" {
 		return
 	}

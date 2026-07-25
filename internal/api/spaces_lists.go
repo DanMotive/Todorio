@@ -63,16 +63,33 @@ func (a *API) handleCreateSpace(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]any{"id": id})
 }
 
+// spaceRole returns the user's role in a space: owner | member | viewer | "" (not a member).
+//
+// As in listPermission, an account whose global role is "viewer" is capped at "viewer" here, so
+// the workspace-wide read-only role also holds for space-scoped actions instead of being
+// overridden by a space membership that says "owner". The user's own role is fetched in the same
+// round trip rather than by a second query, and the signature is left alone so that none of the
+// existing call sites have to change.
 func (a *API) spaceRole(r *http.Request, u int64, isAdmin bool, spaceID int64) string {
 	if isAdmin {
 		return "owner"
 	}
-	var role string
-	if a.DB.Pool.QueryRow(r.Context(),
-		`SELECT role FROM space_members WHERE space_id=$1 AND user_id=$2`, spaceID, u).Scan(&role) != nil {
+	var role *string
+	var globalRole string
+	if a.DB.Pool.QueryRow(r.Context(), `
+		SELECT sm.role, us.role
+		FROM users us
+		LEFT JOIN space_members sm ON sm.space_id=$2 AND sm.user_id=us.id
+		WHERE us.id=$1`, u, spaceID).Scan(&role, &globalRole) != nil {
 		return ""
 	}
-	return role
+	if role == nil {
+		return ""
+	}
+	if globalRole == "viewer" && *role != "viewer" {
+		return "viewer"
+	}
+	return *role
 }
 
 // PATCH /api/spaces/{id} {name?, settings?} — space owner only (settings: workflow, Pulse, rankings, ...).

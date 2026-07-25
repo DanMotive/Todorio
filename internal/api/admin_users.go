@@ -80,6 +80,7 @@ func (a *API) handleApproveUser(w http.ResponseWriter, r *http.Request) {
 	var username string
 	_ = a.DB.Pool.QueryRow(r.Context(), `SELECT username FROM users WHERE id=$1`, id).Scan(&username)
 	a.postApprove(r.Context(), id, username, in.Role)
+	a.audit(r, admin, auditUserApprove, "user", id, map[string]any{"username": username, "role": in.Role})
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -126,12 +127,14 @@ func (a *API) handleSetUserStatus(w http.ResponseWriter, r *http.Request) {
 		_, _ = a.DB.Pool.Exec(r.Context(), `DELETE FROM sessions WHERE user_id=$1`, id)
 		_, _ = a.DB.Pool.Exec(r.Context(), `UPDATE tasks SET assignee_id=NULL WHERE assignee_id=$1 AND completed_at IS NULL`, id)
 	}
+	a.audit(r, admin, auditUserStatus, "user", id, map[string]any{"status": in.Status, "target_role": targetRole})
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 // POST /api/admin/users/{id}/reset-password — generates a temporary password (no emails — the admin shares it in person).
 func (a *API) handleResetPassword(w http.ResponseWriter, r *http.Request) {
-	if a.requireAdmin(w, r) == nil {
+	admin := a.requireAdmin(w, r)
+	if admin == nil {
 		return
 	}
 	id, err := pathID(r)
@@ -152,6 +155,8 @@ func (a *API) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 	_, _ = a.DB.Pool.Exec(r.Context(),
 		`UPDATE users SET password_hash=$2, must_change_password=true WHERE id=$1`, id, hash)
 	_, _ = a.DB.Pool.Exec(r.Context(), `DELETE FROM sessions WHERE user_id=$1`, id)
-	// The temporary password is shown to the admin once and never written to logs.
+	// The temporary password is shown to the admin once and never written to logs — including
+	// the audit trail, which records only that a reset happened.
+	a.audit(r, admin, auditUserResetPassword, "user", id, nil)
 	writeJSON(w, http.StatusOK, map[string]string{"temp_password": temp})
 }

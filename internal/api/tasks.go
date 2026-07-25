@@ -388,6 +388,11 @@ func (a *API) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 		// A finished task should not keep accruing focus time — the sidebar timer would go on
 		// ticking against work that is already closed.
 		a.closeFocusForTask(r, id, u)
+		// Anything that was waiting on this task may now be workable — see unblock.go. Guarded by
+		// the status actually changing, so re-saving an already-done task doesn't re-announce it.
+		if *in.Status != oldStatus {
+			a.notifyUnblocked(r, id, u)
+		}
 	}
 
 	if in.AssigneeID != nil && (oldAssignee == nil || *oldAssignee != *in.AssigneeID) && *in.AssigneeID != u.ID {
@@ -535,6 +540,7 @@ func (a *API) handleDeleteTaskPermanent(w http.ResponseWriter, r *http.Request) 
 		errJSON(w, http.StatusNotFound, "task not found or not archived — archive it first")
 		return
 	}
+	a.audit(r, u, auditTaskPurge, "task", id, nil)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 

@@ -2,11 +2,15 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
+	"log"
 	"net/http"
 	"regexp"
 	"strings"
 
 	"github.com/DanMotive/Todorio/internal/auth"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 var usernameRe = regexp.MustCompile(`^[a-zA-Z0-9_]{3,32}$`)
@@ -57,6 +61,17 @@ func (a *API) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Reject a name that differs from an existing one only by case before spending 64 MB on a
+	// hash. The unique index from migration 0012 is the actual guarantee (this check races); it
+	// is here so the common case returns a clear 409 rather than a constraint violation.
+	var taken bool
+	_ = a.DB.Pool.QueryRow(r.Context(),
+		`SELECT EXISTS(SELECT 1 FROM users WHERE lower(username)=lower($1))`, in.Username).Scan(&taken)
+	if taken {
+		errJSON(w, http.StatusConflict, "username is already taken")
+		return
+	}
+
 	hash, err := auth.HashPassword(in.Password)
 	if err != nil {
 		errJSON(w, http.StatusInternalServerError, "server error")
@@ -68,7 +83,19 @@ func (a *API) handleRegister(w http.ResponseWriter, r *http.Request) {
 	role, status := "user", "pending"
 	switch {
 	case total == 0:
-		role, status = "root", "active" // dev bootstrap: the very first account on the server
+		// Dev bootstrap: the very first account on the server becomes root.
+		//
+		// This is convenient locally and dangerous in production: an instance that is reachable
+		// before `todorio setup` has been run hands root to whoever registers first. Operators who
+		// provision the root account another way can shut the door with
+		//   todorio server policy set registration.bootstrap_root false
+		// The default stays true so existing installs behave exactly as before.
+		if a.DB.Setting(r.Context(), "policy.registration.bootstrap_root", "true") != "true" {
+			errJSON(w, http.StatusForbidden, "registration is closed until an administrator completes setup")
+			return
+		}
+		log.Printf("register: granting root to the first account %q (bootstrap)", in.Username)
+		role, status = "root", "active"
 	case invite != nil:
 		role, status = invite.Role, "active" // invite codes activate instantly, no manual approval
 	}
@@ -79,7 +106,22 @@ func (a *API) handleRegister(w http.ResponseWriter, r *http.Request) {
 		 ON CONFLICT (username) DO NOTHING RETURNING id`,
 		in.Username, hash, role, status).Scan(&id)
 	if err != nil {
-		errJSON(w, http.StatusConflict, "username is already taken")
+		// Every failure used to be reported as "username is already taken", so a database that was
+		// out of disk, mid-failover or missing a column looked to the user like a name collision —
+		// and left nothing in the log to say otherwise. Only the two genuine collision cases map to
+		// 409 now; anything else is a server error and gets recorded.
+		var pgErr *pgconn.PgError
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			// ON CONFLICT DO NOTHING matched: the exact username already exists.
+			errJSON(w, http.StatusConflict, "username is already taken")
+		case errors.As(err, &pgErr) && pgErr.Code == "23505":
+			// Unique violation from the case-insensitive index (migration 0012).
+			errJSON(w, http.StatusConflict, "username is already taken")
+		default:
+			log.Printf("register: inserting user %q: %v", in.Username, err)
+			errJSON(w, http.StatusInternalServerError, "server error")
+		}
 		return
 	}
 	if invite != nil {
@@ -92,6 +134,7 @@ func (a *API) handleRegister(w http.ResponseWriter, r *http.Request) {
 }
 
 // POST /api/login — login by username/password; totp_code is required when 2FA is enabled.
+// A recovery code is accepted in the same field as the TOTP code.
 func (a *API) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Username string `json:"username"`
@@ -104,46 +147,77 @@ func (a *API) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	// Rate limit by IP+username so a lockout on one account can't be used to lock out everyone
 	// sharing an IP, while still stopping a brute-force attempt against a single account.
-	limitKey := clientIP(r) + ":" + in.Username
-	if !loginLimiter.allow(limitKey, a.maxLoginAttempts(r)) {
+	// Lower-cased so that alternating the capitalisation of the name cannot buy extra attempts.
+	limitKey := clientIP(r) + ":" + strings.ToLower(in.Username)
+	if !loginLimiter.begin(limitKey, a.maxLoginAttempts(r)) {
 		errJSON(w, http.StatusTooManyRequests, "too many failed login attempts — try again in a few minutes")
 		return
 	}
+	// begin() has claimed a slot; end() must run exactly once to release it. Anything that leaves
+	// this handler without having authenticated the user counts as a failed attempt.
+	failed := true
+	defer func() { loginLimiter.end(limitKey, failed) }()
+
 	var (
 		id                      int64
 		hash, role, status      string
 		mustChange, totpEnabled bool
 		totpSecret              *string
+		totpLastCounter         *int64
 	)
 	err := a.DB.Pool.QueryRow(r.Context(),
-		`SELECT id, password_hash, role, status, must_change_password, totp_secret, totp_enabled
+		`SELECT id, password_hash, role, status, must_change_password, totp_secret, totp_enabled, totp_last_counter
 		 FROM users WHERE username=$1 AND archived_at IS NULL`,
-		in.Username).Scan(&id, &hash, &role, &status, &mustChange, &totpSecret, &totpEnabled)
-	if err != nil || !auth.VerifyPassword(in.Password, hash) {
-		loginLimiter.fail(limitKey)
+		in.Username).Scan(&id, &hash, &role, &status, &mustChange, &totpSecret, &totpEnabled, &totpLastCounter)
+	if err != nil {
+		// No such user. Burn the same argon2 work a real verification would have cost before
+		// answering — otherwise this branch returns in microseconds while a valid username takes
+		// tens of milliseconds, and the identical error message stops hiding anything.
+		auth.BurnPasswordTime(in.Password)
+		errJSON(w, http.StatusUnauthorized, "invalid username or password")
+		return
+	}
+	if !auth.VerifyPassword(in.Password, hash) {
 		errJSON(w, http.StatusUnauthorized, "invalid username or password")
 		return
 	}
 	if totpEnabled {
 		if in.TOTPCode == "" {
+			// Not a failed attempt: the password was right and the client is being asked for the
+			// second factor. Counting it would let a normal two-step login burn through the quota.
+			failed = false
 			writeJSON(w, http.StatusUnauthorized, map[string]any{"totp_required": true})
 			return
 		}
-		if totpSecret == nil || !auth.VerifyTOTP(*totpSecret, in.TOTPCode) {
-			loginLimiter.fail(limitKey)
+		// Per-account lockout, on top of the per-IP limiter: the code space is only 10^6 and an
+		// attacker who already has the password can otherwise spread guesses across addresses.
+		if locked, _ := a.totpLocked(r.Context(), id); locked {
+			failed = false // already being counted by the account-level lock
+			errJSON(w, http.StatusTooManyRequests, "too many invalid two-factor codes — try again later")
+			return
+		}
+		switch {
+		case a.verifyUserTOTP(r.Context(), id, totpSecret, totpLastCounter, in.TOTPCode):
+			// ok
+		case a.consumeRecoveryCode(r.Context(), id, in.TOTPCode):
+			log.Printf("login: user %d signed in with a recovery code", id)
+		default:
+			a.totpFail(r.Context(), id)
 			errJSON(w, http.StatusUnauthorized, "invalid two-factor code")
 			return
 		}
 	}
 	if status == "blocked" || status == "rejected" {
+		failed = false
 		errJSON(w, http.StatusForbidden, "access disabled by the administrator")
 		return
 	}
 	a.enforceSessionLimit(r.Context(), id)
-	if err := auth.CreateSession(r.Context(), a.DB, w, id, r.UserAgent(), a.Cfg.HTTPS); err != nil {
+	if err := auth.CreateSession(r.Context(), a.DB, w, id, r.UserAgent(), auth.SecureRequest(r, a.Cfg.HTTPS)); err != nil {
 		errJSON(w, http.StatusInternalServerError, "session error")
 		return
 	}
+	failed = false
 	loginLimiter.reset(limitKey)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"id": id, "username": in.Username, "role": role, "status": status,
@@ -152,7 +226,7 @@ func (a *API) handleLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) handleLogout(w http.ResponseWriter, r *http.Request) {
-	auth.DestroySession(r.Context(), a.DB, w, r)
+	auth.DestroySession(r.Context(), a.DB, w, r, auth.SecureRequest(r, a.Cfg.HTTPS))
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -263,5 +337,12 @@ func (a *API) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 	}
 	_, _ = a.DB.Pool.Exec(r.Context(),
 		`UPDATE users SET password_hash=$2, must_change_password=false WHERE id=$1`, u.ID, newHash)
+	// Sign the other devices out. Someone changing their password because it may have leaked
+	// gains nothing while whoever holds the old one is still sitting on a valid 30-day cookie —
+	// that session would simply carry on. The current session is kept so the user is not thrown
+	// out of the tab they just used, which also matches what the forced-change screen expects.
+	if err := auth.DeleteOtherSessions(r.Context(), a.DB, u.ID, auth.CurrentSessionID(r)); err != nil {
+		log.Printf("password change: revoking other sessions for user %d: %v", u.ID, err)
+	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }

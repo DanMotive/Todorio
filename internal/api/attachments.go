@@ -3,6 +3,7 @@ package api
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -115,6 +116,9 @@ func (a *API) uploadAttachment(w http.ResponseWriter, r *http.Request, targetTyp
 		return
 	}
 	defer file.Close()
+	// header.Size is the length the client declared for this part, not what it actually sends,
+	// so this is only a cheap early rejection. The quota is charged again below against the real
+	// byte count.
 	if err := a.checkStorageQuota(r.Context(), header.Size); err != nil {
 		errJSON(w, http.StatusInsufficientStorage, err.Error())
 		return
@@ -128,6 +132,25 @@ func (a *API) uploadAttachment(w http.ResponseWriter, r *http.Request, targetTyp
 	if !ok {
 		errJSON(w, http.StatusBadRequest, "images only: jpeg, png, webp, gif")
 		return
+	}
+
+	// Clean the image before it reaches disk: strip EXIF/XMP (a phone photo carries GPS
+	// coordinates, the device serial and the capture time, none of it visible in the UI) and
+	// refuse decompression bombs. See imagemeta.go.
+	payload, exactSize, err := sanitizeUpload(mime, io.MultiReader(newBytesReader(head[:n]), file))
+	if err != nil {
+		if errors.Is(err, ErrImageTooLarge) {
+			errJSON(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		errJSON(w, http.StatusInternalServerError, "read error")
+		return
+	}
+	if exactSize >= 0 {
+		if err := a.checkStorageQuota(r.Context(), exactSize); err != nil {
+			errJSON(w, http.StatusInsufficientStorage, err.Error())
+			return
+		}
 	}
 
 	rnd := make([]byte, 8)
@@ -144,7 +167,7 @@ func (a *API) uploadAttachment(w http.ResponseWriter, r *http.Request, targetTyp
 		return
 	}
 	defer dst.Close()
-	size, err := io.Copy(dst, io.MultiReader(newBytesReader(head[:n]), file))
+	size, err := io.Copy(dst, payload)
 	if err != nil {
 		_ = os.Remove(abs)
 		errJSON(w, http.StatusInternalServerError, "write error")

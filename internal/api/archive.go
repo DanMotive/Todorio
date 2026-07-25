@@ -141,6 +141,7 @@ func (a *API) handleDeleteListPermanent(w http.ResponseWriter, r *http.Request) 
 		errJSON(w, http.StatusNotFound, "list not found or not archived — archive it first")
 		return
 	}
+	a.audit(r, u, auditListPurge, "list", id, nil)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -185,5 +186,6 @@ func (a *API) handleDeleteSpacePermanent(w http.ResponseWriter, r *http.Request)
 		errJSON(w, http.StatusNotFound, "space not found or not archived — archive it first")
 		return
 	}
+	a.audit(r, u, auditSpacePurge, "space", id, nil)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }

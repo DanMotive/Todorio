@@ -44,6 +44,8 @@
   "profile.reminders_overdue": "Nag me daily until it's shipped",
   "profile.type.overdue": "Stale tickets",
   "notif.kind.status_changed": "Someone touched the status",
+  "notif.kind.task_unblocked": "Task unblocked",
+  "task.system.unblocked": "unblocked — every dependency is finished",
   "notif.kind.due_changed": "Deadline got moved",
   "forcepw.title": "Set a real password",
   "forcepw.text": "Yo {username} — for security's sake, set yourself a real password before diving in.",

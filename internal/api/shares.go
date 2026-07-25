@@ -125,9 +125,40 @@ func (a *API) handleRevokeShareLink(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-// GET /api/public/{token}?password= — unauthenticated read-only view of a shared list.
+// Unauthenticated read-only view of a shared list.
+//
+// GET /api/public/{token}[?password=] — kept as-is for existing links and bookmarks.
+//
+// Passing the password in the query string is not great: it ends up in proxy logs, in the
+// browser's history and in the Referer of anything the page loads. It stays supported because
+// links in the wild use it, and POST below offers the same thing with the password in the body.
 func (a *API) handlePublicShare(w http.ResponseWriter, r *http.Request) {
+	a.servePublicShare(w, r, r.URL.Query().Get("password"))
+}
+
+// POST /api/public/{token} {password} — same response, with the password kept out of the URL.
+func (a *API) handlePublicSharePost(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Password string `json:"password"`
+	}
+	if r.ContentLength > 0 {
+		if err := readJSON(r, &in); err != nil {
+			errJSON(w, http.StatusBadRequest, "invalid request")
+			return
+		}
+	}
+	a.servePublicShare(w, r, in.Password)
+}
+
+func (a *API) servePublicShare(w http.ResponseWriter, r *http.Request, password string) {
 	token := r.PathValue("token")
+	// policy.sharing.public_links was only consulted when a link was created, so switching the
+	// feature off left every previously issued link serving data to the internet. An admin who
+	// turns sharing off means "nobody outside can read this", not "no new links, please".
+	if a.DB.Setting(r.Context(), "policy.sharing.public_links", "true") == "false" {
+		errJSON(w, http.StatusForbidden, "public links are disabled on this server")
+		return
+	}
 	var listID int64
 	var expiresAt *time.Time
 	var revokedAt *time.Time
@@ -144,11 +175,21 @@ func (a *API) handlePublicShare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if passwordHash != nil {
-		password := r.URL.Query().Get("password")
-		if password == "" || !auth.VerifyPassword(password, *passwordHash) {
+		// Unauthenticated and previously unlimited: the password on a share link could be ground
+		// down at whatever rate the network allowed. Same window and counter as the login form,
+		// keyed per link and per address.
+		key := "share:" + token + ":" + clientIP(r)
+		if !loginLimiter.begin(key, a.intSetting(r.Context(), "limits.share.max_attempts", 10)) {
+			errJSON(w, http.StatusTooManyRequests, "too many attempts — try again in a few minutes")
+			return
+		}
+		ok := password != "" && auth.VerifyPassword(password, *passwordHash)
+		loginLimiter.end(key, !ok)
+		if !ok {
 			errJSON(w, http.StatusUnauthorized, "password required")
 			return
 		}
+		loginLimiter.reset(key)
 	}
 	var listName string
 	if a.DB.Pool.QueryRow(r.Context(), `SELECT name FROM lists WHERE id=$1 AND archived_at IS NULL`, listID).Scan(&listName) != nil {

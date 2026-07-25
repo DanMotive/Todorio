@@ -251,3 +251,54 @@ func processUpdate(ctx context.Context, d *db.DB, up update) {
 		log.Printf("telegram: linking chat %d: %v", up.Message.Chat.ID, err)
 	}
 }
+
+// WaitForStart watches one specific bot for a "/start <code>" message and returns the chat id it
+// came from.
+//
+// This exists for personal bots: a user pastes their own token, and their own bot has to be
+// polled to catch their /start. Run() above cannot do it - it polls the single server-wide token,
+// and each token is a different bot with a different update queue.
+//
+// Deliberately short-lived and caller-driven rather than a goroutine per user. Once a chat id is
+// known, delivery is pure outbound sendMessage, so a personal bot needs listening exactly once:
+// during linking. Keeping a permanent poller per user would mean one long-lived HTTPS connection
+// for every account that ever tried this, most of them for bots that are never messaged again -
+// paid forever to receive nothing. The caller supplies the deadline via ctx.
+//
+// The offset starts at 0 so a /start that arrived before this call (the user pressing Start in
+// Telegram first, then clicking confirm in the browser) is still found in the backlog.
+func WaitForStart(ctx context.Context, token, code string) (int64, error) {
+	var offset int64
+	for {
+		if err := ctx.Err(); err != nil {
+			return 0, err
+		}
+		q := url.Values{
+			// Short poll window: the request has to come back often enough to notice ctx being
+			// cancelled and to stay well inside the HTTP client's own 40s timeout.
+			"timeout": {"10"},
+			"offset":  {strconv.FormatInt(offset, 10)},
+		}
+		updates, err := getCall[[]update](ctx, token, "getUpdates", q)
+		if err != nil {
+			// A cancelled context surfaces here as a transport error; report the context's reason
+			// instead, so the caller can tell "user never pressed start" from "the token is bad".
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return 0, ctxErr
+			}
+			return 0, err
+		}
+		for _, up := range updates {
+			if up.UpdateID >= offset {
+				offset = up.UpdateID + 1
+			}
+			if up.Message == nil {
+				continue
+			}
+			got, ok := parseStartCode(up.Message.Text)
+			if ok && got == code {
+				return up.Message.Chat.ID, nil
+			}
+		}
+	}
+}

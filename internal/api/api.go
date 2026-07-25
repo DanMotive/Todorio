@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"net/http"
@@ -49,6 +50,7 @@ func (a *API) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/admin/users/{id}/approve", a.handleApproveUser)
 	mux.HandleFunc("POST /api/admin/users/{id}/status", a.handleSetUserStatus)
 	mux.HandleFunc("POST /api/admin/users/{id}/reset-password", a.handleResetPassword)
+	mux.HandleFunc("GET /api/admin/audit", a.handleAdminAudit)
 
 	// --- spaces and lists ---
 	mux.HandleFunc("GET /api/spaces", a.handleListSpaces)
@@ -71,6 +73,7 @@ func (a *API) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/lists/{id}/share", a.handleCreateShareLink)
 	mux.HandleFunc("DELETE /api/shares/{id}", a.handleRevokeShareLink)
 	mux.HandleFunc("GET /api/public/{token}", a.handlePublicShare)
+	mux.HandleFunc("POST /api/public/{token}", a.handlePublicSharePost)
 
 	// --- tasks ---
 	mux.HandleFunc("GET /api/lists/{id}/tasks", a.handleListTasks)
@@ -116,6 +119,11 @@ func (a *API) Routes(mux *http.ServeMux) {
 	// --- export / import (data portability) ---
 	mux.HandleFunc("GET /api/spaces/{id}/export", a.handleExportSpace)
 	mux.HandleFunc("POST /api/spaces/import", a.handleImportSpace)
+	// Foreign formats are translated into the export document above and then handed to the same
+	// importer, so they inherit its permission and quota checks unchanged.
+	mux.HandleFunc("POST /api/import/csv", a.handleImportCSV)
+	mux.HandleFunc("POST /api/import/trello", a.handleImportTrello)
+	mux.HandleFunc("GET /api/spaces/{id}/workload", a.handleSpaceWorkload)
 
 	// --- TOTP (2FA for root/admins) ---
 	mux.HandleFunc("POST /api/me/totp/setup", a.handleTOTPSetup)
@@ -159,6 +167,8 @@ func (a *API) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/notes/{id}", a.handleGetNote)
 	mux.HandleFunc("PATCH /api/notes/{id}", a.handleUpdateNote)
 	mux.HandleFunc("DELETE /api/notes/{id}", a.handleArchiveNote)
+	mux.HandleFunc("GET /api/notes/{id}/tasks", a.handleNoteTasks)
+	mux.HandleFunc("POST /api/notes/{id}/tasks", a.handleCreateTasksFromNote)
 
 	// --- favorites ---
 	mux.HandleFunc("GET /api/favorites", a.handleListFavorites)
@@ -220,8 +230,24 @@ func dbFail(r *http.Request, op string, err error) {
 	log.Printf("db error: %s: %v [%s %s]", op, err, r.Method, r.URL.Path)
 }
 
+// maxJSONBody caps how much of a request body a JSON handler will read.
+//
+// json.Decoder reads until EOF. Uploads are bounded (limits.uploads.max_file_size_mb, plus
+// http.MaxBytesReader on the multipart handlers), but every JSON endpoint accepted a body of any
+// size: one authenticated POST streaming gigabytes of digits into a number field is enough to
+// drive the process into swap or the OOM killer, with no upload quota or action counter involved.
+// Since readJSON is the single entry point every handler shares, one limit here covers all of
+// them at once.
+//
+// 1 MiB is far above anything legitimate. The largest real payloads are task descriptions and
+// note bodies (text fields on the order of kilobytes); bulk imports come in through the
+// attachment upload path, which has its own, larger limit.
+const maxJSONBody = 1 << 20
+
 func readJSON(r *http.Request, dst any) error {
-	dec := json.NewDecoder(r.Body)
+	// LimitReader rather than http.MaxBytesReader: readJSON has no ResponseWriter to hand it,
+	// and a truncated body already fails decoding, which every caller turns into a 400.
+	dec := json.NewDecoder(io.LimitReader(r.Body, maxJSONBody))
 	dec.DisallowUnknownFields()
 	return dec.Decode(dst)
 }
@@ -247,9 +273,15 @@ func pathIDNamed(r *http.Request, name string) (int64, error) {
 // session would land exactly at the configured limit (spec section 10 example: "10 sessions per
 // user"). Rejecting the login outright would be a worse experience than quietly signing the
 // oldest device out — the same tradeoff most apps with a "log out other devices" limit make.
-// limit <= 0 (including the "not configured" default) means unlimited: nothing to do.
+// limit <= 0 means unlimited: nothing to do. That stays an explicit admin choice (spec section
+// 10), but it is no longer the *default*. Shipping the default as 0 meant every install ran with
+// no cap at all: sessions live for 30 days, so an account that signs in from a new browser now
+// and then accumulates dozens of valid cookies, each one an independent way in, and a token
+// stolen from a laptop that was replaced a year ago still works. Ten is generous for real use
+// (phone, laptop, work machine, a few stale ones) and bounds the blast radius; an operator who
+// genuinely wants unlimited can still set 0 explicitly.
 func (a *API) enforceSessionLimit(ctx context.Context, userID int64) {
-	limit := a.intSetting(ctx, "limits.login.max_sessions_per_user", 0)
+	limit := a.intSetting(ctx, "limits.login.max_sessions_per_user", 10)
 	if limit <= 0 {
 		return
 	}
@@ -354,6 +386,13 @@ func (a *API) requireAdmin(w http.ResponseWriter, r *http.Request) *auth.User {
 
 // listPermission returns the user's permission on a list: owner | editor | viewer | "" (no access).
 // Root/admin get owner.
+//
+// A user whose *global* role is "viewer" is capped at "viewer" here no matter what list_members
+// says. The role existed in the schema, in the admin UI and in the API type, but nothing in the
+// codebase ever read it: granting such an account "editor" on a single list (or adding it to a
+// space that hands out editor by default) gave it full write access, so the read-only role was
+// read-only in name only. Capping in this one function covers every list-scoped handler at once,
+// because they all route their access check through here.
 func (a *API) listPermission(r *http.Request, u *auth.User, listID int64) string {
 	if u.IsAdmin() {
 		return "owner"
@@ -363,6 +402,9 @@ func (a *API) listPermission(r *http.Request, u *auth.User, listID int64) string
 		`SELECT permission FROM list_members WHERE list_id=$1 AND user_id=$2`, listID, u.ID).Scan(&perm)
 	if err != nil {
 		return ""
+	}
+	if u.IsViewer() && permAtLeast(perm, "editor") {
+		return "viewer"
 	}
 	return perm
 }

@@ -44,6 +44,8 @@
   "profile.reminders_overdue": "Долбить каждый день, пока не сделаешь",
   "profile.type.overdue": "Протухшие таски",
   "notif.kind.status_changed": "Статус потыкали",
+  "notif.kind.task_unblocked": "Задача разблокирована",
+  "task.system.unblocked": "разблокирована — все зависимости завершены",
   "notif.kind.due_changed": "Дедлайн подвинули",
   "forcepw.title": "Придумай пароль посерьёзнее",
   "forcepw.text": "Здарова, {username} — из соображений безопасности сначала придумай себе нормальный пароль.",

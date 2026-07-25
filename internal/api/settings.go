@@ -177,6 +177,14 @@ func (a *API) handleSetSetting(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, http.StatusInternalServerError, "database error")
 		return
 	}
+	// The key is always recorded; the value only when it isn't a credential.
+	details := map[string]any{"key": in.Key}
+	if auditRedactedKeys[in.Key] {
+		details["value"] = "(redacted)"
+	} else {
+		details["value"] = in.Value
+	}
+	a.audit(r, u, auditSettingChange, "setting", 0, details)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -264,6 +272,7 @@ func (a *API) handleSetLocale(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, http.StatusInternalServerError, "database error")
 		return
 	}
+	a.audit(r, u, auditLocaleToggle, "locale", 0, map[string]any{"locale": in.Locale, "enabled": in.Enabled})
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 

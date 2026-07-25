@@ -4,13 +4,19 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log"
+	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
+	"os/signal"
 	"path"
 	"strings"
+	"syscall"
+	"time"
 
 	assets "github.com/DanMotive/Todorio"
 	"github.com/DanMotive/Todorio/internal/api"
@@ -23,8 +29,26 @@ import (
 	"github.com/DanMotive/Todorio/internal/worker"
 )
 
+// shutdownGrace is how long in-flight work gets to finish after a shutdown signal.
+//
+// Note that /api/events subscribers are long-lived by design and will never finish on their own,
+// so a restart with active browser tabs open always waits out this full window before those
+// connections are forced closed. EventSource reconnects by itself, so the tabs recover. Ten
+// seconds is a compromise: long enough for a slow database write or an upload to land, short
+// enough that `todorio restart` still feels immediate.
+const shutdownGrace = 10 * time.Second
+
 func Run(cfg config.Config, version string) error {
-	ctx := context.Background()
+	// Structured logging. slog.SetDefault also redirects the standard log package, so every
+	// existing log.Printf across the codebase starts producing structured records with a
+	// timestamp and level attached, without having to rewrite each call site.
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})))
+
+	// This context is cancelled when a shutdown signal arrives, which also stops the background
+	// worker and the Telegram poller below — both already take a context and were previously
+	// handed one that was never cancelled.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
 	// --- DB and migrations (embedded in the binary — see assets.go) ---
 	database, err := db.Connect(ctx, cfg.DatabaseURL)
@@ -104,14 +128,68 @@ func Run(cfg config.Config, version string) error {
 	}
 	mux.Handle("/", spaHandler(dist))
 
-	handler := securityHeaders(cfg.HTTPS)(auth.Middleware(database)(mux))
+	// requireSameOrigin sits outside the auth middleware so a rejected cross-site request is
+	// turned away before it costs a database round trip.
+	handler := securityHeaders(cfg.HTTPS)(requireSameOrigin(auth.Middleware(database)(mux)))
 
 	addr := fmt.Sprintf("0.0.0.0:%d", cfg.Port) // listen on all interfaces — allow access by bare IP without a domain
-	log.Printf("Todorio %s running at %s (https=%v)", version, addr, cfg.HTTPS)
-	if cfg.HTTPS && cfg.CertFile != "" && cfg.KeyFile != "" {
-		return http.ListenAndServeTLS(addr, cfg.CertFile, cfg.KeyFile, handler)
+	srv := &http.Server{
+		Addr:    addr,
+		Handler: handler,
+		// http.ListenAndServe leaves every timeout at zero, i.e. infinite. A connection that
+		// opens and then dribbles out a header a second holds a goroutine and its buffers for as
+		// long as it likes; a few thousand of them (Slowloris) exhaust the server without ever
+		// sending a complete request.
+		//
+		// Only the header phase and idle keep-alives are bounded. ReadTimeout is left unset on
+		// purpose because it would also cap the body, and an attachment upload over a weak mobile
+		// connection can legitimately take minutes. WriteTimeout is left unset because /api/events
+		// is a long-lived SSE stream that any write deadline would cut off mid-flight.
+		ReadHeaderTimeout: 15 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
-	return http.ListenAndServe(addr, handler)
+	log.Printf("Todorio %s running at %s (https=%v)", version, addr, cfg.HTTPS)
+
+	// Serving moves to its own goroutine so this one can wait for a signal.
+	//
+	// SIGTERM arrives on every `todorio restart`, every systemd stop and every deploy. Until
+	// now the process died exactly where it stood: a handler midway through a sequence of
+	// statements lost the rest of them, an upload being written to disk left a truncated file
+	// with a database row already pointing at it, and every open SSE stream was cut without
+	// notice. Shutdown stops accepting new connections and gives the work already in progress a
+	// chance to finish.
+	serveErr := make(chan error, 1)
+	go func() {
+		if cfg.HTTPS && cfg.CertFile != "" && cfg.KeyFile != "" {
+			serveErr <- srv.ListenAndServeTLS(cfg.CertFile, cfg.KeyFile)
+			return
+		}
+		serveErr <- srv.ListenAndServe()
+	}()
+
+	select {
+	case err := <-serveErr:
+		// The listener failed on its own (port already in use, bad certificate).
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
+	case <-ctx.Done():
+	}
+
+	// Restore the default signal behaviour: a second Ctrl-C or SIGTERM from an impatient
+	// operator now terminates immediately instead of being swallowed by this handler.
+	stop()
+	log.Printf("shutdown: waiting up to %s for in-flight requests", shutdownGrace)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownGrace)
+	defer cancel()
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		// Expected whenever an SSE stream is still open, since those never go idle.
+		log.Printf("shutdown: grace period expired (%v), closing remaining connections", err)
+		_ = srv.Close()
+	}
+	log.Printf("shutdown complete")
+	return nil
 }
 
 // webFS resolves the frontend to serve. Preference order:
@@ -172,10 +250,81 @@ func securityHeaders(https bool) func(http.Handler) http.Handler {
 			h.Set("X-Content-Type-Options", "nosniff")
 			h.Set("X-Frame-Options", "DENY")
 			h.Set("Referrer-Policy", "no-referrer")
+			// The headers above stop sniffing and framing but say nothing about what the page may
+			// load or execute, so any HTML injection that slipped through (task titles, comments,
+			// the Markdown renderer, a custom logo) could pull in an external script and read the
+			// session. The frontend is a single bundled module with no inline script and no
+			// third-party origins, so it fits within 'self' as-is; 'unsafe-inline' is granted for
+			// styles only, which the bundler needs.
+			h.Set("Content-Security-Policy", strings.Join([]string{
+				"default-src 'self'",
+				"script-src 'self'",
+				"style-src 'self' 'unsafe-inline'",
+				"img-src 'self' data: blob:",
+				"font-src 'self' data:",
+				"connect-src 'self'",
+				"frame-ancestors 'none'",
+				"base-uri 'none'",
+				"form-action 'self'",
+				"object-src 'none'",
+			}, "; "))
 			if https {
 				h.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 			}
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// requireSameOrigin blocks state-changing requests that did not originate from this site.
+//
+// The session cookie is SameSite=Lax, which the browser still attaches to a top-level navigation
+// from anywhere — deliberately, so that a task link in a Telegram notification opens signed in.
+// Lax does not cover a cross-site form submission, and the API sends no CSRF token of its own, so
+// until now another site could POST to an endpoint on the user's behalf. Checking the origin
+// server-side closes that without a token and without touching the frontend: browsers attach
+// Sec-Fetch-Site and Origin to these requests automatically.
+//
+// Safe methods are untouched, so ordinary links, the SSE stream and the public share pages behave
+// exactly as before. Note that a non-browser client (curl, a script) that sends none of these
+// headers will be refused on writes; that is the intended trade, and such a caller only needs to
+// pass -H "Origin: <site>".
+func requireSameOrigin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet, http.MethodHead, http.MethodOptions:
+			next.ServeHTTP(w, r)
+			return
+		}
+		if sameOrigin(r) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusForbidden)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "cross-site request blocked"})
+	})
+}
+
+func sameOrigin(r *http.Request) bool {
+	// Sec-Fetch-Site is the most reliable signal where it exists: the browser fills it in and a
+	// page cannot forge it. "none" means the user typed the URL or used a bookmark.
+	if site := r.Header.Get("Sec-Fetch-Site"); site != "" {
+		return site == "same-origin" || site == "none"
+	}
+	if origin := r.Header.Get("Origin"); origin != "" {
+		return hostMatches(origin, r.Host)
+	}
+	if ref := r.Header.Get("Referer"); ref != "" {
+		return hostMatches(ref, r.Host)
+	}
+	return false
+}
+
+func hostMatches(rawURL, host string) bool {
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Host == "" {
+		return false
+	}
+	return strings.EqualFold(u.Host, host)
 }

@@ -40,6 +40,71 @@ func (a *API) normalizeLocale(raw string) string {
 	return "en-US"
 }
 
+// captionCategory picks which set of phrases describes the period.
+//
+// Migration 0010 shipped seven categories in all 13 languages, but this function only ever
+// returned four of them: perfect_day, inactive and project were unreachable, so 312 of the 728
+// phrases could never appear. The rules below make each one reachable, and each one says
+// something the others do not:
+//
+//   - overdue     — more was missed than finished. Nothing else matters if that is true.
+//   - perfect_day — work was done, nothing is overdue, and the board is empty. This is the
+//     literal claim the phrases make ("Zero leftovers", "Nothing left behind"), so it requires
+//     an actually empty board rather than merely a good week.
+//   - inactive    — nothing was completed and nothing is overdue: a quiet period, not a failure.
+//   - success     — high output, work still open.
+//   - project     — steady progress that visibly outpaces what is left.
+//   - focus       — some progress, but the backlog still dominates.
+//   - neutral     — one or two tasks; too little to characterise.
+//
+// Pure function of three counters, so the thresholds are testable without a database.
+func captionCategory(done, overdue, open int) string {
+	switch {
+	case overdue > 0 && overdue > done:
+		return "overdue"
+	case done > 0 && overdue == 0 && open == 0:
+		return "perfect_day"
+	case done == 0 && overdue == 0:
+		return "inactive"
+	case done >= 10:
+		return "success"
+	case done >= 3 && done >= open:
+		return "project"
+	case done >= 3:
+		return "focus"
+	default:
+		return "neutral"
+	}
+}
+
+// pickCaption returns one half of the caption, falling back rather than returning nothing.
+//
+// Previously a missing row meant a silently blank caption — the failure mode that migration
+// 0010 was written to fix, and one that would come back the moment a new category or a new
+// locale is added without a full set of phrases. The order is: the viewer's language, then
+// English for the same category, then the viewer's language with the always-populated neutral
+// set. Empty only if stat_captions itself is empty.
+func (a *API) pickCaption(ctx context.Context, locale, category string, part int, seed int64) string {
+	attempts := [][2]string{
+		{locale, category},
+		{"en-US", category},
+		{locale, "neutral"},
+		{"en-US", "neutral"},
+	}
+	for _, attempt := range attempts {
+		var text string
+		err := a.DB.Pool.QueryRow(ctx, `
+			SELECT text FROM stat_captions WHERE locale=$1 AND category=$2 AND part=$3
+			ORDER BY id OFFSET (($4 + EXTRACT(DOY FROM now())::int * $3) % GREATEST(
+				(SELECT count(*) FROM stat_captions WHERE locale=$1 AND category=$2 AND part=$3), 1)) LIMIT 1`,
+			attempt[0], attempt[1], part, seed).Scan(&text)
+		if err == nil && text != "" {
+			return text
+		}
+	}
+	return ""
+}
+
 // GET /api/spaces/{id}/stats?period=week|month — space statistics:
 // per-member (done, weighted contribution), "top performer", and a random two-part caption.
 // Rankings can be disabled: spaces.settings -> stats.show_best = false.
@@ -99,31 +164,24 @@ func (a *API) handleStats(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Caption category based on the period's state.
-	category := "neutral"
-	switch {
-	case totalOverdue > totalDone && totalOverdue > 0:
-		category = "overdue"
-	case totalDone >= 10:
-		category = "success"
-	case totalDone >= 3:
-		category = "focus"
-	}
+	// How much work is still open in the space. The per-member totals alone cannot tell
+	// "finished everything" apart from "finished a bit, plenty left", which is exactly the
+	// distinction the perfect_day and project captions are written for.
+	openRemaining := 0
+	_ = a.DB.Pool.QueryRow(r.Context(), `
+		SELECT count(*)::int FROM tasks
+		WHERE archived_at IS NULL AND completed_at IS NULL
+			AND list_id IN (SELECT id FROM lists WHERE space_id = $1 AND archived_at IS NULL)`,
+		spaceID).Scan(&openRemaining)
+
+	category := captionCategory(totalDone, totalOverdue, openRemaining)
 
 	// Two-part caption: deterministic "random" pick per day (seed = space_id + day of year),
-	// so the caption doesn't change on every page refresh.
+	// so the caption doesn't change on every page refresh. The two halves use different seeds
+	// so they don't move in lockstep.
 	locale := a.userLocale(r.Context(), u.ID)
-	var part1, part2 string
-	_ = a.DB.Pool.QueryRow(r.Context(), `
-		SELECT text FROM stat_captions WHERE locale=$1 AND category=$2 AND part=1
-		ORDER BY id OFFSET (($3 + EXTRACT(DOY FROM now())::int) % GREATEST(
-			(SELECT count(*) FROM stat_captions WHERE locale=$1 AND category=$2 AND part=1), 1)) LIMIT 1`,
-		locale, category, spaceID).Scan(&part1)
-	_ = a.DB.Pool.QueryRow(r.Context(), `
-		SELECT text FROM stat_captions WHERE locale=$1 AND category=$2 AND part=2
-		ORDER BY id OFFSET (($3 * 7 + EXTRACT(DOY FROM now())::int * 3) % GREATEST(
-			(SELECT count(*) FROM stat_captions WHERE locale=$1 AND category=$2 AND part=2), 1)) LIMIT 1`,
-		locale, category, spaceID).Scan(&part2)
+	part1 := a.pickCaption(r.Context(), locale, category, 1, spaceID)
+	part2 := a.pickCaption(r.Context(), locale, category, 2, spaceID*7)
 
 	// Leaderboard visibility (spec section 14: "кому показывать — своё место / топ-3 / полная
 	// таблица / только владельцу"). Read from spaces.settings->stats->visibility; anything

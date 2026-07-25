@@ -265,14 +265,18 @@ export function TotpCard() {
   const [setup, setSetup] = useState<{ secret: string; otpauth: string } | null>(null)
   const [code, setCode] = useState("")
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  // Recovery codes come back from /enable exactly once and are never retrievable afterwards,
+  // so they stay on screen until the user navigates away rather than behind a toast.
+  const [recovery, setRecovery] = useState<string[] | null>(null)
 
   const start = async () => {
-    try { setSetup(await api.post("/api/me/totp/setup")); setMsg(null) } catch (e: any) { setMsg({ ok: false, text: e.message }) }
+    try { setSetup(await api.post("/api/me/totp/setup")); setMsg(null); setRecovery(null) } catch (e: any) { setMsg({ ok: false, text: e.message }) }
   }
   const enable = async () => {
     try {
-      await api.post("/api/me/totp/enable", { code })
+      const res: any = await api.post("/api/me/totp/enable", { code })
       setSetup(null); setCode(""); setMsg({ ok: true, text: tr("totp.enabled") })
+      setRecovery(Array.isArray(res?.recovery_codes) ? res.recovery_codes : null)
     } catch (e: any) { setMsg({ ok: false, text: e.message }) }
   }
   const disable = async () => {
@@ -302,6 +306,17 @@ export function TotpCard() {
             2. <input value={code} onChange={(e) => setCode(e.target.value)} placeholder={tr("totp.code")} maxLength={6} />
             <button className="nav-btn" onClick={enable}>{tr("totp.confirm")}</button>
           </div>
+        </div>
+      )}
+      {recovery && (
+        <div style={{ marginTop: 10 }}>
+          <b>{tr("totp.recovery_title")}</b>
+          <div className="muted" style={{ margin: "4px 0" }}>{tr("totp.recovery_desc")}</div>
+          <div className="row" style={{ flexWrap: "wrap", gap: 6 }}>
+            {recovery.map((c) => <code key={c}>{c}</code>)}
+          </div>
+          <button className="nav-btn" style={{ marginTop: 6 }}
+            onClick={() => navigator.clipboard?.writeText(recovery.join("\n"))}>{tr("totp.recovery_copy")}</button>
         </div>
       )}
       {msg && (
