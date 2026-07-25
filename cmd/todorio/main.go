@@ -87,7 +87,7 @@ func usage() {
 	cmdLine("todorio server config set K V", "Settings (default_locale, detect_browser_locale, ...)")
 	cmdLine("todorio server policy set K V", "Policies (registration.mode, users.can_create_spaces, ...)")
 	cmdLine("todorio server limits set K V", "Limits (uploads.max_file_size_mb, ...)")
-	cmdLine("todorio server branding set K V", "Branding (site_name, browser_title, developer_name, ...)")
+	cmdLine("todorio server branding set K V", "Branding (site_name, browser_title, footer_text, ...)")
 	cmdLine("todorio server locales enable L", "Enable a locale (e.g. tr-TR)")
 	fmt.Println()
 	cmdLine("todorio testsql", "Verify every SQL query against the DB (read-only, temporary)")

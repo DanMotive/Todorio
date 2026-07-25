@@ -28,6 +28,20 @@ func (a *API) handleStartFocus(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = readJSON(r, &in)
 
+	// A task ID is user-controlled. Do not create a focus presence entry (or broadcast it)
+	// for a task the caller cannot see. The standalone timer remains available without task_id.
+	if in.TaskID != nil {
+		var listID int64
+		if err := a.DB.Pool.QueryRow(r.Context(), `SELECT list_id FROM tasks WHERE id=$1`, *in.TaskID).Scan(&listID); err != nil {
+			errJSON(w, http.StatusNotFound, "task not found")
+			return
+		}
+		if !permAtLeast(a.listPermission(r, u, listID), "viewer") {
+			errJSON(w, http.StatusForbidden, "no access to task")
+			return
+		}
+	}
+
 	if prev := a.endOpenFocusSession(r, u.ID); prev != nil {
 		a.announceFocus(r, *prev, "focus.stopped", u)
 	}

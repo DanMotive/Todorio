@@ -1,5 +1,5 @@
 // Todorio screens: login, "My tasks", spaces, tasks, notifications, admin panel.
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import {
   api, REACTIONS, DEFAULT_STATUSES,
@@ -8,11 +8,12 @@ import {
 import { AttachmentsBlock, ModalShell, StatsCard, useConfirm, FocusWidget, FocusPresence, NotesPanel, ActivityPanel, ArchivePanel, ArchivedSpacesPanel, FieldsPanel, type FieldDef } from "./extras"
 import { tr, trFormal, setLocale, getLocale, getFormattingLocale, SUPPORTED } from "./i18n"
 import { TimelineView } from "./timeline"
+import { WorkloadPanel, ImportCard } from "./functional"
 import {
-  IconStar, IconRefresh, IconLock, IconX, IconUser, IconPause, IconSlash, IconClock,
+  IconStar, IconRefresh, IconLock, IconX, IconUser, IconPause, IconPlay, IconSlash, IconClock,
   IconGrid, IconArrowLeft, IconList, IconFileText, IconActivity, IconMenu, IconColumns,
   IconTable, IconCheckCircle, IconMessage, IconPin, IconAlertCircle, IconArchive, IconCalendar,
-  IconSliders,
+  IconSliders, IconBarChart,
 } from "./icons"
 
 // ---------- helpers ----------
@@ -144,8 +145,121 @@ export function PendingPage({ onLogout }: { onLogout: () => void }) {
 
 // ---------- tasks ----------
 
+// ---------- inline focus button ----------
+
+// Starting a focus session used to require opening the task and using FocusWidget. This is the
+// same action as an icon next to the title.
+//
+// Whether a session is running is taken from task.active_focus, which the list already loads, so
+// no extra request per row. The click result is kept locally until the list reloads, and the
+// usual custom event tells the sidebar clock to re-read right away.
+function FocusButton({ task, meId }: { task: Task; meId?: number }) {
+  const mine = !!meId && (task.active_focus || []).some((f) => f.user_id === meId)
+  const [running, setRunning] = useState(mine)
+  const [busy, setBusy] = useState(false)
+  useEffect(() => { setRunning(mine) }, [mine])
+
+  async function toggle(e: React.MouseEvent) {
+    e.stopPropagation() // the row itself opens the task
+    setBusy(true)
+    try {
+      if (running) await api.post("/api/focus/stop")
+      else await api.post("/api/focus/start", { task_id: task.id })
+      // Only flip the icon after the server accepted the action. Previously a failed request
+      // still changed the local UI, leaving it out of sync with the sidebar timer.
+      setRunning(!running)
+      window.dispatchEvent(new CustomEvent("todorio:focus-changed"))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const label = running ? tr("focus.stop") : tr("focus.start")
+  return (
+    <button className="nav-btn" style={{ padding: "2px 6px", color: running ? "var(--accent)" : undefined }}
+      title={label} aria-label={label} disabled={busy} onClick={toggle}>
+      {running ? <IconPause size={13} /> : <IconPlay size={13} />}
+    </button>
+  )
+}
+
+// ---------- status chip ----------
+
+// Colours for the four built-in statuses. A space can define its own workflow, so anything
+// unknown gets one of the spare hues, chosen from the name: the same custom status then always
+// looks the same everywhere without storing a colour anywhere.
+const STATUS_VARS: Record<string, string> = {
+  open: "var(--st-open)",
+  in_progress: "var(--st-progress)",
+  review: "var(--st-review)",
+  done: "var(--st-done)",
+}
+const STATUS_ALT = ["var(--st-alt1)", "var(--st-alt2)", "var(--st-alt3)", "var(--st-alt4)"]
+function statusColor(s: string) {
+  if (STATUS_VARS[s]) return STATUS_VARS[s]
+  let h = 0
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0
+  return STATUS_ALT[h % STATUS_ALT.length]
+}
+const statusText = (s: string) => (DEFAULT_STATUSES.includes(s) ? tr("task.status." + s) : s)
+
+// A coloured pill that also switches the status in one click, so a routine change no longer
+// requires the right-click menu or the full task modal. Without `statuses`/`onPick` it stays a
+// read-only label - that is how the kanban header and the table use it.
+function StatusChip({ status, statuses, onPick }: {
+  status: string
+  statuses?: string[]
+  onPick?: (s: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const wrap = useRef<HTMLSpanElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const away = (e: MouseEvent) => {
+      if (wrap.current && !wrap.current.contains(e.target as Node)) setOpen(false)
+    }
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false) }
+    document.addEventListener("mousedown", away)
+    document.addEventListener("keydown", esc)
+    return () => {
+      document.removeEventListener("mousedown", away)
+      document.removeEventListener("keydown", esc)
+    }
+  }, [open])
+  const color = statusColor(status)
+  const list = statuses || []
+  const interactive = !!onPick && list.length > 0
+  return (
+    // The row underneath opens the task on click, so every click inside the chip stops here.
+    <span className="status-wrap" ref={wrap} onClick={(e) => e.stopPropagation()}>
+      <span className={"status-chip" + (interactive ? " clickable" : "")}
+        style={{ color, borderColor: color, background: `color-mix(in srgb, ${color} 16%, transparent)` }}
+        title={statusText(status)}
+        role={interactive ? "button" : undefined}
+        tabIndex={interactive ? 0 : undefined}
+        onClick={interactive ? () => setOpen((v) => !v) : undefined}
+        onKeyDown={interactive ? (e) => {
+          if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpen((v) => !v) }
+        } : undefined}>
+        {statusText(status)}
+      </span>
+      {open && interactive && (
+        <span className="status-pop">
+          {list.map((s) => (
+            <button key={s} type="button" className={"status-opt" + (s === status ? " current" : "")}
+              onClick={() => { setOpen(false); if (s !== status) onPick!(s) }}>
+              <span className="status-dot" style={{ background: statusColor(s) }} />
+              {statusText(s)}
+            </button>
+          ))}
+        </span>
+      )}
+    </span>
+  )
+}
+
 function TaskRow({ task, onToggle, onOpen, favorite, onToggleFavorite, meId,
-  selected, onSelect, onContext }: {
+  selected, onSelect, onContext, statuses, onStatus }: {
   task: Task; onToggle: (t: Task) => void; onOpen: (t: Task) => void
   favorite?: boolean; onToggleFavorite?: (t: Task) => void; meId?: number
   // Bulk selection and the right-click menu are optional: only the list view wires them up, so
@@ -153,6 +267,10 @@ function TaskRow({ task, onToggle, onOpen, favorite, onToggleFavorite, meId,
   selected?: boolean
   onSelect?: (t: Task, additive: boolean) => void
   onContext?: (t: Task, x: number, y: number) => void
+  // Same idea for the inline status switcher: views that don't know the space workflow show the
+  // status as a plain coloured label.
+  statuses?: string[]
+  onStatus?: (t: Task, s: string) => void
 }) {
   const done = !!task.completed_at
   return (
@@ -166,6 +284,9 @@ function TaskRow({ task, onToggle, onOpen, favorite, onToggleFavorite, meId,
       )}
       <input type="checkbox" checked={done} onClick={(e) => e.stopPropagation()} onChange={() => onToggle(task)} />
       <span className="task-title">{task.title}</span>
+      <FocusButton task={task} meId={meId} />
+      <StatusChip status={task.status} statuses={statuses}
+        onPick={onStatus ? (s) => onStatus(task, s) : undefined} />
       {task.subtasks_total > 0 && (
         <span className="muted">{task.subtasks_done}/{task.subtasks_total}</span>
       )}
@@ -916,7 +1037,7 @@ function MyStatsPanel() {
 
 type MySubTab = "all" | "today" | "overdue" | "review" | "no_deadline" | "mentions"
 
-// Onboarding quest progress (spec section 12: "с прогресс-баром освоения"). The quests and the
+// Onboarding quest progress (spec section 12: "с прогресс-б��ром освоения"). The quests and the
 // "create them on approval" step already existed; this was the missing readout.
 //
 // Hides itself in three cases: the account has no quest list at all (quests were off, or this
@@ -1081,6 +1202,8 @@ export function SpacesPage({ me }: { me: Me }) {
         <input className="input grow" placeholder={tr("spaces.new_placeholder")} value={name} onChange={(e) => setName(e.target.value)} />
         <button className="btn" type="submit">{tr("common.create")}</button>
       </form>
+      {/* Import lands in a brand new space, so it belongs next to "create a space". */}
+      <ImportCard onImported={load} />
       <button className="nav-btn row" style={{ gap: 5, marginTop: 14 }} onClick={() => setShowArchived((v) => !v)}>
         <IconArchive size={13} /> {tr("archive.show_archived_spaces")}
       </button>
@@ -1263,7 +1386,7 @@ function SpaceView({ me, space, onBack }: { me: Me; space: Space; onBack: () => 
   const [pulse, setPulse] = useState<Pulse | null>(null)
   const [currentList, setCurrentList] = useState<List | null>(null)
   const [name, setName] = useState("")
-  const [tab, setTab] = useState<"lists" | "timeline" | "notes" | "activity" | "archive" | "fields">("lists")
+  const [tab, setTab] = useState<"lists" | "timeline" | "workload" | "notes" | "activity" | "archive" | "fields">("lists")
   const [templates, setTemplates] = useState<Array<{ id: number; name: string }>>([])
   // Count vs. weight is a per-viewer display preference (spec section 6), so it lives in
   // localStorage rather than on the list — two people can read the same space differently.
@@ -1309,6 +1432,7 @@ function SpaceView({ me, space, onBack }: { me: Me; space: Space; onBack: () => 
       <div className="row tab-strip" style={{ marginBottom: 8, gap: 4 }}>
         <button className={"nav-btn row" + (tab === "lists" ? " active" : "")} style={{ gap: 5, display: "inline-flex" }} onClick={() => setTab("lists")}><IconList size={14} /> {tr("lists.title")}</button>
         <button className={"nav-btn row" + (tab === "timeline" ? " active" : "")} style={{ gap: 5, display: "inline-flex" }} onClick={() => setTab("timeline")}><IconActivity size={14} /> {tr("view.timeline")}</button>
+        <button className={"nav-btn row" + (tab === "workload" ? " active" : "")} style={{ gap: 5, display: "inline-flex" }} onClick={() => setTab("workload")}><IconBarChart size={14} /> {tr("workload.title")}</button>
         <button className={"nav-btn row" + (tab === "notes" ? " active" : "")} style={{ gap: 5, display: "inline-flex" }} onClick={() => setTab("notes")}><IconFileText size={14} /> {tr("notes.title")}</button>
         <button className={"nav-btn row" + (tab === "activity" ? " active" : "")} style={{ gap: 5, display: "inline-flex" }} onClick={() => setTab("activity")}><IconActivity size={14} /> {tr("activity.title")}</button>
         <button className={"nav-btn row" + (tab === "archive" ? " active" : "")} style={{ gap: 5, display: "inline-flex" }} onClick={() => setTab("archive")}><IconArchive size={14} /> {tr("archive.title")}</button>
@@ -1364,6 +1488,7 @@ function SpaceView({ me, space, onBack }: { me: Me; space: Space; onBack: () => 
         </div>
       )}
       {tab === "timeline" && <div className="card"><TimelineView spaceId={space.id} onOpenTask={openTaskById} /></div>}
+      {tab === "workload" && <div className="card"><WorkloadPanel spaceId={space.id} /></div>}
       {tab === "notes" && <div className="card"><NotesPanel spaceId={space.id} /></div>}
       {tab === "activity" && <div className="card"><ActivityPanel spaceId={space.id} /></div>}
       {tab === "archive" && <div className="card"><ArchivePanel me={me} spaceId={space.id} /></div>}
@@ -1390,7 +1515,7 @@ function KanbanBoard({ tasks, statuses, onOpen, onDrop, meId }: {
             if (t && t.status !== s) onDrop(t, s)
           }}>
           <div className="kanban-col-header">
-            <span>{DEFAULT_STATUSES.includes(s) ? tr("task.status." + s) : s}</span>
+            <StatusChip status={s} />
             <span className="muted">{tasks.filter((t) => t.status === s).length}</span>
           </div>
           {tasks.filter((t) => t.status === s).map((t) => (
@@ -1437,7 +1562,7 @@ function TableView({ tasks, onOpen, onToggle, meId }: {
             <td style={{ padding: "8px 6px", textDecoration: t.completed_at ? "line-through" : "none", opacity: t.completed_at ? 0.55 : 1 }}>
               <span className="row" style={{ gap: 6, display: "inline-flex" }}>{t.title} <FocusPresence active={t.active_focus} meId={meId} showLabel={false} /></span>
             </td>
-            <td style={{ padding: "8px 6px" }}>{DEFAULT_STATUSES.includes(t.status) ? tr("task.status." + t.status) : t.status}</td>
+            <td style={{ padding: "8px 6px" }}><StatusChip status={t.status} /></td>
             <td style={{ padding: "8px 6px" }}>{tr("task.priority." + t.priority)}</td>
             <td style={{ padding: "8px 6px" }}>{t.due_at ? <span className={"due " + dueClass(t.due_at)}>{dueLabel(t.due_at)}</span> : ""}</td>
           </tr>
@@ -1741,11 +1866,13 @@ function ListView({ me, list, spaceId, onBack }: { me: Me; list: List; spaceId: 
         <div key={task.id}>
           <TaskRow task={task} onToggle={toggle} onOpen={setOpen} meId={me.id}
             selected={selected.has(task.id)} onSelect={toggleSelect}
+            statuses={statuses} onStatus={moveToStatus}
             onContext={(t, x, y) => setMenu({ task: t, x, y })} />
           {tasks.filter((s) => s.parent_id === task.id).map((sub) => (
             <div key={sub.id} style={{ marginLeft: 28 }}>
               <TaskRow task={sub} onToggle={toggle} onOpen={setOpen} meId={me.id}
                 selected={selected.has(sub.id)} onSelect={toggleSelect}
+                statuses={statuses} onStatus={moveToStatus}
                 onContext={(t, x, y) => setMenu({ task: t, x, y })} />
             </div>
           ))}

@@ -33,6 +33,16 @@
   --due-today:   #F76B15;  /* сегодня */
   --due-soon:    #F5B301;  /* скоро (1–3 дня) */
   --due-later:   #8B8D98;  /* дальше */
+  /* Task status colours: the chip in a task row, the kanban header and the table all read these.
+     Custom statuses from a space workflow fall back to one of the --st-alt* hues. */
+  --st-open:     #8D93AB;
+  --st-progress: #3B82F6;
+  --st-review:   #F5B301;
+  --st-done:     #30A46C;
+  --st-alt1:     #A78BFA;
+  --st-alt2:     #F76B15;
+  --st-alt3:     #22B8CF;
+  --st-alt4:     #E5484D;
   --hover-bg: #212B45;     /* см. .nav-btn:hover/.task-row:hover ниже */
 }
 

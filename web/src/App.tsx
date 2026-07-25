@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { api, type Me, type Profile } from "./api"
+import { api, DEVELOPER_NAME, type Me, type Profile } from "./api"
 import "./theme.css"
 import "./ui.css"
 import { AdminPage, AuthPage, MyTasksPage, NotificationsPage, PendingPage, SpacesPage } from "./views"
@@ -11,7 +11,6 @@ import { IconInbox, IconKeyboard, IconMenu, IconSliders } from "./icons"
 type Bootstrap = {
   site_name: string
   browser_title: string
-  developer_name: string
   developer_url?: string
   footer_text?: string
   show_product_name?: boolean
@@ -347,7 +346,7 @@ export default function App() {
         {view === "notifications" && <NotificationsPage onRead={() => setUnread(0)} />}
         {view === "settings" && <SettingsPage me={me} theme={theme} onUpdateTheme={updateTheme} onProfileSaved={setProfile} />}
         {view === "about" && (
-          <AboutPage siteName={siteName} version={boot?.version} developerName={boot?.developer_name}
+          <AboutPage siteName={siteName} version={boot?.version}
             developerUrl={boot?.developer_url} aboutText={boot?.about_text}
             sourceUrl={boot?.source_url} donateUrl={boot?.donate_url} onBack={() => setView("my")} />
         )}
@@ -365,8 +364,8 @@ export default function App() {
           {boot?.show_product_name !== false && <>{siteName} · </>}
           {tr("footer.developed_by")}{" "}
           {boot?.developer_url
-            ? <a href={boot.developer_url} target="_blank" rel="noreferrer noopener">{boot?.developer_name || "DanMotive"}</a>
-            : (boot?.developer_name || "DanMotive")}
+            ? <a href={boot.developer_url} target="_blank" rel="noreferrer noopener">{DEVELOPER_NAME}</a>
+            : DEVELOPER_NAME}
           {boot?.footer_text ? ` · ${boot.footer_text}` : ""}
           {" · "}
           <button className="linklike" onClick={() => setView("about")}>{tr("about.title")}</button>

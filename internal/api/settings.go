@@ -29,7 +29,9 @@ type settingDef struct {
 var knownSettings = []settingDef{
 	{Key: "branding.site_name", Label: "Site name", Type: "text", Default: "Todorio"},
 	{Key: "branding.browser_title", Label: "Browser tab title", Type: "text", Default: "Todorio"},
-	{Key: "branding.developer_name", Label: "Developer credit", Type: "text", Default: "DanMotive"},
+	// branding.developer_name used to live here. The credit is now fixed in the code, so the key
+	// is deliberately absent: handleSetSetting rejects anything outside settingKeys, which means
+	// POST /api/admin/settings can no longer change (or re-add) it, not even for root.
 	{Key: "branding.developer_url", Label: "Developer link (URL)", Type: "text", Default: ""},
 	{Key: "branding.footer_text", Label: "Footer text", Type: "text", Default: ""},
 	{Key: "branding.show_product_name", Label: "Show the product name in the footer", Type: "bool", Default: "true"},

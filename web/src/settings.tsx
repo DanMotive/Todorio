@@ -7,6 +7,7 @@ import { api, type Me, type Profile, type NotifyPrefs } from "./api"
 import { tr, setLocale, SUPPORTED } from "./i18n"
 import { IconCamera, IconTrash, IconGlobe, IconBell, IconClock, IconShield, IconCheckCircle, IconAlertCircle, IconSliders, IconDownload } from "./icons"
 import { TotpCard } from "./extras"
+import { PersonalBotCard } from "./functional"
 
 const IT_STYLE_LOCALES = ["ru-RU", "en-US"]
 const NOTIFY_TYPES = ["comment", "reaction", "task_assigned", "due_changed", "status_changed", "overdue"]
@@ -434,6 +435,9 @@ export function SettingsPage({ me, theme, onUpdateTheme, onProfileSaved }: {
       <BrowserNotificationRow />
       <TelegramLinkRow telegramEnabled={notifyPrefs.telegram !== false}
         onToggleEnabled={(v) => saveNotifyPrefs({ telegram: v })} />
+      {/* Always visible, unlike the row above: a personal bot is exactly what makes Telegram
+          usable when the server has no bot of its own. */}
+      <PersonalBotCard />
       <div style={{ marginBottom: 12 }}>
         <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>{tr("profile.notif_types")}</div>
         {NOTIFY_TYPES.map((k) => (

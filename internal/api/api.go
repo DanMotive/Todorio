@@ -20,10 +20,12 @@ import (
 	"github.com/DanMotive/Todorio/internal/events"
 )
 
-// Fixed set of reactions from the spec.
+// Fixed set of reactions: done, blocked/no, warning, question. Narrowed from the original ten
+// emoji; the client list in web/src/api.ts must stay identical, and migration 0015 removes rows
+// left in the table by the wider set. The warning emoji carries the U+FE0F variation selector,
+// exactly as the client sends it, so the comparison below is a plain string match.
 var AllowedReactions = map[string]bool{
-	"\U0001F44D": true, "\u2705": true, "\U0001F389": true, "\U0001F525": true, "\U0001F440": true,
-	"\u2753": true, "\u2757": true, "\u274C": true, "\U0001F62D": true, "\u2B50": true,
+	"\u2705": true, "\u274C": true, "\u26A0\uFE0F": true, "\u2753": true,
 }
 
 type API struct {
@@ -98,6 +100,10 @@ func (a *API) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/telegram/status", a.handleTelegramStatus)
 	mux.HandleFunc("POST /api/telegram/link", a.handleTelegramLink)
 	mux.HandleFunc("POST /api/telegram/unlink", a.handleTelegramUnlink)
+	// Personal bot: the settings UI uses these routes to save, confirm, or remove a user's token.
+	mux.HandleFunc("POST /api/me/telegram/bot", a.handleSetPersonalBot)
+	mux.HandleFunc("POST /api/me/telegram/bot/confirm", a.handleConfirmPersonalBot)
+	mux.HandleFunc("DELETE /api/me/telegram/bot", a.handleDeletePersonalBot)
 
 	// --- social interactions ---
 	mux.HandleFunc("GET /api/tasks/{id}/comments", a.handleListComments)

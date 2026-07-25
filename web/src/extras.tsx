@@ -2,9 +2,10 @@
 // activity feed, focus timer, search, server settings.
 import { useEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
-import { api, type Me, type Note, type ActivityEvent, type SearchResult, type SettingDef, type ActiveFocus, type Inbox, type InboxItem } from "./api"
+import { api, DEVELOPER_NAME, type Me, type Note, type ActivityEvent, type SearchResult, type SettingDef, type ActiveFocus, type Inbox, type InboxItem } from "./api"
 import { tr, trFormal, getFormattingLocale } from "./i18n"
 import { renderMarkdown } from "./markdown"
+import { NoteTasksBlock } from "./functional"
 import {
   IconAlertTriangle, IconAlertCircle, IconInfo, IconPin, IconMessage, IconCheckCircle,
   IconBarChart, IconAward, IconPaperclip, IconLock, IconUserPlus, IconCircle, IconFileText,
@@ -443,7 +444,9 @@ export function PublicListPage({ token }: { token: string }) {
 
 // ---------- notes (Markdown pages inside a space) ----------
 
-function NoteModal({ note, onClose, onChanged }: { note: Note; onClose: () => void; onChanged: () => void }) {
+function NoteModal({ note, spaceId, onClose, onChanged }: {
+  note: Note; spaceId: number; onClose: () => void; onChanged: () => void
+}) {
   const { confirm, confirmElement } = useConfirm()
   const [title, setTitle] = useState(note.title)
   const [body, setBody] = useState(note.body || "")
@@ -488,6 +491,7 @@ function NoteModal({ note, onClose, onChanged }: { note: Note; onClose: () => vo
           <textarea className="input" style={{ minHeight: 260, fontFamily: "inherit", resize: "vertical" }}
             value={body} onChange={(e) => { setBody(e.target.value); setSaved(false) }} />
         )}
+        <NoteTasksBlock note={note} spaceId={spaceId} />
         <div className="row" style={{ marginTop: 12, justifyContent: "space-between" }}>
           <button className="nav-btn" style={{ color: "var(--due-overdue)" }}
             onClick={() => confirm({
@@ -536,7 +540,7 @@ export function NotesPanel({ spaceId }: { spaceId: number }) {
         <input className="input grow" placeholder={tr("notes.new_placeholder")} value={title} onChange={(e) => setTitle(e.target.value)} />
         <button className="btn" type="submit">{tr("common.create")}</button>
       </form>
-      {open && <NoteModal note={open} onClose={() => setOpen(null)} onChanged={load} />}
+      {open && <NoteModal note={open} spaceId={spaceId} onClose={() => setOpen(null)} onChanged={load} />}
     </div>
   )
 }
@@ -1281,11 +1285,10 @@ export function FieldsPanel({ spaceId, isOwner }: { spaceId: number; isOwner: bo
 
 // ---------- About page (spec section 18: "также на странице «О сайте» (версия, разработчик)") ----------
 
-export function AboutPage({ siteName, version, developerName, developerUrl, aboutText,
+export function AboutPage({ siteName, version, developerUrl, aboutText,
   sourceUrl, donateUrl, onBack }: {
   siteName: string
   version?: string
-  developerName?: string
   developerUrl?: string
   aboutText?: string
   sourceUrl?: string
@@ -1319,8 +1322,8 @@ export function AboutPage({ siteName, version, developerName, developerUrl, abou
           <span className="muted" style={{ minWidth: 110 }}>{tr("about.developer")}</span>
           <span>
             {devLink
-              ? <a href={devLink} target="_blank" rel="noreferrer noopener">{developerName || "DanMotive"}</a>
-              : (developerName || "DanMotive")}
+              ? <a href={devLink} target="_blank" rel="noreferrer noopener">{DEVELOPER_NAME}</a>
+              : DEVELOPER_NAME}
           </span>
         </div>
         {src && (

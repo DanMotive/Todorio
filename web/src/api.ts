@@ -123,6 +123,10 @@ export type Inbox = { items: InboxItem[]; counts: Record<string, number> }
 export type Workflow = { statuses: string[]; defaults: string[] }
 export const DEFAULT_STATUSES = ["open", "in_progress", "review", "done"]
 
+// The developer credit is fixed in the code, not a branding setting: the server no longer
+// accepts branding.developer_name, so there is nothing for the UI to read or override.
+export const DEVELOPER_NAME = "DanMotive"
+
 export type Note = {
   id: number; space_id: number; list_id: number | null
   title: string; body?: string; created_by: number; created_at: string; updated_at: string
@@ -170,4 +174,6 @@ export type Profile = {
   notify_prefs: NotifyPrefs | null
 }
 
-export const REACTIONS = ["\u{1F44D}", "\u2705", "\u{1F389}", "\u{1F525}", "\u{1F440}", "\u2753", "\u2757", "\u274C", "\u{1F62D}", "\u2B50"]
+// Four reactions only: done, blocked/no, warning, question. The server keeps the same list in
+// AllowedReactions and migration 0015 cleans out anything left over from the old ten-emoji set.
+export const REACTIONS = ["\u2705", "\u274C", "\u26A0\uFE0F", "\u2753"]

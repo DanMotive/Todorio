@@ -98,7 +98,7 @@ func Run(cfg config.Config, version string) error {
 		writeJSON(w, map[string]any{
 			"site_name":         database.Setting(r.Context(), "branding.site_name", "Todorio"),
 			"browser_title":     database.Setting(r.Context(), "branding.browser_title", "Todorio"),
-			"developer_name":    database.Setting(r.Context(), "branding.developer_name", "DanMotive"),
+			"developer_name":    "DanMotive", // fixed credit, not a setting: see knownSettings in internal/api/settings.go
 			"developer_url":     database.Setting(r.Context(), "branding.developer_url", ""),
 			"footer_text":       database.Setting(r.Context(), "branding.footer_text", ""),
 			"show_product_name": database.Setting(r.Context(), "branding.show_product_name", "true") != "false",

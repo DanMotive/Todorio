@@ -17,7 +17,7 @@ Todorio is a private, self-hosted task manager for personal use and small teams.
   (status/priority/overdue) that apply across all of them
 - "My tasks" split into Today / Overdue / In review / No deadline / Mentions
 - Progress bars, configurable workflow statuses, notes (Markdown pages), favorites
-- Comments (with editing), @mentions, reactions, image attachments
+- Comments (with editing), @mentions, reactions (👍 ✅ 🎉 🔥 👀 ❓ ❗ ❌ 😭 ⭐), image attachments
 - In-app notifications, due-date badges, "Do Not Disturb" mode, "while you were away" digest
 - Optional Telegram delivery: root pastes in their own bot token (from @BotFather), each user
   links their own chat from their profile — fully opt-in, and off by default like every other
