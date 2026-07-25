@@ -1,10 +1,14 @@
-# Todorio
+<p align="center">
+  <img src="web/public/icons/icon-192.png" alt="Todorio Logo" width="128"/>
+</p>
 
-**Your private workspace for tasks and teams.**
+<h1 align="center">Todorio</h1>
 
-Todorio is a private, self-hosted task manager for personal use and small teams. It installs on a VPS with a single command, and runs without any external SaaS, email, or public API. Its flagship feature is **"Space Pulse"**: a live summary of your project's health.
+<p align="center">
+  Todorio is a private, self-hosted task manager for personal use and small teams. It installs on a VPS with a single command, and runs without any external SaaS, email, or public API. Its flagship feature is "Space Pulse": a live summary of your project's health.
+</p>
 
-## Features (v1)
+## Features (v1.0.0)
 
 - Login/password authentication (no email required), TOTP for any account, manual registration or invite codes
 - RBAC: root admin / admin / user / viewer, rate-limited login, registration modes (open/invite-only/closed)
