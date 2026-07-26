@@ -68,6 +68,20 @@ jobs:
       - name: Check locales
         run: python3 scripts/check_i18n.py
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # A key table that was merged but never applied is invisible to the check above:
+      # it compares the locale files against each other, and 13 files that are all
+      # equally missing a key look perfectly consistent. The string then reaches the
+      # UI as a raw key (this is exactly how nav.members and focus.* shipped). --check
+      # writes nothing and fails when any table entry is not present in the locales,
+      # so an unapplied table can no longer reach a release unnoticed. The Apply i18n
+      # keys workflow is what makes it pass.
+      - name: Key tables are applied
+        run: node scripts/i18n-add-keys.mjs --check
+
   shell:
     name: Shell
     runs-on: ubuntu-latest
