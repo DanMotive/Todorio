@@ -41,7 +41,9 @@ export type AssignableUser = { id: number; username: string; display_name: strin
 // members.title at the user. trOr compares the result against the key and only then falls back.
 //
 // The fallbacks stay as a safety net for keys that a future screen adds before the locales catch
-// up; en-US and ru-RU now carry every key used here.
+// up. They are written in English rather than Russian: they're what every locale falls back to
+// when a translation is missing, not a Russian-only safety net, and English is the closest thing
+// this project has to a neutral default across its thirteen locales.
 const t = trOr
 
 const SPACE_ROLES = ["owner", "member", "viewer"]
@@ -53,13 +55,13 @@ const LIST_PERMS = ["owner", "editor", "viewer"]
 const roleLabel = (role: string) => {
   switch (role) {
     case "owner":
-      return t("members.role.owner", "владелец")
+      return t("members.role.owner", "owner")
     case "member":
-      return t("members.role.member", "участник")
+      return t("members.role.member", "member")
     case "editor":
-      return t("members.role.editor", "редактор")
+      return t("members.role.editor", "editor")
     case "viewer":
-      return t("members.role.viewer", "читатель")
+      return t("members.role.viewer", "viewer")
     default:
       return role
   }
@@ -123,24 +125,24 @@ function MemberRoster({ base, roleKey, roles, meId }: {
     })
   }
 
-  if (members === null) return <div className="muted">{t("members.loading", "Загрузка…")}</div>
+  if (members === null) return <div className="muted">{t("members.loading", "Loading…")}</div>
 
   return (
     <div>
       {err && <div className="muted" style={{ color: "var(--danger, #c33)", marginBottom: 8 }}>{err}</div>}
 
       {members.length === 0 && !err && (
-        <div className="muted" style={{ marginBottom: 10 }}>{t("members.empty", "Пока никого нет")}</div>
+        <div className="muted" style={{ marginBottom: 10 }}>{t("members.empty", "Nobody has access yet.")}</div>
       )}
 
       {members.map((m) => (
         <div key={m.user_id} className="row" style={{ gap: 8, alignItems: "center", padding: "6px 0", flexWrap: "wrap" }}>
           <Avatar userId={m.user_id} name={m.display_name || m.username} size={26} />
           <span>{m.display_name || `@${m.username}`}</span>
-          {m.user_id === meId && <span className="badge">{t("members.you", "это вы")}</span>}
+          {m.user_id === meId && <span className="badge">{t("members.you", "you")}</span>}
           {m.read_only && (
-            <span className="badge" title={t("members.read_only_hint", "Глобальная роль «читатель» — запись запрещена везде")}>
-              {t("members.read_only", "только чтение")}
+            <span className="badge" title={t("members.read_only_hint", "The account's global role is viewer, so writing is blocked everywhere.")}>
+              {t("members.read_only", "read only")}
             </span>
           )}
           {m.status !== "active" && <span className="badge">{m.status}</span>}
@@ -157,9 +159,9 @@ function MemberRoster({ base, roleKey, roles, meId }: {
             )}
             {canManage && (
               <button className="ctrl-btn" disabled={busy}
-                title={t("members.remove", "Убрать доступ")}
+                title={t("members.remove", "Revoke access")}
                 onClick={() => {
-                  if (!window.confirm(t("members.remove_confirm", "Убрать доступ?"))) return
+                  if (!window.confirm(t("members.remove_confirm", "Revoke access?"))) return
                   run(() => api.del(`${base}/members/${m.user_id}`))
                 }}>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
@@ -172,7 +174,7 @@ function MemberRoster({ base, roleKey, roles, meId }: {
       {canManage && (
         <div className="row" style={{ gap: 6, marginTop: 12, flexWrap: "wrap" }}>
           <input className="input" style={{ maxWidth: 220 }} value={username} disabled={busy}
-            placeholder={t("members.username_placeholder", "Логин пользователя")}
+            placeholder={t("members.username_placeholder", "Username")}
             onChange={(e) => setUsername(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") add() }} />
           <select className="input" style={{ width: "auto" }} value={newRole} disabled={busy}
@@ -180,7 +182,7 @@ function MemberRoster({ base, roleKey, roles, meId }: {
             {roles.map((r) => <option key={r} value={r}>{roleLabel(r)}</option>)}
           </select>
           <button className="btn" disabled={busy || !username.trim()} onClick={add}>
-            {t("members.add", "Добавить")}
+            {t("members.add", "Add")}
           </button>
         </div>
       )}
@@ -221,23 +223,23 @@ export function MembersPage({ me }: { me: Me }) {
 
   return (
     <div>
-      <h2 style={{ marginTop: 0 }}>{t("members.title", "Участники и доступ")}</h2>
+      <h2 style={{ marginTop: 0 }}>{t("members.title", "Members and access")}</h2>
       {err && <div className="muted" style={{ color: "var(--danger, #c33)" }}>{err}</div>}
 
       {spaces.length === 0 ? (
-        <div className="muted">{t("members.no_spaces", "Сначала создайте пространство")}</div>
+        <div className="muted">{t("members.no_spaces", "Create a space first.")}</div>
       ) : (
         <>
           <div className="card">
             <div className="row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-              <b>{t("members.space", "Пространство")}</b>
+              <b>{t("members.space", "Space")}</b>
               <select className="input" style={{ width: "auto" }} value={spaceId ?? ""}
                 onChange={(e) => setSpaceId(Number(e.target.value))}>
                 {spaces.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </div>
             <p className="muted" style={{ fontSize: 13 }}>
-              {t("members.space_hint", "Владелец управляет пространством, участник создаёт списки, читатель только смотрит.")}
+              {t("members.space_hint", "An owner manages the space, a member creates lists, a viewer only reads.")}
             </p>
             {spaceId !== null && (
               <MemberRoster base={`/api/spaces/${spaceId}`} roleKey="role" roles={SPACE_ROLES} meId={me.id} />
@@ -246,27 +248,27 @@ export function MembersPage({ me }: { me: Me }) {
 
           <div className="card">
             <div className="row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-              <b>{t("members.list", "Список")}</b>
+              <b>{t("members.list", "List")}</b>
               <select className="input" style={{ width: "auto" }} value={listId ?? ""}
                 onChange={(e) => setListId(e.target.value === "" ? null : Number(e.target.value))}>
-                <option value="">{t("members.pick_list", "— выберите список —")}</option>
+                <option value="">{t("members.pick_list", "— pick a list —")}</option>
                 {/* A word, not a padlock: emoji are banned in this UI, and check_i18n.py only
                     scans the locale files, so one hidden here would never be caught. */}
                 {lists.map((l) => (
                   <option key={l.id} value={l.id}>
-                    {l.is_private ? `${l.name} · ${t("members.private", "приватный")}` : l.name}
+                    {l.is_private ? `${l.name} · ${t("members.private", "private")}` : l.name}
                   </option>
                 ))}
               </select>
             </div>
             <p className="muted" style={{ fontSize: 13 }}>
-              {t("members.list_hint", "Доступ к списку выдаётся отдельно от пространства: редактор меняет задачи, читатель только смотрит.")}
+              {t("members.list_hint", "List access is granted separately from the space. An editor changes tasks, a viewer only reads.")}
             </p>
             {listId !== null && (
               <>
                 <MemberRoster base={`/api/lists/${listId}`} roleKey="permission" roles={LIST_PERMS} meId={me.id} />
                 <hr style={{ border: 0, borderTop: "1px solid var(--border, #ddd)", margin: "14px 0" }} />
-                <b>{t("share.title", "Публичные ссылки")}</b>
+                <b>{t("share.title", "Public links")}</b>
                 <ShareLinksPanel listId={listId} />
               </>
             )}
@@ -308,7 +310,7 @@ export function AssigneePicker({ listId, value, onChange, disabled }: {
     <select className="input" style={{ width: "auto" }} disabled={disabled || users === null}
       value={value ?? ""}
       onChange={(e) => onChange(e.target.value === "" ? null : Number(e.target.value))}>
-      <option value="">{t("members.unassigned", "Без исполнителя")}</option>
+      <option value="">{t("members.unassigned", "No assignee")}</option>
       {/* A stale assignee (someone whose access was revoked) is still listed so the field never
           silently shows "unassigned" for a task that does have an assignee. */}
       {value !== null && !(users || []).some((u) => u.id === value) && (

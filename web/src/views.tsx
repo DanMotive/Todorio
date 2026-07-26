@@ -119,6 +119,7 @@ function SpaceView({ me, space, onBack }: { me: Me; space: Space; onBack: () => 
   const [pulse, setPulse] = useState<Pulse | null>(null)
   const [currentList, setCurrentList] = useState<List | null>(null)
   const [name, setName] = useState("")
+  const [newIsPrivate, setNewIsPrivate] = useState(false)
   const [tab, setTab] = useState<"lists" | "timeline" | "workload" | "notes" | "activity" | "archive" | "fields" | "workflow">("lists")
   const [templates, setTemplates] = useState<Array<{ id: number; name: string }>>([])
   const [progressMode, setProgressMode] = useState<"count" | "weight">(
@@ -286,13 +287,17 @@ function SpaceView({ me, space, onBack }: { me: Me; space: Space; onBack: () => 
               </div>
             )
           })}
-          <form className="row" style={{ marginTop: 12 }} onSubmit={async (e) => {
+          <form className="row" style={{ marginTop: 12, flexWrap: "wrap" }} onSubmit={async (e) => {
             e.preventDefault()
             if (!name.trim()) return
-            await api.post(`/api/spaces/${space.id}/lists`, { name, is_private: false }).catch(() => {})
-            setName(""); load()
+            await api.post(`/api/spaces/${space.id}/lists`, { name, is_private: newIsPrivate }).catch(() => {})
+            setName(""); setNewIsPrivate(false); load()
           }}>
             <input className="input grow" placeholder={tr("lists.new_placeholder")} value={name} onChange={(e) => setName(e.target.value)} />
+            <label className="row muted" style={{ gap: 4, fontSize: 12 }}>
+              <input type="checkbox" checked={newIsPrivate} onChange={(e) => setNewIsPrivate(e.target.checked)} />
+              {tr("lists.private_checkbox")}
+            </label>
             <button className="btn" type="submit">{tr("common.create")}</button>
           </form>
           {templates.length > 0 && (

@@ -258,6 +258,8 @@ export function TaskModal({ task, me, spaceId, onClose, onChanged }: {
   const [newKey, setNewKey] = useState("")
   const [newValue, setNewValue] = useState("")
   const [fieldSchema, setFieldSchema] = useState<FieldDef[]>([])
+  const [subtasks, setSubtasks] = useState<Task[]>([])
+  const [newSubtaskTitle, setNewSubtaskTitle] = useState("")
 
   const [activeFocus, setActiveFocus] = useState<ActiveFocus[]>(task.active_focus || [])
   useEffect(() => {
@@ -274,6 +276,29 @@ export function TaskModal({ task, me, spaceId, onClose, onChanged }: {
     api.get(`/api/spaces/${spaceId}/workflow`).then((r: Workflow) => setStatuses(r.statuses)).catch(() => {})
     api.get(`/api/spaces/${spaceId}/fields`).then((r) => setFieldSchema(r.fields || [])).catch(() => {})
   }, [spaceId])
+
+  const loadSubtasks = () =>
+    api.get(`/api/lists/${task.list_id}/tasks`)
+      .then((r) => setSubtasks((r.tasks || []).filter((s: Task) => s.parent_id === task.id)))
+      .catch(() => {})
+  useEffect(() => { loadSubtasks() }, [task.id, task.list_id])
+
+  async function addSubtask(e: React.FormEvent) {
+    e.preventDefault()
+    const title = newSubtaskTitle.trim()
+    if (!title) return
+    await api.post(`/api/lists/${task.list_id}/tasks`, { title, parent_id: task.id }).catch(() => {})
+    setNewSubtaskTitle("")
+    loadSubtasks()
+    onChanged()
+  }
+
+  async function toggleSubtask(sub: Task) {
+    const nextStatus = sub.status === "done" ? "open" : "done"
+    await api.patch(`/api/tasks/${sub.id}`, { status: nextStatus }).catch(() => {})
+    loadSubtasks()
+    onChanged()
+  }
 
   async function setCustomField(k: string, v: string) {
     const next = { ...customFields, [k]: v }
@@ -573,6 +598,22 @@ export function TaskModal({ task, me, spaceId, onClose, onChanged }: {
             <input className="input grow" placeholder={tr("task.field_value")} value={newValue} onChange={(e) => setNewValue(e.target.value)} />
             <button className="btn secondary" onClick={addCustomField}>+ {tr("task.add_field")}</button>
           </div>
+        </div>
+
+        <div style={{ marginBottom: 16 }}>
+          <div className="section-title" style={{ fontSize: 13, marginBottom: 6 }}>{tr("task.subtasks")}</div>
+          {subtasks.length === 0 && <p className="muted" style={{ fontSize: 13 }}>{tr("task.subtasks_empty")}</p>}
+          {subtasks.map((s) => (
+            <label key={s.id} className="row" style={{ gap: 8, marginBottom: 4, fontSize: 13 }}>
+              <input type="checkbox" checked={s.status === "done"} onChange={() => toggleSubtask(s)} />
+              <span style={{ textDecoration: s.status === "done" ? "line-through" : undefined }}>{s.title}</span>
+            </label>
+          ))}
+          <form className="row" style={{ marginTop: 6 }} onSubmit={addSubtask}>
+            <input className="input grow" placeholder={tr("task.add_subtask_placeholder")} value={newSubtaskTitle}
+              onChange={(e) => setNewSubtaskTitle(e.target.value)} />
+            <button className="btn secondary" type="submit">{tr("common.create")}</button>
+          </form>
         </div>
 
         <TaskHistorySection taskId={task.id} onRestored={onChanged} />
