@@ -1,0 +1,81 @@
+# Runs scripts/split-views-taskui.mjs and pushes the result to its own branch.
+#
+# Started by hand only, from the Actions tab: this is a one-off refactor, not something that
+# should fire on a push. It lifts the task-row primitives (TaskRow, StatusChip, FocusButton, the
+# due-date and status helpers) out of web/src/views.tsx into web/src/taskui.tsx.
+#
+# Why it has to happen at all: views.tsx is ~100 KB. Any tool that can only write whole files
+# — which is every remote editing path used on this repo — has to re-emit all 100 KB to change
+# three lines, and a single dropped line there is a broken frontend with an unreviewable diff.
+# Splitting the file is what makes normal edits possible again.
+#
+# The result is never pushed to main. The codemod's own narrowing of imports is textual and can
+# drop something reached only through a type position, so the build below is the real check, and
+# the branch gives that refactor a diff worth reading.
+name: Split views.tsx
+
+on:
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Re-run even if web/src/taskui.tsx already exists (overwrites it)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: split-views
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  split:
+    name: Split and verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # --check writes nothing: it prints the plan, the resulting file sizes, and refuses if any
+      # declaration is missing or if the moved code still depends on something staying behind.
+      # Running it first means a failure is diagnosable from the log without any files changed.
+      - name: Plan the split
+        run: node scripts/split-views-taskui.mjs --check
+
+      - name: Perform the split
+        run: |
+          if [ "${{ inputs.force }}" = "true" ]; then
+            node scripts/split-views-taskui.mjs --force
+          else
+            node scripts/split-views-taskui.mjs
+          fi
+
+      - name: Verify it still typechecks and builds
+        working-directory: web
+        run: |
+          npm install --no-audit --no-fund
+          npx tsc --noEmit
+          npm run build
+
+      # Nothing changed means the split had already been applied and committed earlier.
+      - name: Push to a review branch
+        run: |
+          if git diff --quiet && git diff --quiet --cached && [ -z "$(git status --porcelain web/src)" ]; then
+            echo "No changes: the split has already been applied."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b chore/split-views-taskui
+          git add web/src
+          git commit -m "refactor(web): move task presentation primitives into taskui.tsx"
+          # Force-push is safe here: the branch holds nothing but generated output, and a rerun
+          # is meant to replace it wholesale.
+          git push --force origin chore/split-views-taskui
+          echo "Pushed chore/split-views-taskui — open a pull request from it to review the diff."
