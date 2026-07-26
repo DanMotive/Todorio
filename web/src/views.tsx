@@ -131,6 +131,7 @@ function SpaceView({ me, space, onBack }: { me: Me; space: Space; onBack: () => 
   const [duplicatingListId, setDuplicatingListId] = useState<number | null>(null)
   const [dupName, setDupName] = useState("")
   const [dupTargetSpace, setDupTargetSpace] = useState<number>(space.id)
+  const [draggedListId, setDraggedListId] = useState<number | null>(null)
   const { confirm, confirmElement } = useConfirm()
 
   const load = () => {
@@ -166,6 +167,24 @@ function SpaceView({ me, space, onBack }: { me: Me; space: Space; onBack: () => 
       name: dupName.trim() || undefined,
     }).catch(() => {})
     setDuplicatingListId(null)
+    load()
+  }
+
+  // Drag-and-drop reordering of lists within the space. Position updates are sent for every
+  // list in the new order (not just the two swapped), matching how the backend simply stores a
+  // linear "position" column per list (see handleUpdateList) rather than a gap-based ordering
+  // scheme. A PATCH the current user isn't the owner of will just 403 and is ignored — the same
+  // best-effort pattern already used for bulk task edits elsewhere in this file.
+  async function reorderLists(draggedId: number, targetId: number) {
+    if (draggedId === targetId) return
+    const draggedIdx = lists.findIndex((l) => l.id === draggedId)
+    const targetIdx = lists.findIndex((l) => l.id === targetId)
+    if (draggedIdx === -1 || targetIdx === -1) return
+    const next = [...lists]
+    const [moved] = next.splice(draggedIdx, 1)
+    next.splice(targetIdx, 0, moved)
+    setLists(next)
+    await Promise.all(next.map((l, i) => api.patch(`/api/lists/${l.id}`, { position: i }).catch(() => {})))
     load()
   }
 
@@ -227,8 +246,23 @@ function SpaceView({ me, space, onBack }: { me: Me; space: Space; onBack: () => 
             const editing = renamingListId === l.id
             const duplicating = duplicatingListId === l.id
             return (
-              <div key={l.id} className="task-row" style={duplicating ? { flexWrap: "wrap" } : undefined}
-                onClick={() => !editing && !duplicating && setCurrentList(l)}>
+              <div key={l.id} className="task-row"
+                draggable={!editing && !duplicating}
+                style={{
+                  ...(duplicating ? { flexWrap: "wrap" as const } : {}),
+                  opacity: draggedListId === l.id ? 0.4 : 1,
+                  cursor: editing || duplicating ? undefined : "grab",
+                }}
+                onClick={() => !editing && !duplicating && setCurrentList(l)}
+                onDragStart={(e) => { e.stopPropagation(); setDraggedListId(l.id); e.dataTransfer.effectAllowed = "move" }}
+                onDragOver={(e) => { if (draggedListId !== null) e.preventDefault() }}
+                onDrop={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  if (draggedListId !== null) reorderLists(draggedListId, l.id)
+                  setDraggedListId(null)
+                }}
+                onDragEnd={() => setDraggedListId(null)}>
                 {editing ? (
                   <form className="row grow" style={{ gap: 6 }} onClick={(e) => e.stopPropagation()}
                     onSubmit={(e) => { e.preventDefault(); renameList(l.id) }}>
