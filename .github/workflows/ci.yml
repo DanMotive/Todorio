@@ -1,0 +1,80 @@
+# Runs on every push to main and on every pull request. release.yml only fires on
+# tags, so before this workflow existed nothing checked that the tree even compiled
+# until someone cut a release.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Superseded runs on the same branch are pointless; cancel them.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # package-lock.json is deliberately not committed, so npm ci is not an option
+      # here either (same reasoning as release.yml).
+      - name: Build frontend
+        working-directory: web
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache: true
+
+      # The frontend build has to come first: the binary embeds web/dist (see
+      # assets.go), so a Go build on a clean checkout fails without it.
+      - name: go build
+        run: go build ./...
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        run: go test ./...
+
+  i18n:
+    name: i18n
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Locale key sets, stray emoji, and tr()/trFormal()/trOr() call sites that
+      # point at keys nobody defined. Unreferenced keys are reported, not enforced;
+      # add --strict once the existing ones are cleaned up.
+      - name: Check locales
+        run: python3 scripts/check_i18n.py
+
+  shell:
+    name: Shell
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # install.sh is the first thing a new user runs; a syntax error there is a
+      # worse first impression than a failing test.
+      - name: shellcheck
+        run: shellcheck --severity=warning scripts/install.sh
