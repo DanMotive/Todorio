@@ -1,0 +1,72 @@
+# Applies scripts/i18n-add-keys.mjs and commits the updated locale files.
+#
+# Why this exists: merging a key table does nothing on its own. The 44 strings added in #20 sat
+# in scripts/i18n-keys/*.json while web/src/locales/*.json stayed untouched, so the interface
+# kept showing raw keys (nav.members, focus.stats_title). The runner has to actually run, and
+# nobody working on this repo can run node locally — so GitHub does it.
+#
+# Runs on every push to main that touches the tables or the runner, and can be started by hand
+# from the Actions tab. Adding a new key is therefore a one-file change: drop a table into
+# scripts/i18n-keys/ and the locales fill themselves in.
+name: Apply i18n keys
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/i18n-keys/**"
+      - "scripts/i18n-add-keys.mjs"
+  workflow_dispatch:
+
+# Two runs committing to the same branch at once would race on the ref.
+concurrency:
+  group: apply-i18n-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    name: Fill in the locale files
+    runs-on: ubuntu-latest
+    steps:
+      # A branch, not a detached SHA: the last step pushes.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # The runner validates before it writes: a key missing even one of the 13 locales aborts
+      # the whole run rather than leaving a half-translated file behind.
+      - name: Apply the key tables
+        run: node scripts/i18n-add-keys.mjs
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Guard against the runner producing something the checker rejects. If this fails, nothing
+      # is committed and the locales stay as they were.
+      - name: Check locales
+        run: python3 scripts/check_i18n.py
+
+      # Nothing to commit is the normal outcome once every table has been applied: the runner
+      # never overwrites an existing value unless the table says "overwrite": true.
+      #
+      # A push authenticated with GITHUB_TOKEN does not start another workflow run, so this
+      # cannot loop back into itself.
+      - name: Commit the generated locales
+        run: |
+          if git diff --quiet -- web/src/locales; then
+            echo "Locales are already up to date; nothing to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add web/src/locales
+          git commit -m "i18n: apply the key tables from scripts/i18n-keys"
+          git push
