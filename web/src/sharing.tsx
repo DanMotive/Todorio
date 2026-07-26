@@ -15,6 +15,7 @@
 import { useRef, useState, useEffect } from "react"
 import { api } from "./api"
 import { tr } from "./i18n"
+import { useConfirm } from "./extras"
 
 // tr() with an inline fallback — see the same helper in members.tsx. The keys are not in
 // web/src/locales/* yet and tr() returns "" for an unknown key, which would render blank buttons.
@@ -64,6 +65,7 @@ export function ShareLinksPanel({ listId }: { listId: number }) {
   const [days, setDays] = useState(0)
   const [password, setPassword] = useState("")
   const [copied, setCopied] = useState<number | null>(null)
+  const { confirm, confirmElement } = useConfirm()
 
   async function load() {
     setErr("")
@@ -109,19 +111,24 @@ export function ShareLinksPanel({ listId }: { listId: number }) {
     }
   }
 
-  async function revoke(link: ShareLink) {
-    if (!window.confirm(t("share.revoke_confirm",
-      "Отозвать ссылку? Все, кому она была отправлена, потеряют доступ."))) return
-    setBusy(true)
-    setErr("")
-    try {
-      await api.del(`/api/shares/${link.id}`)
-      await load()
-    } catch (e) {
-      setErr((e as Error).message)
-    } finally {
-      setBusy(false)
-    }
+  function revoke(link: ShareLink) {
+    confirm({
+      title: t("share.revoke_confirm", "Отозвать ссылку? Все, кому она была отправлена, потеряют доступ."),
+      confirmLabel: t("share.revoke", "Отозвать"),
+      danger: true,
+      action: async () => {
+        setBusy(true)
+        setErr("")
+        try {
+          await api.del(`/api/shares/${link.id}`)
+          await load()
+        } catch (e) {
+          setErr((e as Error).message)
+        } finally {
+          setBusy(false)
+        }
+      },
+    })
   }
 
   if (links === null) return <div className="muted">{t("share.loading", "Загрузка…")}</div>
@@ -136,6 +143,7 @@ export function ShareLinksPanel({ listId }: { listId: number }) {
 
   return (
     <div>
+      {confirmElement}
       <p className="muted" style={{ fontSize: 13, marginTop: 0 }}>
         {t("share.hint", "Ссылка открывает список на чтение без входа — видны названия задач и сроки, без комментариев и вложений.")}
       </p>
@@ -215,6 +223,7 @@ export function SpaceDataCard({ spaceId, isOwner, onImported }: {
   const [err, setErr] = useState("")
   const [result, setResult] = useState("")
   const fileRef = useRef<HTMLInputElement>(null)
+  const { confirm, confirmElement } = useConfirm()
 
   async function exportSpace() {
     setBusy(true)
@@ -253,8 +262,27 @@ export function SpaceDataCard({ spaceId, isOwner, onImported }: {
     }
   }
 
-  async function importFile(file: File) {
+  async function doImport(doc: any) {
     setBusy(true)
+    setErr("")
+    setResult("")
+    try {
+      const r = await api.post("/api/spaces/import", doc)
+      const c = r?.imported || {}
+      setResult(`${t("portability.done", "Импортировано")}: ` +
+        `${t("portability.lists", "Списков")} ${c.lists ?? 0}, ` +
+        `${t("portability.tasks", "задач")} ${c.tasks ?? 0}, ` +
+        `${t("portability.comments", "комментариев")} ${c.comments ?? 0}, ` +
+        `${t("portability.notes", "заметок")} ${c.notes ?? 0}`)
+      onImported?.()
+    } catch (e) {
+      setErr((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function importFile(file: File) {
     setErr("")
     setResult("")
     try {
@@ -280,22 +308,15 @@ export function SpaceDataCard({ spaceId, isOwner, onImported }: {
       }
       const lists = Array.isArray(doc.lists) ? doc.lists : []
       const taskCount = lists.reduce((n: number, l: any) => n + (Array.isArray(l.tasks) ? l.tasks.length : 0), 0)
-      const ok = window.confirm(
-        `${t("portability.confirm", "Будет создано новое пространство")}: «${doc.space_name}»\n` +
-        `${t("portability.lists", "Списков")}: ${lists.length}, ${t("portability.tasks", "задач")}: ${taskCount}`)
-      if (!ok) return
-      const r = await api.post("/api/spaces/import", doc)
-      const c = r?.imported || {}
-      setResult(`${t("portability.done", "Импортировано")}: ` +
-        `${t("portability.lists", "Списков")} ${c.lists ?? 0}, ` +
-        `${t("portability.tasks", "задач")} ${c.tasks ?? 0}, ` +
-        `${t("portability.comments", "комментариев")} ${c.comments ?? 0}, ` +
-        `${t("portability.notes", "заметок")} ${c.notes ?? 0}`)
-      onImported?.()
+      confirm({
+        title: `${t("portability.confirm", "Будет создано новое пространство")}: «${doc.space_name}»`,
+        body: `${t("portability.lists", "Списков")}: ${lists.length}, ${t("portability.tasks", "задач")}: ${taskCount}`,
+        confirmLabel: t("portability.import", "Импорт из файла…"),
+        action: () => doImport(doc),
+      })
     } catch (e) {
       setErr((e as Error).message)
     } finally {
-      setBusy(false)
       // Clear the input so re-picking the same file fires onChange again.
       if (fileRef.current) fileRef.current.value = ""
     }
@@ -303,6 +324,7 @@ export function SpaceDataCard({ spaceId, isOwner, onImported }: {
 
   return (
     <div className="card">
+      {confirmElement}
       <b>{t("portability.title", "Данные пространства")}</b>
       <p className="muted" style={{ fontSize: 13 }}>
         {t("portability.hint", "Экспорт — один JSON-файл: списки, задачи, подзадачи, комментарии и заметки. Файлы вложений внутрь не попадают — только список того, что было приложено; сами файлы берёт резервная копия сервера.")}

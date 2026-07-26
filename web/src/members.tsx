@@ -18,6 +18,7 @@ import { useEffect, useState } from "react"
 import { api, type Me } from "./api"
 import { Avatar } from "./settings"
 import { trOr } from "./i18n"
+import { useConfirm } from "./extras"
 import { ShareLinksPanel, SpaceDataCard } from "./sharing"
 
 export type Member = {
@@ -85,6 +86,7 @@ function MemberRoster({ base, roleKey, roles, meId }: {
   const [newRole, setNewRole] = useState(roles[1] || roles[0])
   const [err, setErr] = useState("")
   const [busy, setBusy] = useState(false)
+  const { confirm, confirmElement } = useConfirm()
 
   async function load() {
     setErr("")
@@ -125,10 +127,20 @@ function MemberRoster({ base, roleKey, roles, meId }: {
     })
   }
 
+  function removeMember(m: Member) {
+    confirm({
+      title: t("members.remove_confirm", "Revoke access?"),
+      confirmLabel: t("members.remove", "Revoke access"),
+      danger: true,
+      action: () => run(() => api.del(`${base}/members/${m.user_id}`)),
+    })
+  }
+
   if (members === null) return <div className="muted">{t("members.loading", "Loading…")}</div>
 
   return (
     <div>
+      {confirmElement}
       {err && <div className="muted" style={{ color: "var(--danger, #c33)", marginBottom: 8 }}>{err}</div>}
 
       {members.length === 0 && !err && (
@@ -160,10 +172,7 @@ function MemberRoster({ base, roleKey, roles, meId }: {
             {canManage && (
               <button className="ctrl-btn" disabled={busy}
                 title={t("members.remove", "Revoke access")}
-                onClick={() => {
-                  if (!window.confirm(t("members.remove_confirm", "Revoke access?"))) return
-                  run(() => api.del(`${base}/members/${m.user_id}`))
-                }}>
+                onClick={() => removeMember(m)}>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
               </button>
             )}
