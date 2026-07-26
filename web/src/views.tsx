@@ -1179,18 +1179,43 @@ export function SpacesPage({ me }: { me: Me }) {
   const [current, setCurrent] = useState<Space | null>(null)
   const [name, setName] = useState("")
   const [showArchived, setShowArchived] = useState(false)
+  const { confirm, confirmElement } = useConfirm()
   const load = () => api.get("/api/spaces").then((r) => setSpaces(r.spaces)).catch(() => {})
   useEffect(() => { load() }, [])
 
   if (current) return <SpaceView me={me} space={current} onBack={() => { setCurrent(null); load() }} />
 
+  const canManage = (s: Space) => s.my_role === "owner" || me.role === "root" || me.role === "admin"
+
   return (
     <div className="card">
+      {confirmElement}
       <h2>{tr("spaces.title")}</h2>
+      {spaces.length === 0 && <p className="muted">{tr("spaces.empty")}</p>}
       {spaces.map((s) => (
         <div key={s.id} className="task-row" onClick={() => setCurrent(s)}>
           <span className="task-title row" style={{ gap: 6 }}><IconGrid size={14} /> {s.name}</span>
-          <span className="muted">{s.my_role || tr("spaces.admin_access")}</span>
+          <span className="muted" style={{ fontSize: 12 }}>{s.my_role || tr("spaces.admin_access")}</span>
+          {canManage(s) && (
+            <button className="nav-btn" style={{ padding: "2px 6px", color: "var(--due-overdue)" }}
+              title={tr("task.archive")}
+              onClick={(e) => {
+                e.stopPropagation()
+                confirm({
+                  title: tr("spaces.archive_confirm").replace("{name}", s.name),
+                  body: tr("confirm.archive_body"),
+                  confirmLabel: tr("task.archive"),
+                  danger: true,
+                  action: async () => {
+                    await api.del(`/api/spaces/${s.id}`).catch(() => {})
+                    load()
+                  },
+                })
+              }}>
+              <IconArchive size={14} />
+            </button>
+          )}
+          <span className="muted" style={{ fontSize: 16, lineHeight: 1 }}>›</span>
         </div>
       ))}
       <form className="row" style={{ marginTop: 12 }} onSubmit={async (e) => {
@@ -1455,6 +1480,7 @@ function SpaceView({ me, space, onBack }: { me: Me; space: Space; onBack: () => 
               </select>
             </label>
           </div>
+          {lists.length === 0 && <p className="muted">{tr("spaces.lists_empty")}</p>}
           {lists.map((l) => {
             // Fall back to plain counts when the server didn't send weighted totals.
             const byWeight = progressMode === "weight" && l.weight_total !== undefined
@@ -1465,6 +1491,7 @@ function SpaceView({ me, space, onBack }: { me: Me; space: Space; onBack: () => 
                 <span className="task-title row" style={{ gap: 6 }}>{l.is_private ? <IconLock size={14} /> : <IconList size={14} />} {l.name}</span>
                 <span className="muted">{done}/{total}</span>
                 <progress className="progress" max={total || 1} value={done} />
+                <span className="muted" style={{ fontSize: 16, lineHeight: 1 }}>›</span>
               </div>
             )
           })}
