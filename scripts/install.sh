@@ -20,6 +20,9 @@ set -euo pipefail
 
 REPO="DanMotive/Todorio"
 BIN="/usr/local/bin/todorio"
+# GitHub API host. Kept separate so the release lookup below reads cleanly and can
+# be pointed at a mirror or GitHub Enterprise host in one place.
+GH_API="api.github.com"
 
 # Minimum PostgreSQL major version — a hard requirement, not a preference:
 # migrations/0013_search_audit.sql adds `GENERATED ALWAYS AS (...) STORED` tsvector
@@ -92,7 +95,7 @@ if [ "$PG_OK" -eq 0 ]; then
     fail "PostgreSQL still is not available after installing it — check the 'apt-get install postgresql' output above."
   fi
   if [ "$PGV" -lt "$MIN_PG" ]; then
-    fail "PostgreSQL $MIN_PG+ is required, but this system provides $PGV. Installing the 'postgresql' package does not upgrade an existing cluster, so an older server stays in place. Either add the PGDG repository (https://www.postgresql.org/download/linux/) and install postgresql-$MIN_PG or newer, or use Ubuntu 22.04+ / Debian 12+."
+    fail "PostgreSQL $MIN_PG+ is required, but this system provides $PGV. Installing the 'postgresql' package does not upgrade an existing cluster, so an older server stays in place. Either add the PGDG repository and install postgresql-$MIN_PG or newer, or use Ubuntu 22.04+ / Debian 12+."
   fi
   say "PostgreSQL $PGV ready."
 fi
@@ -107,7 +110,7 @@ sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='todorio'" |
 
 # --- 3. Download the latest release: binary + checksums.txt, verify sha256 ---
 say "Fetching the latest release..."
-RELEASE_JSON="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest")" \
+RELEASE_JSON="$(curl -fsSL "https://${GH_API}/repos/${REPO}/releases/latest")" \
   || fail "Could not reach GitHub Releases (or no release has been published yet)."
 
 TAG="$(printf '%s' "$RELEASE_JSON" | jq -r '.tag_name // "unknown"')"
