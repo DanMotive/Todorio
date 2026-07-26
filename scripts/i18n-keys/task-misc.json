@@ -1,0 +1,65 @@
+{
+  "overwrite": false,
+  "keys": {
+    "skeleton.hello": {
+      "en-US": "Todorio skeleton is running. My Tasks, lists and Space Pulse will live here.",
+      "ru-RU": "Каркас Todorio работает. Здесь появятся «Мои задачи», списки и «Пульс пространства».",
+      "uk-UA": "Каркас Todorio працює. Тут з’являться «Мої задачі», списки та «Пульс простору».",
+      "be-BY": "Каркас Todorio працуе. Тут з’явяцца «Мае задачы», спісы і «Пульс прасторы».",
+      "kk-KZ": "Todorio қаңқасы жұмыс істеп тұр. Осында «Менің тапсырмаларым», тізімдер және «Кеңістік пульсі» пайда болады.",
+      "es-ES": "El esqueleto de Todorio está funcionando. Aquí vivirán Mis tareas, las listas y el Pulso del espacio.",
+      "pt-BR": "O esqueleto do Todorio está rodando. Aqui ficarão Minhas tarefas, as listas e o Pulso do espaço.",
+      "tr-TR": "Todorio iskeleti çalışıyor. Görevlerim, listeler ve Alan Nabzı burada olacak.",
+      "zh-CN": "Todorio 骨架已运行。我的任务、列表和空间脉搏将出现在这里。",
+      "hi-IN": "Todorio का ढाँचा चल रहा है। मेरे कार्य, सूचियाँ और स्पेस पल्स यहाँ दिखेंगे।",
+      "bn-BD": "Todorio-র কাঠামো চালু আছে। আমার টাস্ক, তালিকা ও স্পেস পালস এখানে থাকবে।",
+      "ja-JP": "Todorio のスケルトンが動作しています。マイタスク、リスト、スペースパルスはここに表示されます。",
+      "ko-KR": "Todorio 스켈레톤이 실행 중입니다. 내 작업, 목록, 스페이스 펄스가 이곳에 표시됩니다."
+    },
+    "task.done": {
+      "en-US": "Done",
+      "ru-RU": "Готово",
+      "uk-UA": "Готово",
+      "be-BY": "Гатова",
+      "kk-KZ": "Дайын",
+      "es-ES": "Hecho",
+      "pt-BR": "Concluído",
+      "tr-TR": "Bitti",
+      "zh-CN": "完成",
+      "hi-IN": "पूर्ण",
+      "bn-BD": "সম্পন্ন",
+      "ja-JP": "完了",
+      "ko-KR": "완료"
+    },
+    "task.new": {
+      "en-US": "New task",
+      "ru-RU": "Новая задача",
+      "uk-UA": "Нова задача",
+      "be-BY": "Новая задача",
+      "kk-KZ": "Жаңа тапсырма",
+      "es-ES": "Nueva tarea",
+      "pt-BR": "Nova tarefa",
+      "tr-TR": "Yeni görev",
+      "zh-CN": "新任务",
+      "hi-IN": "नया कार्य",
+      "bn-BD": "নতুন টাস্ক",
+      "ja-JP": "新しいタスク",
+      "ko-KR": "새 작업"
+    },
+    "task.system.unblocked": {
+      "en-US": "unblocked — every dependency is finished",
+      "ru-RU": "разблокирована — все зависимости завершены",
+      "uk-UA": "розблоковано — усі залежності завершені",
+      "be-BY": "разблакавана — усе залежнасці завершаны",
+      "kk-KZ": "бұғаттан шықты — барлық тәуелділік аяқталды",
+      "es-ES": "desbloqueada: todas las dependencias están terminadas",
+      "pt-BR": "desbloqueada — todas as dependências foram concluídas",
+      "tr-TR": "engeli kalktı — tüm bağımlılıklar tamamlandı",
+      "zh-CN": "已解除阻塞 — 所有依赖任务都已完成",
+      "hi-IN": "अनब्लॉक हुई — सभी निर्भरताएँ पूरी हो गईं",
+      "bn-BD": "আনব্লক হয়েছে — সব নির্ভরতা সম্পন্ন",
+      "ja-JP": "ブロック解除 — すべての依存タスクが完了しました",
+      "ko-KR": "차단 해제 — 모든 선행 작업이 완료되었습니다"
+    }
+  }
+}
