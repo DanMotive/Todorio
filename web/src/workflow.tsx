@@ -10,12 +10,13 @@
 // persisting them here would duplicate a decision the backend already owns.
 import { useEffect, useState } from "react"
 import { api, DEFAULT_STATUSES, type Workflow } from "./api"
-import { tr } from "./i18n"
+import { tr, trOr } from "./i18n"
 import { IconX } from "./icons"
 
-// Locale keys for this screen don't exist in web/src/locales/* yet, so every string carries a
-// fallback and switches over automatically once they land.
-const t = (key: string, fallback: string) => tr(key) || fallback
+// trOr(), not `tr(key) || fallback`: t() in i18n.ts ends with `return key`, so an unresolved key
+// comes back truthy and the || fallback was dead code — this screen used to print workflow.title
+// and friends verbatim. The fallbacks now really are fallbacks; en-US and ru-RU carry every key.
+const t = trOr
 
 const MAX_LEN = 24
 
@@ -62,7 +63,12 @@ export function WorkflowEditor({ spaceId, isOwner }: { spaceId: number; isOwner:
     const name = draft.trim()
     if (!name) return
     if (name.length > MAX_LEN) {
-      setError(t("workflow.too_long", `Слишком длинное название (максимум ${MAX_LEN})`))
+      // The limit is interpolated at the call site: tr()/trOr() return the string as stored, they
+      // do not format, so the locale value carries a {max} placeholder.
+      setError(
+        t("workflow.too_long", "Слишком длинное название. Максимум {max} символов.")
+          .replace("{max}", String(MAX_LEN)),
+      )
       return
     }
     // Case-insensitive, because "QA" and "qa" would render as two columns holding the same work.

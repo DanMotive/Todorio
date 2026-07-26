@@ -17,7 +17,7 @@
 import { useEffect, useState } from "react"
 import { api, type Me } from "./api"
 import { Avatar } from "./settings"
-import { tr } from "./i18n"
+import { trOr } from "./i18n"
 import { ShareLinksPanel, SpaceDataCard } from "./sharing"
 
 export type Member = {
@@ -35,23 +35,35 @@ export type Member = {
 
 export type AssignableUser = { id: number; username: string; display_name: string | null }
 
-// t() is tr() with an inline fallback. New keys are not in web/src/locales/* yet, and tr()
-// returns an empty string for an unknown key — which would render blank buttons. The fallback
-// keeps this screen usable the moment it ships; the strings move into the locale files (and the
-// fallbacks come out) in the same pass that translates them.
-const t = (key: string, fallback: string) => tr(key) || fallback
+// trOr() is tr() with an inline fallback. It has to be trOr and not `tr(key) || fallback`: t() in
+// i18n.ts ends with `return key`, so an unresolved key comes back as the key itself — a truthy
+// string — and the || fallback would never run. That is exactly how this screen ended up printing
+// members.title at the user. trOr compares the result against the key and only then falls back.
+//
+// The fallbacks stay as a safety net for keys that a future screen adds before the locales catch
+// up; en-US and ru-RU now carry every key used here.
+const t = trOr
 
 const SPACE_ROLES = ["owner", "member", "viewer"]
 const LIST_PERMS = ["owner", "editor", "viewer"]
 
-const ROLE_LABELS: Record<string, string> = {
-  owner: t("members.role.owner", "владелец"),
-  member: t("members.role.member", "участник"),
-  editor: t("members.role.editor", "редактор"),
-  viewer: t("members.role.viewer", "читатель"),
+// Resolved per call, not once at import. As a module-level constant this map was built while the
+// bundle was still loading, so the captions kept the language that was active at that moment and
+// ignored every later switch.
+const roleLabel = (role: string) => {
+  switch (role) {
+    case "owner":
+      return t("members.role.owner", "владелец")
+    case "member":
+      return t("members.role.member", "участник")
+    case "editor":
+      return t("members.role.editor", "редактор")
+    case "viewer":
+      return t("members.role.viewer", "читатель")
+    default:
+      return role
+  }
 }
-
-const roleLabel = (role: string) => ROLE_LABELS[role] || role
 
 /**
  * One roster, driven entirely by `base`: "/api/spaces/7" or "/api/lists/12". Spaces and lists
@@ -238,8 +250,12 @@ export function MembersPage({ me }: { me: Me }) {
               <select className="input" style={{ width: "auto" }} value={listId ?? ""}
                 onChange={(e) => setListId(e.target.value === "" ? null : Number(e.target.value))}>
                 <option value="">{t("members.pick_list", "— выберите список —")}</option>
+                {/* A word, not a padlock: emoji are banned in this UI, and check_i18n.py only
+                    scans the locale files, so one hidden here would never be caught. */}
                 {lists.map((l) => (
-                  <option key={l.id} value={l.id}>{l.is_private ? `\u{1F512} ${l.name}` : l.name}</option>
+                  <option key={l.id} value={l.id}>
+                    {l.is_private ? `${l.name} · ${t("members.private", "приватный")}` : l.name}
+                  </option>
                 ))}
               </select>
             </div>
