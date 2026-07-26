@@ -178,14 +178,27 @@ function parseImports(src) {
 			for (const part of braces[1].split(",")) {
 				const spec = part.trim()
 				if (!spec) continue
-				const as = /^(.+?)\s+as\s+(.+)$/.exec(spec)
-				named.push({ spec, local: as ? as[2].trim() : spec })
+				// A per-specifier `type X` (or `type X as Y`) inside a mixed import still just
+				// refers to X as far as usage in the body goes. Matching on the literal two-word
+				// spec instead means the specifier never looks used, and the codemod silently
+				// drops it.
+				const specForAs = spec.replace(/^type\s+/, "")
+				const as = /^(.+?)\s+as\s+(.+)$/.exec(specForAs)
+				named.push({ spec, local: as ? as[2].trim() : specForAs })
 			}
 		}
+		// Only text outside the {...} block can be a default or namespace specifier.
+		// Splitting the raw head on every comma -- including the ones inside the braces --
+		// misreads inner named specifiers as extra default imports whenever an import has
+		// three or more of them, or wraps across lines: `{ a, b, c }` splits into pieces
+		// "{ a", " b", " c }", and the middle piece " b" has neither "{" nor "}" so it slips
+		// past the old filter and gets counted as a second default specifier. Rebuilding the
+		// import then produces `import b, { a, b, c } from "..."`, which is not valid syntax.
 		const head = text.replace(/^import\s+(?:type\s+)?/, "").split(/\s+from\s+/)[0] || ""
-		for (const piece of head.split(",")) {
+		const headNoBraces = head.replace(/{[\s\S]*?}/, "")
+		for (const piece of headNoBraces.split(",")) {
 			const t = piece.trim()
-			if (!t || t.startsWith("{") || t.includes("}")) continue
+			if (!t) continue
 			const ns = /^\*\s+as\s+(\w+)$/.exec(t)
 			other.push(ns ? ns[1] : t)
 		}
