@@ -10,13 +10,6 @@ import { WorkloadPanel, ImportCard } from "./functional"
 import { IconStar, IconRefresh, IconLock, IconX, IconUser, IconPause, IconSlash, IconClock, IconGrid, IconArrowLeft, IconList, IconFileText, IconActivity, IconMenu, IconColumns, IconTable, IconCheckCircle, IconMessage, IconPin, IconAlertCircle, IconArchive, IconCalendar, IconSliders, IconBarChart, IconEdit, IconCopy } from "./icons"
 import { endOfDayISO, dueClass, dueLabel, formatSystemComment, StatusChip, TaskRow } from "./taskui"
 
-// ---------- helpers ----------
-
-
-
-
-// ---------- login / registration ----------
-
 export function AuthPage({ siteName, locales, onLogin }: { siteName: string; locales?: string[]; onLogin: (me: Me) => void }) {
   const langOptions = locales && locales.length > 0 ? locales : SUPPORTED
   const [mode, setMode] = useState<"login" | "register">("login")
@@ -104,18 +97,6 @@ export function PendingPage({ onLogout }: { onLogout: () => void }) {
   )
 }
 
-// ---------- tasks ----------
-
-// ---------- inline focus button ----------
-
-
-// ---------- status chip ----------
-
-
-
-
-// ---------- right-click menu on a task row ----------
-
 function TaskContextMenu({ task, x, y, statuses, meId, onClose, onPatch, onOpenFull }: {
   task: Task
   x: number; y: number
@@ -172,7 +153,6 @@ function TaskContextMenu({ task, x, y, statuses, meId, onClose, onPatch, onOpenF
     document.body,
   )
 }
-
 
 function TaskHistorySection({ taskId, onRestored }: { taskId: number; onRestored: () => void }) {
   const [show, setShow] = useState(false)
@@ -1793,4 +1773,5 @@ function ListView({ me, list, spaceId, onBack }: { me: Me; list: List; spaceId: 
         <TaskContextMenu task={menu.task} x={menu.x} y={menu.y} statuses={statuses} meId={me.id}
           onClose={() => setMenu(null)}
           onPatch={async (patch) => {
-            await api.patch(`/api/tas
+            await api.patch(`/api/tasks/${menu.task.id}`, patch).catch((e) => setCreateError((e as Error).message))
+            if (patch.status === "done")
