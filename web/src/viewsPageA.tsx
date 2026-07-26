@@ -156,16 +156,23 @@ export function TaskHistorySection({ taskId, onRestored }: { taskId: number; onR
   const [versions, setVersions] = useState<any[]>([])
   const load = () => api.get(`/api/tasks/${taskId}/versions`).then((r) => setVersions(r.versions)).catch(() => {})
   useEffect(() => { if (show) load() }, [show])
+  const { confirm, confirmElement } = useConfirm()
 
-  async function restore(versionId: number) {
-    if (!window.confirm(tr("task.history_confirm_restore"))) return
-    await api.post(`/api/tasks/${taskId}/versions/${versionId}/restore`).catch(() => {})
-    onRestored()
-    load()
+  function restore(versionId: number) {
+    confirm({
+      title: tr("task.history_confirm_restore"),
+      confirmLabel: tr("task.history_restore"),
+      action: async () => {
+        await api.post(`/api/tasks/${taskId}/versions/${versionId}/restore`).catch(() => {})
+        onRestored()
+        load()
+      },
+    })
   }
 
   return (
     <div style={{ marginBottom: 16 }}>
+      {confirmElement}
       <button className="nav-btn row" style={{ gap: 5, display: "inline-flex" }} onClick={() => setShow((v) => !v)}>
         <IconClock size={13} /> {tr("task.history")}
       </button>
