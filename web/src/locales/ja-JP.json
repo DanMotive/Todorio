@@ -379,6 +379,7 @@
   "table.title": "タイトル",
   "task.add_field": "フィールドを追加",
   "task.archive": "アーカイブ",
+  "task.assignee": "担当者",
   "task.blocked_by": "次のタスクにブロックされています（ID）",
   "task.blocked_by_placeholder": "タスクID",
   "task.comment_cancel": "キャンセル",

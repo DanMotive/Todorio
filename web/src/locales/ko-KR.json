@@ -379,6 +379,7 @@
   "table.title": "제목",
   "task.add_field": "필드 추가",
   "task.archive": "보관",
+  "task.assignee": "담당자",
   "task.blocked_by": "다음 작업에 의해 차단됨 (ID)",
   "task.blocked_by_placeholder": "작업 ID",
   "task.comment_cancel": "취소",
