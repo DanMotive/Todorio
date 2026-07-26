@@ -12,7 +12,6 @@
 # in sync with that if either ever changes.
 #
 # When it finishes, the site is already running; the temporary root password is shown in the console.
-say "Starting installation..."
 set -euo pipefail
 
 REPO="DanMotive/Todorio"
