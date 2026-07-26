@@ -379,6 +379,7 @@
   "table.title": "শিরোনাম",
   "task.add_field": "ফিল্ড যোগ করুন",
   "task.archive": "আর্কাইভে",
+  "task.assignee": "দায়িত্বপ্রাপ্ত",
   "task.blocked_by": "এই কাজগুলো দ্বারা অবরুদ্ধ (ID)",
   "task.blocked_by_placeholder": "কাজের ID",
   "task.comment_cancel": "বাতিল করুন",

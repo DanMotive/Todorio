@@ -379,6 +379,7 @@
   "table.title": "Başlık",
   "task.add_field": "Alan ekle",
   "task.archive": "Arşive",
+  "task.assignee": "Sorumlu",
   "task.blocked_by": "Şu görevlerle engellendi (ID)",
   "task.blocked_by_placeholder": "Görev ID",
   "task.comment_cancel": "İptal",

@@ -1,0 +1,68 @@
+# Applies scripts/wire-dead-ui.mjs and commits the result back into this branch.
+#
+# views.tsx is ~100 KB, so the change to it cannot be written by hand through the API that
+# produced the codemod -- the runner does it instead. The build and the type check run here too,
+# because the commit this job pushes is made with GITHUB_TOKEN and therefore will not trigger
+# ci.yml on its own; verifying it in the same job is what keeps that from becoming a blind spot.
+name: Wire dead UI
+
+on:
+  push:
+    branches: [feat/wire-workflow-assignee]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: wire-dead-ui-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Apply the codemod
+        run: node scripts/wire-dead-ui.mjs
+
+      - name: Apply the i18n key tables
+        run: node scripts/i18n-add-keys.mjs
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check locales
+        run: python3 scripts/check_i18n.py
+
+      - name: Install web dependencies
+        working-directory: web
+        run: npm install --no-audit --no-fund
+
+      - name: Type check
+        working-directory: web
+        run: npx tsc --noEmit
+
+      - name: Build
+        working-directory: web
+        run: npm run build
+
+      - name: Commit the result
+        run: |
+          if git diff --quiet -- web/src; then
+            echo "nothing to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add web/src
+          git commit -m "chore(web): apply wire-dead-ui codemod and i18n keys"
+          git push

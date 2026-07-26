@@ -379,6 +379,7 @@
   "table.title": "Название",
   "task.add_field": "Добавить поле",
   "task.archive": "В архив",
+  "task.assignee": "Исполнитель",
   "task.blocked_by": "Заблокирована задачами (ID)",
   "task.blocked_by_placeholder": "ID задачи",
   "task.comment_cancel": "Отмена",

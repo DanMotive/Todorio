@@ -379,6 +379,7 @@
   "table.title": "Title",
   "task.add_field": "Add field",
   "task.archive": "Archive",
+  "task.assignee": "Assignee",
   "task.blocked_by": "Blocked by (task IDs)",
   "task.blocked_by_placeholder": "Task ID",
   "task.comment_cancel": "Cancel",

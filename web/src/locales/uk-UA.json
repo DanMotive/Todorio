@@ -379,6 +379,7 @@
   "table.title": "Назва",
   "task.add_field": "Додати поле",
   "task.archive": "В архів",
+  "task.assignee": "Виконавець",
   "task.blocked_by": "Заблокована задачами (ID)",
   "task.blocked_by_placeholder": "ID задачі",
   "task.comment_cancel": "Скасувати",

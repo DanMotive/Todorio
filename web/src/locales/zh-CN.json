@@ -379,6 +379,7 @@
   "table.title": "标题",
   "task.add_field": "添加字段",
   "task.archive": "归档",
+  "task.assignee": "负责人",
   "task.blocked_by": "被以下任务阻塞（ID）",
   "task.blocked_by_placeholder": "任务 ID",
   "task.comment_cancel": "取消",

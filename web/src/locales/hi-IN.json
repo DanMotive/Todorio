@@ -379,6 +379,7 @@
   "table.title": "शीर्षक",
   "task.add_field": "फ़ील्ड जोड़ें",
   "task.archive": "संग्रह में",
+  "task.assignee": "जिम्मेदार",
   "task.blocked_by": "इन कार्यों से अवरुद्ध (ID)",
   "task.blocked_by_placeholder": "कार्य ID",
   "task.comment_cancel": "रद्द करें",

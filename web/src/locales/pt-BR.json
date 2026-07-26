@@ -379,6 +379,7 @@
   "table.title": "Título",
   "task.add_field": "Adicionar campo",
   "task.archive": "Arquivar",
+  "task.assignee": "Responsável",
   "task.blocked_by": "Bloqueada por (IDs de tarefa)",
   "task.blocked_by_placeholder": "ID da tarefa",
   "task.comment_cancel": "Cancelar",

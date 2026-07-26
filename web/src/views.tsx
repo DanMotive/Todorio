@@ -8,6 +8,8 @@ import {
 import { AttachmentsBlock, ModalShell, StatsCard, useConfirm, FocusWidget, FocusPresence, NotesPanel, ActivityPanel, ArchivePanel, ArchivedSpacesPanel, FieldsPanel, type FieldDef } from "./extras"
 import { tr, trFormal, setLocale, getLocale, getFormattingLocale, SUPPORTED } from "./i18n"
 import { TimelineView } from "./timeline"
+import { WorkflowEditor } from "./workflow"
+import { AssigneePicker } from "./members"
 import { WorkloadPanel, ImportCard } from "./functional"
 import {
   IconStar, IconRefresh, IconLock, IconX, IconUser, IconPause, IconPlay, IconSlash, IconClock,
@@ -430,6 +432,7 @@ export function TaskModal({ task, me, spaceId, onClose, onChanged }: {
   const [progress, setProgress] = useState<number | null>(
     typeof task.progress === "number" ? task.progress : null)
   const [weight, setWeight] = useState(task.weight ?? 1)
+  const [assigneeId, setAssigneeId] = useState<number | null>(task.assignee_id)
   // <input type="date"> wants YYYY-MM-DD in *local* time; slicing an ISO string would shift
   // the day for anyone not on UTC.
   const dateInputValue = (v: string | null) => {
@@ -767,6 +770,21 @@ export function TaskModal({ task, me, spaceId, onClose, onChanged }: {
 
           {/* Weight feeds weighted list progress and the rankings score, so that closing ten
               trivial tasks doesn't outrank finishing one hard one (spec sections 6 and 14). */}
+          {/* Assignee. The picker asks the server who may hold this task
+              (GET /api/lists/{id}/assignable), so the options can never contain someone whose
+              write would be rejected. Clearing it sends clear_assignee, the same flag the row
+              context menu already uses -- assignee_id: null would be read as "absent". */}
+          <div>
+            <label className="muted row" style={{ fontSize: 12, marginBottom: 4, gap: 4 }}>
+              <IconUser size={12} /> {tr("task.assignee")}
+            </label>
+            <AssigneePicker listId={task.list_id} value={assigneeId}
+              onChange={(v) => {
+                setAssigneeId(v)
+                updateTask(v === null ? { clear_assignee: true } : { assignee_id: v })
+              }} />
+          </div>
+
           <div>
             <label className="muted" style={{ display: "block", fontSize: 12, marginBottom: 4 }}>{tr("task.weight")}</label>
             <input className="input" type="number" min={1} max={100} value={weight}
@@ -1411,7 +1429,7 @@ function SpaceView({ me, space, onBack }: { me: Me; space: Space; onBack: () => 
   const [pulse, setPulse] = useState<Pulse | null>(null)
   const [currentList, setCurrentList] = useState<List | null>(null)
   const [name, setName] = useState("")
-  const [tab, setTab] = useState<"lists" | "timeline" | "workload" | "notes" | "activity" | "archive" | "fields">("lists")
+  const [tab, setTab] = useState<"lists" | "timeline" | "workload" | "notes" | "activity" | "archive" | "fields" | "workflow">("lists")
   const [templates, setTemplates] = useState<Array<{ id: number; name: string }>>([])
   // Count vs. weight is a per-viewer display preference (spec section 6), so it lives in
   // localStorage rather than on the list — two people can read the same space differently.
@@ -1462,6 +1480,7 @@ function SpaceView({ me, space, onBack }: { me: Me; space: Space; onBack: () => 
         <button className={"nav-btn row" + (tab === "activity" ? " active" : "")} style={{ gap: 5, display: "inline-flex" }} onClick={() => setTab("activity")}><IconActivity size={14} /> {tr("activity.title")}</button>
         <button className={"nav-btn row" + (tab === "archive" ? " active" : "")} style={{ gap: 5, display: "inline-flex" }} onClick={() => setTab("archive")}><IconArchive size={14} /> {tr("archive.title")}</button>
         <button className={"nav-btn row" + (tab === "fields" ? " active" : "")} style={{ gap: 5, display: "inline-flex" }} onClick={() => setTab("fields")}><IconSliders size={14} /> {tr("fields.title")}</button>
+        <button className={"nav-btn row" + (tab === "workflow" ? " active" : "")} style={{ gap: 5, display: "inline-flex" }} onClick={() => setTab("workflow")}><IconColumns size={14} /> {tr("workflow.title")}</button>
       </div>
 
       {tab === "lists" && (
@@ -1520,6 +1539,7 @@ function SpaceView({ me, space, onBack }: { me: Me; space: Space; onBack: () => 
       {tab === "activity" && <div className="card"><ActivityPanel spaceId={space.id} /></div>}
       {tab === "archive" && <div className="card"><ArchivePanel me={me} spaceId={space.id} /></div>}
       {tab === "fields" && <div className="card"><FieldsPanel spaceId={space.id} isOwner={space.my_role === "owner"} /></div>}
+      {tab === "workflow" && <div className="card"><WorkflowEditor spaceId={space.id} isOwner={space.my_role === "owner"} /></div>}
       {open && <TaskModal task={open} me={me} spaceId={space.id} onClose={() => setOpen(null)} onChanged={load} />}
     </div>
   )

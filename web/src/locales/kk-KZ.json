@@ -379,6 +379,7 @@
   "table.title": "Атауы",
   "task.add_field": "Өріс қосу",
   "task.archive": "Мұрағатқа",
+  "task.assignee": "Орындаушы",
   "task.blocked_by": "Мына тапсырмалар бұғаттаған (ID)",
   "task.blocked_by_placeholder": "Тапсырма ID",
   "task.comment_cancel": "Бас тарту",
