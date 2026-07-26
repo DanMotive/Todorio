@@ -55,6 +55,8 @@ func (a *API) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/admin/audit", a.handleAdminAudit)
 
 	// --- spaces and lists ---
+	mux.HandleFunc("POST /api/lists/{id}/duplicate", a.handleDuplicateList)
+	mux.HandleFunc("POST /api/spaces/{id}/duplicate", a.handleDuplicateSpace)
 	mux.HandleFunc("GET /api/spaces", a.handleListSpaces)
 	mux.HandleFunc("POST /api/spaces", a.handleCreateSpace)
 	mux.HandleFunc("PATCH /api/spaces/{id}", a.handleUpdateSpace)
