@@ -1,0 +1,20 @@
+{
+  "overwrite": true,
+  "keys": {
+    "spaces.empty": {
+      "en-US": "There are no spaces yet. Create the first one below.",
+      "ru-RU": "Пространств пока нет. Создайте первое ниже.",
+      "uk-UA": "Просторів ще немає. Створіть перший нижче.",
+      "be-BY": "Прастор пакуль няма. Стварыце першую ніжэй.",
+      "kk-KZ": "Әзірге кеңістік жоқ. Түменде біріншісін жасаңыз.",
+      "es-ES": "Todavía no hay espacios. Crea el primero abajo.",
+      "pt-BR": "Ainda não há espaços. Crie o primeiro abaixo.",
+      "tr-TR": "Henüz alan yok. Aşağıdan ilkini oluşturun.",
+      "zh-CN": "还没有空间。在下方创建第一个空间。",
+      "hi-IN": "अभी कोई स्पेस नहीं है। नीचे पहला स्पेस बनाएँ।",
+      "bn-BD": "এখনও কোনো স্পেস নেই। নিচে প্রথমটি তৈরি করুন।",
+      "ja-JP": "スパースがまだありません。下から最初のスパースを作成してください。",
+      "ko-KR": "아직 스페이스가 없습니다. 아래에서 첫 스페이스를 만들어 보세요."
+    }
+  }
+}
