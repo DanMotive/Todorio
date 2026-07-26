@@ -234,6 +234,7 @@ export function ListView({ me, list, spaceId, onBack }: { me: Me; list: List; sp
   const [createError, setCreateError] = useState("")
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [menu, setMenu] = useState<{ task: Task; x: number; y: number } | null>(null)
+  const [draggedTaskId, setDraggedTaskId] = useState<number | null>(null)
   const { confirm, confirmElement } = useConfirm()
 
   function toggleSelect(t: Task) {
@@ -283,6 +284,26 @@ export function ListView({ me, list, spaceId, onBack }: { me: Me; list: List; sp
 
   async function moveToStatus(task: Task, status: string) {
     await api.patch(`/api/tasks/${task.id}`, { status }).catch(() => {})
+    load()
+  }
+
+  // Drag-and-drop reordering of root-level tasks within this list (spec parity with the Kanban
+  // board's status drag). Disabled while a filter is active, since filteredRoots would then be a
+  // subset of roots and dropping at a visible index wouldn't map to the task's real position.
+  // Subtasks keep their existing relative order under their parent; only the root tasks around
+  // them are reshuffled.
+  async function reorderTasks(draggedId: number, targetId: number) {
+    if (draggedId === targetId) return
+    const currentRoots = tasks.filter((t) => !t.parent_id)
+    const draggedIdx = currentRoots.findIndex((t) => t.id === draggedId)
+    const targetIdx = currentRoots.findIndex((t) => t.id === targetId)
+    if (draggedIdx === -1 || targetIdx === -1) return
+    const nextRoots = [...currentRoots]
+    const [moved] = nextRoots.splice(draggedIdx, 1)
+    nextRoots.splice(targetIdx, 0, moved)
+    const reordered = nextRoots.flatMap((r) => [r, ...tasks.filter((s) => s.parent_id === r.id)])
+    setTasks(reordered)
+    await Promise.all(nextRoots.map((t, i) => api.patch(`/api/tasks/${t.id}`, { position: i }).catch(() => {})))
     load()
   }
 
@@ -351,7 +372,17 @@ export function ListView({ me, list, spaceId, onBack }: { me: Me; list: List; sp
       )}
 
       {viewMode === "list" && filteredRoots.map((task) => (
-        <div key={task.id}>
+        <div key={task.id}
+          draggable={!filterQuery}
+          style={{ opacity: draggedTaskId === task.id ? 0.4 : 1, cursor: filterQuery ? undefined : "grab" }}
+          onDragStart={(e) => { setDraggedTaskId(task.id); e.dataTransfer.effectAllowed = "move" }}
+          onDragOver={(e) => { if (draggedTaskId !== null) e.preventDefault() }}
+          onDrop={(e) => {
+            e.preventDefault()
+            if (draggedTaskId !== null) reorderTasks(draggedTaskId, task.id)
+            setDraggedTaskId(null)
+          }}
+          onDragEnd={() => setDraggedTaskId(null)}>
           <TaskRow task={task} onToggle={toggle} onOpen={setOpen} meId={me.id}
             selected={selected.has(task.id)} onSelect={toggleSelect}
             statuses={statuses} onStatus={moveToStatus}
