@@ -20,8 +20,8 @@ set -euo pipefail
 
 REPO="DanMotive/Todorio"
 BIN="/usr/local/bin/todorio"
-# GitHub API host. Kept separate so the release lookup below reads cleanly and can
-# be pointed at a mirror or GitHub Enterprise host in one place.
+# GitHub API host. Kept in one place so it can be pointed at a mirror or a GitHub
+# Enterprise host without hunting through the script.
 GH_API="api.github.com"
 
 # Minimum PostgreSQL major version — a hard requirement, not a preference:
@@ -110,7 +110,7 @@ sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='todorio'" |
 
 # --- 3. Download the latest release: binary + checksums.txt, verify sha256 ---
 say "Fetching the latest release..."
-RELEASE_JSON="$(curl -fsSL "https://${GH_API}/repos/${REPO}/releases/latest")" \
+RELEASE_JSON="$(curl -fsSL "https://$GH_API/repos/$REPO/releases/latest")" \
   || fail "Could not reach GitHub Releases (or no release has been published yet)."
 
 TAG="$(printf '%s' "$RELEASE_JSON" | jq -r '.tag_name // "unknown"')"
