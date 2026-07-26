@@ -47,7 +47,8 @@ func (a *API) normalizeLocale(raw string) string {
 // phrases could never appear. The rules below make each one reachable, and each one says
 // something the others do not:
 //
-//   - overdue     — more was missed than finished. Nothing else matters if that is true.
+//   - overdue     — more was missed than finished, or the board was cleared and something is
+//     still overdue. Nothing else matters if that is true.
 //   - perfect_day — work was done, nothing is overdue, and the board is empty. This is the
 //     literal claim the phrases make ("Zero leftovers", "Nothing left behind"), so it requires
 //     an actually empty board rather than merely a good week.
@@ -57,15 +58,34 @@ func (a *API) normalizeLocale(raw string) string {
 //   - focus       — some progress, but the backlog still dominates.
 //   - neutral     — one or two tasks; too little to characterise.
 //
+// Order matters more than the thresholds do, and getting it wrong is what the tests caught:
+// the progress rules compare done against open, and `done >= open` is trivially true when open
+// is 0, so an empty board satisfied "progress outpaces what is left" no matter how much was
+// overdue. That is how done=4, overdue=1, open=0 came out as project — a caption congratulating
+// steady progress printed next to an overdue counter. So the empty-board states are now decided
+// first, on their own terms, and only boards with open work reach the done-vs-open comparison.
+//
 // Pure function of three counters, so the thresholds are testable without a database.
 func captionCategory(done, overdue, open int) string {
 	switch {
-	case overdue > 0 && overdue > done:
-		return "overdue"
-	case done > 0 && overdue == 0 && open == 0:
-		return "perfect_day"
+	// Nothing finished, nothing missed: a quiet period, and the only state inactive describes.
 	case done == 0 && overdue == 0:
 		return "inactive"
+
+	// Missing more than you finish outranks every congratulation.
+	case overdue > done:
+		return "overdue"
+
+	// An empty board: nothing is left, so there is no backlog to compare against and the
+	// remaining question is only whether it was left clean.
+	case open == 0 && overdue == 0:
+		return "perfect_day"
+	case open == 0 && done >= 5:
+		return "success"
+	case open == 0:
+		return "overdue"
+
+	// Boards with work still open.
 	case done >= 10:
 		return "success"
 	case done >= 3 && done >= open:
