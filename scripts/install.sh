@@ -12,6 +12,7 @@
 # in sync with that if either ever changes.
 #
 # When it finishes, the site is already running; the temporary root password is shown in the console.
+say "Starting installation..."
 set -euo pipefail
 
 REPO="DanMotive/Todorio"
@@ -20,7 +21,6 @@ BIN="/usr/local/bin/todorio"
 say()  { printf '\033[1;36m[todorio]\033[0m %s\n' "$*"; }
 fail() { printf '\033[1;31m[todorio] ERROR:\033[0m %s\n' "$*" >&2; exit 1; }
 
-say "Starting installation..."
 
 [ "$(id -u)" -eq 0 ] || fail "Run with sudo or as root."
 
