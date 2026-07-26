@@ -73,6 +73,25 @@ export function setLocale(l: string) { current = l }
 export function getLocale(): string { return current }
 export function tr(key: string): string { return t(current, key) }
 
+// trOr renders `key`, or `fallback` when no bundle in the chain defines it.
+//
+// This helper has to live here, next to t(), because the miss sentinel is an implementation detail
+// of t(): a key that resolves nowhere comes back as the key itself, not as "" or undefined. That
+// makes the obvious idiom silently wrong --
+//
+//   tr("nav.members") || "Участники"   // the || never fires: "nav.members" is truthy
+//
+// -- which is exactly how the Members and Workflow screens ended up printing raw key names at the
+// user. Comparing against the key is the only way to distinguish a miss from a hit, so any code
+// wanting an inline default must call trOr instead of reinventing the check.
+//
+// A fallback is a safety net for a screen that ships before its locale entries do; it is not a
+// substitute for adding the key to en-US.json, which is the net for all 13 locales.
+export function trOr(key: string, fallback: string): string {
+  const value = t(current, key)
+  return value === key ? fallback : value
+}
+
 // getFormattingLocale returns a locale string that's safe to pass to the browser's Intl API
 // (toLocaleDateString, toLocaleString, ...). getLocale() can return an IT-slang overlay id like
 // "ru-RU-it" — that's our own convention for picking a translation-string pack, not a real BCP-47
