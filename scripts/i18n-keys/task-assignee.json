@@ -1,0 +1,50 @@
+{
+  "overwrite": false,
+  "keys": {
+    "task.assignee": {
+      "en-US": "Assignee",
+      "ru-RU": "Исполнитель",
+      "uk-UA": "Виконавець",
+      "be-BY": "Выканаўца",
+      "kk-KZ": "Орындаушы",
+      "es-ES": "Responsable",
+      "pt-BR": "Responsável",
+      "tr-TR": "Sorumlu",
+      "zh-CN": "负责人",
+      "hi-IN": "जिम्मेदार",
+      "bn-BD": "দায়িত্বপ্রাপ্ত",
+      "ja-JP": "担当者",
+      "ko-KR": "담당자"
+    },
+    "members.unassigned": {
+      "en-US": "No assignee",
+      "ru-RU": "Без исполнителя",
+      "uk-UA": "Без виконавця",
+      "be-BY": "Без выканаўцы",
+      "kk-KZ": "Орындаушысыз",
+      "es-ES": "Sin responsable",
+      "pt-BR": "Sem responsável",
+      "tr-TR": "Sorumlu yok",
+      "zh-CN": "未分配",
+      "hi-IN": "कोई जिम्मेदार नहीं",
+      "bn-BD": "দায়িত্বপ্রাপ্ত কেউ নেই",
+      "ja-JP": "担当者なし",
+      "ko-KR": "담당자 없음"
+    },
+    "workflow.title": {
+      "en-US": "Task statuses",
+      "ru-RU": "Статусы задач",
+      "uk-UA": "Статуси задач",
+      "be-BY": "Статусы задач",
+      "kk-KZ": "Тапсырма күйлері",
+      "es-ES": "Estados de tareas",
+      "pt-BR": "Status das tarefas",
+      "tr-TR": "Görev durumları",
+      "zh-CN": "任务状态",
+      "hi-IN": "कार्य स्थितियाँ",
+      "bn-BD": "কাজের অবস্থা",
+      "ja-JP": "タスクのステータス",
+      "ko-KR": "작업 상태"
+    }
+  }
+}
