@@ -1,0 +1,20 @@
+{
+  "overwrite": true,
+  "keys": {
+    "spaces.lists_empty": {
+      "en-US": "There are no lists in this space yet. Create the first one below.",
+      "ru-RU": "В этом пространстве пока нет списков. Создайте первый ниже.",
+      "uk-UA": "У цьому просторі ще немає списків. Створіть перший нижче.",
+      "be-BY": "У гэтай прасторы пакуль няма спісаў. Стварыце першы ніжэй.",
+      "kk-KZ": "Бұл кеңістікте әзірге тізім жоқ. Түменде біріншісін жасаңыз.",
+      "es-ES": "Todavía no hay listas en este espacio. Crea la primera abajo.",
+      "pt-BR": "Ainda não há listas neste espaço. Crie a primeira abaixo.",
+      "tr-TR": "Bu alanda henüz liste yok. Aşağıdan ilkini oluşturun.",
+      "zh-CN": "这个空间里还没有列表。在下方创建第一个列表。",
+      "hi-IN": "इस स्पेस में अभी कोई सूची नहीं है। नीचे पहली सूची बनाएँ।",
+      "bn-BD": "এই স্পেসে এখনও কোনো তালিকা নেই। নিচে প্রথমটি তৈরি করুন।",
+      "ja-JP": "このスパースにはリストがまだありません。下から最初のリストを作成してください。",
+      "ko-KR": "이 스페이스에는 아직 목록이 없습니다. 아래에서 첫 목록을 만들어 보세요."
+    }
+  }
+}
