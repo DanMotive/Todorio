@@ -79,16 +79,39 @@ Todorio installs on a VPS with a single command and runs without any external Sa
 
 ## System Requirements
 
-- **Operating System:** Linux (Ubuntu 20.04+, Debian 11+, RHEL / CentOS)
-- **Supported Architectures:** `amd64` (x86_64), `arm64` (AArch64)
-- **Minimum Specs:** 512 MB RAM, 1 vCPU, 1 GB available storage
-- **Database:** PostgreSQL (automatically installed and configured by `install.sh` if not present)
+These are runtime requirements for the server that hosts Todorio. You do **not** need Go, Node.js, or a build toolchain there — release binaries ship with the frontend and SQL migrations embedded. For building from source, see [Development](#development).
+
+### Operating system
+
+| | Supported | Notes |
+| :--- | :--- | :--- |
+| **One-command install** | Ubuntu 22.04+, Debian 12+ | `scripts/install.sh` uses `apt-get`/`dpkg`, so it is Debian-family only. |
+| **Manual install** | Any modern Linux distribution (RHEL, CentOS, Fedora, Alpine, Arch, …) | The binary is statically linked (`CGO_ENABLED=0`) and has no glibc or system dependencies. You provide PostgreSQL, the systemd unit, and the database yourself. |
+| **Not supported** | Windows, macOS, \*BSD | Only Linux binaries are published. |
+
+Ubuntu 20.04 and Debian 11 are **not** recommended: their `apt` PostgreSQL packages are 12 and 13, below the 14 that Todorio requires (see below). Installing there gives you an unsupported database version.
+
+### Architecture
+
+`amd64` (x86_64) and `arm64` (AArch64) — the two targets built by `.github/workflows/release.yml`. 32-bit platforms (`armv7`, `i386`) are not supported and `install.sh` refuses to run on them.
+
+### CPU, memory, and disk
+
+- **CPU:** 1 vCPU.
+- **RAM:** 512 MB with PostgreSQL on the same host. Configure swap if you run at 512 MB; 1 GB is more comfortable for a small team.
+- **Disk:** ~1 GB covers the OS, the binary, and an empty database. **Attachments and backups grow on top of that**, in `/var/lib/todorio/uploads` and `/var/lib/todorio/backups` (written by `sudo todorio backup`). Uploads are **unlimited by default** — set a quota in the root panel or via `sudo todorio server limits set limits.uploads.max_total_storage_mb <MB>` before opening the instance to other people.
+
+### Database
+
+**PostgreSQL 14 or newer.** `install.sh` installs the distribution package if `psql` is missing or older than 14, then creates the role and database `todorio`.
+
+> The role is created with the default password `todorio`. It is only reachable locally, but change it (and `/etc/todorio/config.json`) if the host is shared or the database port is exposed.
 
 ---
 
 ## Installation
 
-Run the following command on your VPS:
+Run the following command on your VPS (Ubuntu 22.04+ or Debian 12+):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/DanMotive/Todorio/main/scripts/install.sh | sudo bash
@@ -108,6 +131,8 @@ The setup interactively asks for: the root admin's username, port, HTTPS choice 
 > `sudo todorio setup && sudo systemctl enable --now todorio`
 
 Re-running `install.sh` on an already configured system (`/etc/todorio/config.json` exists) skips setup entirely and just restarts the service with whatever binary is currently installed.
+
+**On non-Debian distributions,** install the pieces yourself: create a PostgreSQL 14+ role and database named `todorio`, download `todorio_linux_<arch>` from the [latest release](https://github.com/DanMotive/Todorio/releases) and verify it against `checksums.txt`, install it to `/usr/local/bin/todorio`, create `/var/lib/todorio/{uploads,backups}` and `/etc/todorio`, then run `sudo todorio setup`. `scripts/install.sh` is short and readable — use it as the reference for the systemd unit.
 
 ---
 
@@ -138,6 +163,9 @@ All day-to-day operations can be managed directly via the `todorio` command:
 ### Prerequisites
 - **Backend:** Go 1.22+
 - **Frontend:** Node.js 20+
+- **Database:** PostgreSQL 14+
+
+These are needed only to build or hack on Todorio — not to run a published release.
 
 ### Local Dev Server
 
@@ -184,7 +212,7 @@ assets.go          — Embeds web/dist/ and migrations/ into the binary
 cmd/todorio/       — CLI and entry point (setup, serve, status, backup, update, server config)
 internal/          — Core logic: config, HTTP+SSE server, setup, ops (status/backup/update/uninstall)
 migrations/        — PostgreSQL SQL migrations (embedded)
-scripts/           — Installation script (install.sh)
+scripts/           — Installation script (install.sh) and maintenance/CI helpers
 web/               — React + Vite frontend, themes, locales, PWA
 .github/workflows/ — Automated GitHub release pipelines
 ```
