@@ -9,11 +9,16 @@
 // It deliberately lives in its own file rather than inside views.tsx: that file is already ~100 KB
 // and holds eight unrelated screens, and growing it further is what makes the frontend hard to
 // keep up with the backend in the first place.
+//
+// Public links and export/import live in sharing.tsx and are mounted here, next to the space and
+// list pickers this page already has: "who can see this" and "is this list public" are the same
+// question, and answering them on two separate screens with two separate pickers would be worse.
 
 import { useEffect, useState } from "react"
 import { api, type Me } from "./api"
 import { Avatar } from "./settings"
 import { tr } from "./i18n"
+import { ShareLinksPanel, SpaceDataCard } from "./sharing"
 
 export type Member = {
   user_id: number
@@ -40,10 +45,10 @@ const SPACE_ROLES = ["owner", "member", "viewer"]
 const LIST_PERMS = ["owner", "editor", "viewer"]
 
 const ROLE_LABELS: Record<string, string> = {
-  owner: t("members.role.owner", "\u0432\u043b\u0430\u0434\u0435\u043b\u0435\u0446"),
-  member: t("members.role.member", "\u0443\u0447\u0430\u0441\u0442\u043d\u0438\u043a"),
-  editor: t("members.role.editor", "\u0440\u0435\u0434\u0430\u043a\u0442\u043e\u0440"),
-  viewer: t("members.role.viewer", "\u0447\u0438\u0442\u0430\u0442\u0435\u043b\u044c"),
+  owner: t("members.role.owner", "владелец"),
+  member: t("members.role.member", "участник"),
+  editor: t("members.role.editor", "редактор"),
+  viewer: t("members.role.viewer", "читатель"),
 }
 
 const roleLabel = (role: string) => ROLE_LABELS[role] || role
@@ -106,24 +111,24 @@ function MemberRoster({ base, roleKey, roles, meId }: {
     })
   }
 
-  if (members === null) return <div className="muted">{t("members.loading", "\u0417\u0430\u0433\u0440\u0443\u0437\u043a\u0430\u2026")}</div>
+  if (members === null) return <div className="muted">{t("members.loading", "Загрузка…")}</div>
 
   return (
     <div>
       {err && <div className="muted" style={{ color: "var(--danger, #c33)", marginBottom: 8 }}>{err}</div>}
 
       {members.length === 0 && !err && (
-        <div className="muted" style={{ marginBottom: 10 }}>{t("members.empty", "\u041f\u043e\u043a\u0430 \u043d\u0438\u043a\u043e\u0433\u043e \u043d\u0435\u0442")}</div>
+        <div className="muted" style={{ marginBottom: 10 }}>{t("members.empty", "Пока никого нет")}</div>
       )}
 
       {members.map((m) => (
         <div key={m.user_id} className="row" style={{ gap: 8, alignItems: "center", padding: "6px 0", flexWrap: "wrap" }}>
           <Avatar userId={m.user_id} name={m.display_name || m.username} size={26} />
           <span>{m.display_name || `@${m.username}`}</span>
-          {m.user_id === meId && <span className="badge">{t("members.you", "\u044d\u0442\u043e \u0432\u044b")}</span>}
+          {m.user_id === meId && <span className="badge">{t("members.you", "это вы")}</span>}
           {m.read_only && (
-            <span className="badge" title={t("members.read_only_hint", "\u0413\u043b\u043e\u0431\u0430\u043b\u044c\u043d\u0430\u044f \u0440\u043e\u043b\u044c \u00ab\u0447\u0438\u0442\u0430\u0442\u0435\u043b\u044c\u00bb \u2014 \u0437\u0430\u043f\u0438\u0441\u044c \u0437\u0430\u043f\u0440\u0435\u0449\u0435\u043d\u0430 \u0432\u0435\u0437\u0434\u0435")}>
-              {t("members.read_only", "\u0442\u043e\u043b\u044c\u043a\u043e \u0447\u0442\u0435\u043d\u0438\u0435")}
+            <span className="badge" title={t("members.read_only_hint", "Глобальная роль «читатель» — запись запрещена везде")}>
+              {t("members.read_only", "только чтение")}
             </span>
           )}
           {m.status !== "active" && <span className="badge">{m.status}</span>}
@@ -140,9 +145,9 @@ function MemberRoster({ base, roleKey, roles, meId }: {
             )}
             {canManage && (
               <button className="ctrl-btn" disabled={busy}
-                title={t("members.remove", "\u0423\u0431\u0440\u0430\u0442\u044c \u0434\u043e\u0441\u0442\u0443\u043f")}
+                title={t("members.remove", "Убрать доступ")}
                 onClick={() => {
-                  if (!window.confirm(t("members.remove_confirm", "\u0423\u0431\u0440\u0430\u0442\u044c \u0434\u043e\u0441\u0442\u0443\u043f?"))) return
+                  if (!window.confirm(t("members.remove_confirm", "Убрать доступ?"))) return
                   run(() => api.del(`${base}/members/${m.user_id}`))
                 }}>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
@@ -155,7 +160,7 @@ function MemberRoster({ base, roleKey, roles, meId }: {
       {canManage && (
         <div className="row" style={{ gap: 6, marginTop: 12, flexWrap: "wrap" }}>
           <input className="input" style={{ maxWidth: 220 }} value={username} disabled={busy}
-            placeholder={t("members.username_placeholder", "\u041b\u043e\u0433\u0438\u043d \u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044f")}
+            placeholder={t("members.username_placeholder", "Логин пользователя")}
             onChange={(e) => setUsername(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") add() }} />
           <select className="input" style={{ width: "auto" }} value={newRole} disabled={busy}
@@ -163,7 +168,7 @@ function MemberRoster({ base, roleKey, roles, meId }: {
             {roles.map((r) => <option key={r} value={r}>{roleLabel(r)}</option>)}
           </select>
           <button className="btn" disabled={busy || !username.trim()} onClick={add}>
-            {t("members.add", "\u0414\u043e\u0431\u0430\u0432\u0438\u0442\u044c")}
+            {t("members.add", "Добавить")}
           </button>
         </div>
       )}
@@ -171,7 +176,7 @@ function MemberRoster({ base, roleKey, roles, meId }: {
   )
 }
 
-/** Space roster + the roster of any one list inside it. */
+/** Space roster + the roster of any one list inside it, plus public links and export/import. */
 export function MembersPage({ me }: { me: Me }) {
   const [spaces, setSpaces] = useState<Array<{ id: number; name: string; my_role: string }>>([])
   const [spaceId, setSpaceId] = useState<number | null>(null)
@@ -179,15 +184,18 @@ export function MembersPage({ me }: { me: Me }) {
   const [listId, setListId] = useState<number | null>(null)
   const [err, setErr] = useState("")
 
-  useEffect(() => {
+  function loadSpaces(select?: number) {
     api.get("/api/spaces")
       .then((r) => {
         const list = r.spaces || []
         setSpaces(list)
-        if (list.length > 0) setSpaceId(list[0].id)
+        if (select !== undefined && list.some((s: { id: number }) => s.id === select)) setSpaceId(select)
+        else if (spaceId === null && list.length > 0) setSpaceId(list[0].id)
       })
       .catch((e) => setErr((e as Error).message))
-  }, [])
+  }
+
+  useEffect(() => { loadSpaces() }, [])
 
   useEffect(() => {
     if (spaceId === null) return
@@ -197,25 +205,27 @@ export function MembersPage({ me }: { me: Me }) {
       .catch(() => setLists([]))
   }, [spaceId])
 
+  const currentSpace = spaces.find((s) => s.id === spaceId)
+
   return (
     <div>
-      <h2 style={{ marginTop: 0 }}>{t("members.title", "\u0423\u0447\u0430\u0441\u0442\u043d\u0438\u043a\u0438 \u0438 \u0434\u043e\u0441\u0442\u0443\u043f")}</h2>
+      <h2 style={{ marginTop: 0 }}>{t("members.title", "Участники и доступ")}</h2>
       {err && <div className="muted" style={{ color: "var(--danger, #c33)" }}>{err}</div>}
 
       {spaces.length === 0 ? (
-        <div className="muted">{t("members.no_spaces", "\u0421\u043d\u0430\u0447\u0430\u043b\u0430 \u0441\u043e\u0437\u0434\u0430\u0439\u0442\u0435 \u043f\u0440\u043e\u0441\u0442\u0440\u0430\u043d\u0441\u0442\u0432\u043e")}</div>
+        <div className="muted">{t("members.no_spaces", "Сначала создайте пространство")}</div>
       ) : (
         <>
           <div className="card">
             <div className="row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-              <b>{t("members.space", "\u041f\u0440\u043e\u0441\u0442\u0440\u0430\u043d\u0441\u0442\u0432\u043e")}</b>
+              <b>{t("members.space", "Пространство")}</b>
               <select className="input" style={{ width: "auto" }} value={spaceId ?? ""}
                 onChange={(e) => setSpaceId(Number(e.target.value))}>
                 {spaces.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </div>
             <p className="muted" style={{ fontSize: 13 }}>
-              {t("members.space_hint", "\u0412\u043b\u0430\u0434\u0435\u043b\u0435\u0446 \u0443\u043f\u0440\u0430\u0432\u043b\u044f\u0435\u0442 \u043f\u0440\u043e\u0441\u0442\u0440\u0430\u043d\u0441\u0442\u0432\u043e\u043c, \u0443\u0447\u0430\u0441\u0442\u043d\u0438\u043a \u0441\u043e\u0437\u0434\u0430\u0451\u0442 \u0441\u043f\u0438\u0441\u043a\u0438, \u0447\u0438\u0442\u0430\u0442\u0435\u043b\u044c \u0442\u043e\u043b\u044c\u043a\u043e \u0441\u043c\u043e\u0442\u0440\u0438\u0442.")}
+              {t("members.space_hint", "Владелец управляет пространством, участник создаёт списки, читатель только смотрит.")}
             </p>
             {spaceId !== null && (
               <MemberRoster base={`/api/spaces/${spaceId}`} roleKey="role" roles={SPACE_ROLES} meId={me.id} />
@@ -224,22 +234,32 @@ export function MembersPage({ me }: { me: Me }) {
 
           <div className="card">
             <div className="row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-              <b>{t("members.list", "\u0421\u043f\u0438\u0441\u043e\u043a")}</b>
+              <b>{t("members.list", "Список")}</b>
               <select className="input" style={{ width: "auto" }} value={listId ?? ""}
                 onChange={(e) => setListId(e.target.value === "" ? null : Number(e.target.value))}>
-                <option value="">{t("members.pick_list", "\u2014 \u0432\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u0441\u043f\u0438\u0441\u043e\u043a —")}</option>
+                <option value="">{t("members.pick_list", "— выберите список —")}</option>
                 {lists.map((l) => (
                   <option key={l.id} value={l.id}>{l.is_private ? `\u{1F512} ${l.name}` : l.name}</option>
                 ))}
               </select>
             </div>
             <p className="muted" style={{ fontSize: 13 }}>
-              {t("members.list_hint", "\u0414\u043e\u0441\u0442\u0443\u043f \u043a \u0441\u043f\u0438\u0441\u043a\u0443 \u0432\u044b\u0434\u0430\u0451\u0442\u0441\u044f \u043e\u0442\u0434\u0435\u043b\u044c\u043d\u043e \u043e\u0442 \u043f\u0440\u043e\u0441\u0442\u0440\u0430\u043d\u0441\u0442\u0432\u0430: \u0440\u0435\u0434\u0430\u043a\u0442\u043e\u0440 \u043c\u0435\u043d\u044f\u0435\u0442 \u0437\u0430\u0434\u0430\u0447\u0438, \u0447\u0438\u0442\u0430\u0442\u0435\u043b\u044c \u0442\u043e\u043b\u044c\u043a\u043e \u0441\u043c\u043e\u0442\u0440\u0438\u0442.")}
+              {t("members.list_hint", "Доступ к списку выдаётся отдельно от пространства: редактор меняет задачи, читатель только смотрит.")}
             </p>
             {listId !== null && (
-              <MemberRoster base={`/api/lists/${listId}`} roleKey="permission" roles={LIST_PERMS} meId={me.id} />
+              <>
+                <MemberRoster base={`/api/lists/${listId}`} roleKey="permission" roles={LIST_PERMS} meId={me.id} />
+                <hr style={{ border: 0, borderTop: "1px solid var(--border, #ddd)", margin: "14px 0" }} />
+                <b>{t("share.title", "Публичные ссылки")}</b>
+                <ShareLinksPanel listId={listId} />
+              </>
             )}
           </div>
+
+          {spaceId !== null && (
+            <SpaceDataCard spaceId={spaceId} isOwner={currentSpace?.my_role === "owner"}
+              onImported={() => loadSpaces()} />
+          )}
         </>
       )}
     </div>
@@ -272,7 +292,7 @@ export function AssigneePicker({ listId, value, onChange, disabled }: {
     <select className="input" style={{ width: "auto" }} disabled={disabled || users === null}
       value={value ?? ""}
       onChange={(e) => onChange(e.target.value === "" ? null : Number(e.target.value))}>
-      <option value="">{t("members.unassigned", "\u0411\u0435\u0437 \u0438\u0441\u043f\u043e\u043b\u043d\u0438\u0442\u0435\u043b\u044f")}</option>
+      <option value="">{t("members.unassigned", "Без исполнителя")}</option>
       {/* A stale assignee (someone whose access was revoked) is still listed so the field never
           silently shows "unassigned" for a task that does have an assignee. */}
       {value !== null && !(users || []).some((u) => u.id === value) && (
