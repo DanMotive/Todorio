@@ -5,6 +5,7 @@ import "./ui.css"
 import { AdminPage, AuthPage, MyTasksPage, NotificationsPage, PendingPage, SpacesPage, TaskModal } from "./views"
 import { AboutPage, AnnouncementsBanner, GlobalFocusTimer, InboxPage, ModalShell, DigestModal, InvitesCard, SearchPage, NoteModal, ServerSettingsCard, TemplatesAdminCard, AnnouncementsAdminCard } from "./extras"
 import { MembersPage } from "./members"
+import { AuditLogCard, FocusStatsCard } from "./insights"
 import { Avatar, SettingsPage, ForcedPasswordChange } from "./settings"
 import { detectLocale, setLocale, tr } from "./i18n"
 import { IconInbox, IconKeyboard, IconMenu, IconSliders } from "./icons"
@@ -33,14 +34,15 @@ function applyTheme(color: string, visual: string) {
   el.dataset.visual = visual
 }
 
-// System browser notifications (spec section 12): "\u0440\u0430\u0431\u043e\u0442\u0430\u0435\u0442 \u0432 \u043e\u0442\u043a\u0440\u044b\u0442\u043e\u0439 \u0432\u043a\u043b\u0430\u0434\u043a\u0435 ... \u0441\u0438\u0441\u0442\u0435\u043c\u043d\u044b\u0435\n// push-\u0443\u0432\u0435\u0434\u043e\u043c\u043b\u0435\u043d\u0438\u044f \u0431\u0440\u0430\u0443\u0437\u0435\u0440\u0430 \u2014 \u0442\u043e\u043b\u044c\u043a\u043e \u043f\u0440\u0438 HTTPS". Read literally, this is the Notification API
+// System browser notifications (spec section 12): "работает в открытой вкладке ... системные
+// push-уведомления браузера — только при HTTPS". Read literally, this is the Notification API
 // fired from an already-open tab, NOT full Web Push.
 //
 // That distinction is deliberate, not a shortcut: real Web Push delivers through the browser
 // vendor's own relay (Google's FCM for Chrome, Mozilla's autopush, ...) even when the tab is
 // closed — which means routing every notification through a third party. That directly
-// contradicts the product's first stated principle ("\u043f\u0440\u0438\u0432\u0430\u0442\u043d\u043e\u0441\u0442\u044c: \u0432\u0441\u0435 \u0434\u0430\u043d\u043d\u044b\u0435 \u043d\u0430 \u0441\u0432\u043e\u0451\u043c \u0441\u0435\u0440\u0432\u0435\u0440\u0435,
-// \u0431\u0435\u0437 \u0432\u043d\u0435\u0448\u043d\u0438\u0445 \u0441\u0435\u0440\u0432\u0438\u0441\u043e\u0432"). The spec's own wording ("in an open tab") matches the lighter
+// contradicts the product's first stated principle ("приватность: все данные на своём сервере,
+// без внешних сервисов"). The spec's own wording ("in an open tab") matches the lighter
 // mechanism, so that's what this is: zero external services, works the moment HTTPS + permission
 // are granted, and stops the moment the tab is closed — which is an honest trade-off to state,
 // not a hidden one.
@@ -144,8 +146,8 @@ export default function App() {
         setUnread(r.unread_notifications)
         const p: Profile | undefined = r.profile
         setProfile(p ?? null)
-        // The profile is the primary source for locale/theme (spec section 9: "1. \u044f\u0437\u044b\u043a \u0438\u0437
-        // \u043f\u0440\u043e\u0444\u0438\u043b\u044f (\u0433\u043b\u0430\u0432\u043d\u044b\u0439)") — it overrides both the bootstrap default and any localStorage
+        // The profile is the primary source for locale/theme (spec section 9: "1. язык из
+        // профиля (главный)") — it overrides both the bootstrap default and any localStorage
         // cache from before login, so a user's own settings follow them to a new device.
         if (p?.locale) setLocale(p.locale)
         if (p?.theme_color || p?.theme_visual) {
@@ -286,7 +288,7 @@ export default function App() {
               still see it: the roster answers "who can see this?", which is not a write. */}
           <button className={"sidebar-btn" + (view === "members" ? " active" : "")} onClick={() => setView("members")}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-            {tr("nav.members") || "\u0423\u0447\u0430\u0441\u0442\u043d\u0438\u043a\u0438"}
+            {tr("nav.members") || "Участники"}
           </button>
           
           <button className={"sidebar-btn" + (view === "search" ? " active" : "")} onClick={() => setView("search")}>
@@ -364,6 +366,10 @@ export default function App() {
         <AnnouncementsBanner />
         <DigestModal />
         {view === "my" && <MyTasksPage me={me} />}
+        {/* Own focused time, under the task list: the sidebar timer could start and stop
+            sessions but the totals were never shown anywhere. Hides itself when nothing has
+            been tracked. */}
+        {view === "my" && <FocusStatsCard />}
         {view === "inbox" && <InboxPage />}
         {view === "spaces" && <SpacesPage me={me} />}
         {view === "members" && <MembersPage me={me} />}
@@ -389,6 +395,8 @@ export default function App() {
             <TemplatesAdminCard me={me} />
             <AnnouncementsAdminCard me={me} />
             <ServerSettingsCard me={me} />
+            {/* Last: the audit trail explains the actions taken with the cards above it. */}
+            <AuditLogCard />
           </>
         )}
 
@@ -412,7 +420,7 @@ export default function App() {
               <code>m</code><span>{tr("nav.my")}</span>
               <code>i</code><span>{tr("inbox.title")}</span>
               <code>s</code><span>{tr("nav.spaces")}</span>
-              <code>u</code><span>{tr("nav.members") || "\u0423\u0447\u0430\u0441\u0442\u043d\u0438\u043a\u0438"}</span>
+              <code>u</code><span>{tr("nav.members") || "Участники"}</span>
               <code>/</code><span>{tr("nav.search")}</span>
               <code>n</code><span>{tr("nav.notifications")}</span>
               <code>Esc</code><span>{tr("help.close")}</span>
