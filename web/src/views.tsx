@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react"
-import { api, type List, type Me, type Space } from "./api"
+import { api, type List, type Me, type Pulse, type Space, type Task } from "./api"
 import { useConfirm, ImportCard, ArchivedSpacesPanel, StatsCard, WorkloadPanel, NotesPanel, ActivityPanel, ArchivePanel, FieldsPanel } from "./extras"
 import { tr } from "./i18n"
 import { TimelineView } from "./timeline"
 import { WorkflowEditor } from "./workflow"
 import { IconGrid, IconArchive, IconEdit, IconCopy, IconArrowLeft, IconList, IconFileText, IconActivity, IconColumns, IconLock, IconSliders, IconBarChart } from "./icons"
-import { ListView, PulseCard } from "./viewsPageC"
+import { ListView } from "./viewsPageC"
+import { PulseCard } from "./viewsPageB"
+import { TaskModal } from "./viewsPageA"
 
 export { AuthPage, PendingPage, TaskModal, TaskContextMenu, TaskHistorySection } from "./viewsPageA"
 export { MyTasksPage } from "./viewsPageB"
@@ -114,14 +116,14 @@ export function SpacesPage({ me }: { me: Me }) {
 
 function SpaceView({ me, space, onBack }: { me: Me; space: Space; onBack: () => void }) {
   const [lists, setLists] = useState<List[]>([])
-  const [pulse, setPulse] = useState<any | null>(null)
+  const [pulse, setPulse] = useState<Pulse | null>(null)
   const [currentList, setCurrentList] = useState<List | null>(null)
   const [name, setName] = useState("")
   const [tab, setTab] = useState<"lists" | "timeline" | "workload" | "notes" | "activity" | "archive" | "fields" | "workflow">("lists")
   const [templates, setTemplates] = useState<Array<{ id: number; name: string }>>([])
   const [progressMode, setProgressMode] = useState<"count" | "weight">(
     () => (localStorage.getItem("todorio.progress_mode") === "weight" ? "weight" : "count"))
-  const [open, setOpen] = useState<any | null>(null)
+  const [open, setOpen] = useState<Task | null>(null)
   const [allSpaces, setAllSpaces] = useState<Space[]>([])
   const [renamingListId, setRenamingListId] = useState<number | null>(null)
   const [renameValue, setRenameValue] = useState("")
@@ -310,9 +312,7 @@ function SpaceView({ me, space, onBack }: { me: Me; space: Space; onBack: () => 
       {tab === "archive" && <div className="card"><ArchivePanel me={me} spaceId={space.id} /></div>}
       {tab === "fields" && <div className="card"><FieldsPanel spaceId={space.id} isOwner={space.my_role === "owner"} /></div>}
       {tab === "workflow" && <div className="card"><WorkflowEditor spaceId={space.id} isOwner={space.my_role === "owner"} /></div>}
-      {open && <TaskModalRef task={open} me={me} spaceId={space.id} onClose={() => setOpen(null)} onChanged={load} />}
+      {open && <TaskModal task={open} me={me} spaceId={space.id} onClose={() => setOpen(null)} onChanged={load} />}
     </div>
   )
 }
-
-import { TaskModal as TaskModalRef } from "./viewsPageA"
