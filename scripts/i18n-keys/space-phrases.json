@@ -1,0 +1,20 @@
+{
+  "overwrite": true,
+  "keys": {
+    "spaces.archive_confirm": {
+      "en-US": "Archive “{name}”? You can restore it from the archive later.",
+      "ru-RU": "Архивировать «{name}»? Позже его можно вернуть из архива.",
+      "uk-UA": "Архівувати «{name}»? Пізніше його можна повернути з архіву.",
+      "be-BY": "Архіваваць «{name}»? Пазней яе можна вярнуць з архіва.",
+      "kk-KZ": "«{name}» мұрағатқа жіберілсін бе? Кейін оны мұрағаттан қайтаруға болады.",
+      "es-ES": "¿Archivar «{name}»? Podrás restaurarlo desde el archivo más tarde.",
+      "pt-BR": "Arquivar “{name}”? Você pode restaurá-lo do arquivo depois.",
+      "tr-TR": "“{name}” arşivlensin mi? Daha sonra arşivden geri alabilirsiniz.",
+      "zh-CN": "要归档“{name}”吗？之后可以从归档中恢复。",
+      "hi-IN": "“{name}” को संग्रह में भेजें? इसे बाद में संग्रह से बहाल किया जा सकता है।",
+      "bn-BD": "“{name}” আর্কাইভ করবেন? পরে আর্কাইভ থেকে ফিরিয়ে আনা যাবে।",
+      "ja-JP": "「{name}」をアーカイブしますか？後でアーカイブから復元できます。",
+      "ko-KR": "“{name}”е��"
+    }
+  }
+}
