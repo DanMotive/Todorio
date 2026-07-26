@@ -7,7 +7,7 @@ import { TimelineView } from "./timeline"
 import { WorkflowEditor } from "./workflow"
 import { AssigneePicker } from "./members"
 import { WorkloadPanel, ImportCard } from "./functional"
-import { IconStar, IconRefresh, IconLock, IconX, IconUser, IconPause, IconSlash, IconClock, IconGrid, IconArrowLeft, IconList, IconFileText, IconActivity, IconMenu, IconColumns, IconTable, IconCheckCircle, IconMessage, IconPin, IconAlertCircle, IconArchive, IconCalendar, IconSliders, IconBarChart } from "./icons"
+import { IconStar, IconRefresh, IconLock, IconX, IconUser, IconPause, IconSlash, IconClock, IconGrid, IconArrowLeft, IconList, IconFileText, IconActivity, IconMenu, IconColumns, IconTable, IconCheckCircle, IconMessage, IconPin, IconAlertCircle, IconArchive, IconCalendar, IconSliders, IconBarChart, IconEdit, IconCopy } from "./icons"
 import { endOfDayISO, dueClass, dueLabel, formatSystemComment, StatusChip, TaskRow } from "./taskui"
 
 // ---------- helpers ----------
@@ -857,7 +857,7 @@ function MyStatsPanel() {
 
 type MySubTab = "all" | "today" | "overdue" | "review" | "no_deadline" | "mentions"
 
-// Onboarding quest progress (spec section 12: "с прогресс-б��ром освоения"). The quests and the
+// Onboarding quest progress (spec section 12: "с прогресс-баром освоения"). The quests and the
 // "create them on approval" step already existed; this was the missing readout.
 //
 // Hides itself in three cases: the account has no quest list at all (quests were off, or this
@@ -999,6 +999,8 @@ export function SpacesPage({ me }: { me: Me }) {
   const [current, setCurrent] = useState<Space | null>(null)
   const [name, setName] = useState("")
   const [showArchived, setShowArchived] = useState(false)
+  const [renamingId, setRenamingId] = useState<number | null>(null)
+  const [renameValue, setRenameValue] = useState("")
   const { confirm, confirmElement } = useConfirm()
   const load = () => api.get("/api/spaces").then((r) => setSpaces(r.spaces)).catch(() => {})
   useEffect(() => { load() }, [])
@@ -1007,37 +1009,74 @@ export function SpacesPage({ me }: { me: Me }) {
 
   const canManage = (s: Space) => s.my_role === "owner" || me.role === "root" || me.role === "admin"
 
+  async function renameSpace(id: number) {
+    const val = renameValue.trim()
+    setRenamingId(null)
+    if (!val) return
+    await api.patch(`/api/spaces/${id}`, { name: val }).catch(() => {})
+    load()
+  }
+
+  async function duplicateSpace(id: number) {
+    await api.post(`/api/spaces/${id}/duplicate`, {}).catch(() => {})
+    load()
+  }
+
   return (
     <div className="card">
       {confirmElement}
       <h2>{tr("spaces.title")}</h2>
       {spaces.length === 0 && <p className="muted">{tr("spaces.empty")}</p>}
-      {spaces.map((s) => (
-        <div key={s.id} className="task-row" onClick={() => setCurrent(s)}>
-          <span className="task-title row" style={{ gap: 6 }}><IconGrid size={14} /> {s.name}</span>
-          <span className="muted" style={{ fontSize: 12 }}>{s.my_role || tr("spaces.admin_access")}</span>
-          {canManage(s) && (
-            <button className="nav-btn" style={{ padding: "2px 6px", color: "var(--due-overdue)" }}
-              title={tr("task.archive")}
-              onClick={(e) => {
-                e.stopPropagation()
-                confirm({
-                  title: tr("spaces.archive_confirm").replace("{name}", s.name),
-                  body: tr("confirm.archive_body"),
-                  confirmLabel: tr("task.archive"),
-                  danger: true,
-                  action: async () => {
-                    await api.del(`/api/spaces/${s.id}`).catch(() => {})
-                    load()
-                  },
-                })
-              }}>
-              <IconArchive size={14} />
-            </button>
-          )}
-          <span className="muted" style={{ fontSize: 16, lineHeight: 1 }}>›</span>
-        </div>
-      ))}
+      {spaces.map((s) => {
+        const editing = renamingId === s.id
+        return (
+          <div key={s.id} className="task-row" onClick={() => !editing && setCurrent(s)}>
+            {editing ? (
+              <form className="row grow" style={{ gap: 6 }} onClick={(e) => e.stopPropagation()}
+                onSubmit={(e) => { e.preventDefault(); renameSpace(s.id) }}>
+                <input className="input grow" autoFocus value={renameValue} onChange={(e) => setRenameValue(e.target.value)} />
+                <button className="btn" type="submit">{tr("common.save")}</button>
+                <button className="nav-btn" type="button" onClick={() => setRenamingId(null)}>{tr("confirm.cancel")}</button>
+              </form>
+            ) : (
+              <>
+                <span className="task-title row" style={{ gap: 6 }}><IconGrid size={14} /> {s.name}</span>
+                <span className="muted" style={{ fontSize: 12 }}>{s.my_role || tr("spaces.admin_access")}</span>
+              </>
+            )}
+            {!editing && canManage(s) && (
+              <>
+                <button className="nav-btn" style={{ padding: "2px 6px" }} title={tr("action.rename")}
+                  onClick={(e) => { e.stopPropagation(); setRenamingId(s.id); setRenameValue(s.name) }}>
+                  <IconEdit size={14} />
+                </button>
+                <button className="nav-btn" style={{ padding: "2px 6px" }} title={tr("action.duplicate")}
+                  onClick={(e) => { e.stopPropagation(); duplicateSpace(s.id) }}>
+                  <IconCopy size={14} />
+                </button>
+                <button className="nav-btn" style={{ padding: "2px 6px", color: "var(--due-overdue)" }}
+                  title={tr("task.archive")}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    confirm({
+                      title: tr("spaces.archive_confirm").replace("{name}", s.name),
+                      body: tr("confirm.archive_body"),
+                      confirmLabel: tr("task.archive"),
+                      danger: true,
+                      action: async () => {
+                        await api.del(`/api/spaces/${s.id}`).catch(() => {})
+                        load()
+                      },
+                    })
+                  }}>
+                  <IconArchive size={14} />
+                </button>
+              </>
+            )}
+            {!editing && <span className="muted" style={{ fontSize: 16, lineHeight: 1 }}>›</span>}
+          </div>
+        )
+      })}
       <form className="row" style={{ marginTop: 12 }} onSubmit={async (e) => {
         e.preventDefault()
         if (!name.trim()) return
@@ -1240,6 +1279,16 @@ function SpaceView({ me, space, onBack }: { me: Me; space: Space; onBack: () => 
   // The Timeline tab only knows a task's id (it's plotting bars, not full task objects), so
   // opening one from a bar click fetches it the same way openMentionedTask does elsewhere.
   const [open, setOpen] = useState<Task | null>(null)
+  // List row actions: rename (inline edit) and duplicate (optionally into another space, which
+  // doubles as "copy list elsewhere" since the duplicate endpoint already accepts a target
+  // space_id — no separate clipboard concept needed).
+  const [allSpaces, setAllSpaces] = useState<Space[]>([])
+  const [renamingListId, setRenamingListId] = useState<number | null>(null)
+  const [renameValue, setRenameValue] = useState("")
+  const [duplicatingListId, setDuplicatingListId] = useState<number | null>(null)
+  const [dupName, setDupName] = useState("")
+  const [dupTargetSpace, setDupTargetSpace] = useState<number>(space.id)
+  const { confirm, confirmElement } = useConfirm()
 
   const load = () => {
     api.get(`/api/spaces/${space.id}/lists`).then((r) => setLists(r.lists)).catch(() => {})
@@ -1247,10 +1296,34 @@ function SpaceView({ me, space, onBack }: { me: Me; space: Space; onBack: () => 
   }
   useEffect(() => { load() }, [space.id])
   useEffect(() => { api.get("/api/templates").then((r) => setTemplates(r.templates)).catch(() => {}) }, [])
+  useEffect(() => { api.get("/api/spaces").then((r) => setAllSpaces(r.spaces)).catch(() => {}) }, [])
 
   async function openTaskById(id: number) {
     const r = await api.get(`/api/tasks/${id}`).catch(() => null)
     if (r?.task) setOpen(r.task)
+  }
+
+  async function renameList(id: number) {
+    const val = renameValue.trim()
+    setRenamingListId(null)
+    if (!val) return
+    await api.patch(`/api/lists/${id}`, { name: val }).catch(() => {})
+    load()
+  }
+
+  function startDuplicate(l: List) {
+    setDuplicatingListId(l.id)
+    setDupName(l.name)
+    setDupTargetSpace(space.id)
+  }
+
+  async function confirmDuplicate(id: number) {
+    await api.post(`/api/lists/${id}/duplicate`, {
+      space_id: dupTargetSpace,
+      name: dupName.trim() || undefined,
+    }).catch(() => {})
+    setDuplicatingListId(null)
+    load()
   }
 
   if (currentList) return <ListView me={me} list={currentList} spaceId={space.id} onBack={() => { setCurrentList(null); load() }} />
@@ -1263,6 +1336,7 @@ function SpaceView({ me, space, onBack }: { me: Me; space: Space; onBack: () => 
 
   return (
     <div>
+      {confirmElement}
       <div className="row" style={{ marginBottom: 12 }}>
         <button className="nav-btn row" style={{ gap: 4, display: "inline-flex" }} onClick={onBack}><IconArrowLeft size={14} /> {tr("common.back")}</button>
         <h2 style={{ margin: 0 }}>{space.name}</h2>
@@ -1307,12 +1381,67 @@ function SpaceView({ me, space, onBack }: { me: Me; space: Space; onBack: () => 
             const byWeight = progressMode === "weight" && l.weight_total !== undefined
             const done = byWeight ? (l.weight_done ?? 0) : l.done_count
             const total = byWeight ? (l.weight_total ?? 0) : l.task_count
+            const canManageList = l.my_permission === "owner"
+            const editing = renamingListId === l.id
+            const duplicating = duplicatingListId === l.id
             return (
-              <div key={l.id} className="task-row" onClick={() => setCurrentList(l)}>
-                <span className="task-title row" style={{ gap: 6 }}>{l.is_private ? <IconLock size={14} /> : <IconList size={14} />} {l.name}</span>
-                <span className="muted">{done}/{total}</span>
-                <progress className="progress" max={total || 1} value={done} />
-                <span className="muted" style={{ fontSize: 16, lineHeight: 1 }}>›</span>
+              <div key={l.id} className="task-row" style={duplicating ? { flexWrap: "wrap" } : undefined}
+                onClick={() => !editing && !duplicating && setCurrentList(l)}>
+                {editing ? (
+                  <form className="row grow" style={{ gap: 6 }} onClick={(e) => e.stopPropagation()}
+                    onSubmit={(e) => { e.preventDefault(); renameList(l.id) }}>
+                    <input className="input grow" autoFocus value={renameValue} onChange={(e) => setRenameValue(e.target.value)} />
+                    <button className="btn" type="submit">{tr("common.save")}</button>
+                    <button className="nav-btn" type="button" onClick={() => setRenamingListId(null)}>{tr("confirm.cancel")}</button>
+                  </form>
+                ) : (
+                  <>
+                    <span className="task-title row" style={{ gap: 6 }}>{l.is_private ? <IconLock size={14} /> : <IconList size={14} />} {l.name}</span>
+                    <span className="muted">{done}/{total}</span>
+                    <progress className="progress" max={total || 1} value={done} />
+                  </>
+                )}
+                {!editing && (
+                  <>
+                    {canManageList && (
+                      <button className="nav-btn" style={{ padding: "2px 6px" }} title={tr("action.rename")}
+                        onClick={(e) => { e.stopPropagation(); setRenamingListId(l.id); setRenameValue(l.name) }}>
+                        <IconEdit size={14} />
+                      </button>
+                    )}
+                    <button className="nav-btn" style={{ padding: "2px 6px" }} title={tr("action.duplicate")}
+                      onClick={(e) => { e.stopPropagation(); startDuplicate(l) }}>
+                      <IconCopy size={14} />
+                    </button>
+                    {canManageList && (
+                      <button className="nav-btn" style={{ padding: "2px 6px", color: "var(--due-overdue)" }} title={tr("task.archive")}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          confirm({
+                            title: tr("lists.archive_confirm").replace("{name}", l.name),
+                            body: tr("confirm.archive_body"),
+                            confirmLabel: tr("task.archive"), danger: true,
+                            action: async () => { await api.del(`/api/lists/${l.id}`).catch(() => {}); load() },
+                          })
+                        }}>
+                        <IconArchive size={14} />
+                      </button>
+                    )}
+                    <span className="muted" style={{ fontSize: 16, lineHeight: 1 }}>›</span>
+                  </>
+                )}
+                {duplicating && (
+                  <div className="row" style={{ gap: 6, width: "100%", marginTop: 6 }} onClick={(e) => e.stopPropagation()}>
+                    <input className="input grow" placeholder={tr("action.duplicate_name_placeholder")}
+                      value={dupName} onChange={(e) => setDupName(e.target.value)} />
+                    <select className="input" style={{ width: "auto" }} title={tr("action.duplicate_target_space")}
+                      value={dupTargetSpace} onChange={(e) => setDupTargetSpace(Number(e.target.value))}>
+                      {allSpaces.map((sp) => <option key={sp.id} value={sp.id}>{sp.name}</option>)}
+                    </select>
+                    <button className="btn" onClick={() => confirmDuplicate(l.id)}>{tr("action.duplicate_confirm")}</button>
+                    <button className="nav-btn" onClick={() => setDuplicatingListId(null)}>{tr("confirm.cancel")}</button>
+                  </div>
+                )}
               </div>
             )
           })}
@@ -1658,233 +1787,4 @@ function ListView({ me, list, spaceId, onBack }: { me: Me; list: List; spaceId: 
           <button className={"nav-btn row" + (viewMode === "list" ? " active" : "")} style={{ gap: 5, display: "inline-flex" }} onClick={() => setViewMode("list")}><IconMenu size={14} /> {tr("view.list")}</button>
           <button className={"nav-btn row" + (viewMode === "kanban" ? " active" : "")} style={{ gap: 5, display: "inline-flex" }} onClick={() => setViewMode("kanban")}><IconColumns size={14} /> {tr("view.kanban")}</button>
           <button className={"nav-btn row" + (viewMode === "table" ? " active" : "")} style={{ gap: 5, display: "inline-flex" }} onClick={() => setViewMode("table")}><IconTable size={14} /> {tr("view.table")}</button>
-          <button className={"nav-btn row" + (viewMode === "calendar" ? " active" : "")} style={{ gap: 5, display: "inline-flex" }} onClick={() => setViewMode("calendar")}><IconCalendar size={14} /> {tr("view.calendar")}</button>
-        </div>
-      </div>
-
-      <FiltersBar listId={list.id} statuses={statuses} onFilter={setFilterQuery} />
-
-      {loadError && <p className="error-text">{tr("task.load_error")}: {loadError}</p>}
-      {confirmElement}
-
-      {/* Bulk bar appears only with a selection, so it never takes space it hasn't earned. */}
-      {selected.size > 0 && (
-        <div className="bulk-bar">
-          <b>{tr("bulk.selected").replace("{n}", String(selected.size))}</b>
-          <select className="input" style={{ width: "auto" }} defaultValue=""
-            onChange={(e) => { if (e.target.value) { patchMany({ status: e.target.value }); e.target.value = "" } }}>
-            <option value="">{tr("task.status")}</option>
-            {statuses.map((s) => (
-              <option key={s} value={s}>{DEFAULT_STATUSES.includes(s) ? tr("task.status." + s) : s}</option>
-            ))}
-          </select>
-          <select className="input" style={{ width: "auto" }} defaultValue=""
-            onChange={(e) => { if (e.target.value) { patchMany({ priority: e.target.value }); e.target.value = "" } }}>
-            <option value="">{tr("task.priority")}</option>
-            <option value="low">{tr("task.priority.low")}</option>
-            <option value="normal">{tr("task.priority.normal")}</option>
-            <option value="high">{tr("task.priority.high")}</option>
-            <option value="urgent">{tr("task.priority.urgent")}</option>
-          </select>
-          <input className="input" type="date" style={{ width: "auto" }}
-            title={tr("task.due_at")}
-            onChange={(e) => {
-              if (e.target.value) patchMany({ due_at: new Date(e.target.value).toISOString() })
-            }} />
-          <button className="nav-btn" onClick={() => patchMany({ clear_due_at: true })}>
-            {tr("bulk.clear_due")}
-          </button>
-          <button className="nav-btn" onClick={() => patchMany({ assignee_id: me.id })}>
-            {tr("bulk.assign_me")}
-          </button>
-          <button className="nav-btn" style={{ color: "var(--due-overdue)" }}
-            onClick={() => confirm({
-              title: tr("bulk.confirm_archive_title").replace("{n}", String(selected.size)),
-              body: tr("confirm.archive_body"),
-              confirmLabel: tr("task.archive"), danger: true, action: archiveMany,
-            })}>
-            {tr("task.archive")}
-          </button>
-          <button className="nav-btn" style={{ marginLeft: "auto" }} onClick={() => setSelected(new Set())}>
-            {tr("bulk.clear_selection")}
-          </button>
-        </div>
-      )}
-
-      {viewMode === "list" && filteredRoots.map((task) => (
-        <div key={task.id}>
-          <TaskRow task={task} onToggle={toggle} onOpen={setOpen} meId={me.id}
-            selected={selected.has(task.id)} onSelect={toggleSelect}
-            statuses={statuses} onStatus={moveToStatus}
-            onContext={(t, x, y) => setMenu({ task: t, x, y })} />
-          {tasks.filter((s) => s.parent_id === task.id).map((sub) => (
-            <div key={sub.id} style={{ marginLeft: 28 }}>
-              <TaskRow task={sub} onToggle={toggle} onOpen={setOpen} meId={me.id}
-                selected={selected.has(sub.id)} onSelect={toggleSelect}
-                statuses={statuses} onStatus={moveToStatus}
-                onContext={(t, x, y) => setMenu({ task: t, x, y })} />
-            </div>
-          ))}
-        </div>
-      ))}
-      {viewMode === "kanban" && <KanbanBoard tasks={filteredRoots} statuses={statuses} onOpen={setOpen} onDrop={moveToStatus} meId={me.id} />}
-      {viewMode === "table" && <TableView tasks={filteredRoots} onOpen={setOpen} onToggle={toggle} meId={me.id} />}
-      {viewMode === "calendar" && <CalendarView tasks={filteredRoots} onOpen={setOpen} />}
-
-      <form className="row" style={{ marginTop: 12 }} onSubmit={async (e) => {
-        e.preventDefault()
-        if (!title.trim()) return
-        setCreateError("")
-        try {
-          await api.post(`/api/lists/${list.id}/tasks`, {
-            title, due_at: due ? new Date(due).toISOString() : null,
-            // Smart quick-add: "#tag !priority @user tomorrow" is extracted server-side
-            // (spec section 5). An explicit date picked in the field still wins over a
-            // parsed one — the server only fills what the client left empty.
-            parse: true,
-          })
-          setTitle(""); setDue("")
-          load()
-        } catch (err) {
-          setCreateError((err as Error).message)
-        }
-      }}>
-        <input className="input grow" placeholder={tr("task.new_placeholder")} value={title} onChange={(e) => setTitle(e.target.value)} />
-        <input className="input" style={{ width: 170 }} type="date" value={due} onChange={(e) => setDue(e.target.value)} />
-        <button className="btn" type="submit">+</button>
-      </form>
-      {/* Quick-add syntax is invisible unless it's advertised — a parser nobody knows about
-          gets no use. Shown once under the field rather than as a tooltip. */}
-      <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>{tr("task.quickadd_hint")}</div>
-      {createError && <p className="error-text">{createError}</p>}
-      {menu && (
-        <TaskContextMenu task={menu.task} x={menu.x} y={menu.y} statuses={statuses} meId={me.id}
-          onClose={() => setMenu(null)}
-          onPatch={async (patch) => {
-            await api.patch(`/api/tasks/${menu.task.id}`, patch).catch((e) => setCreateError((e as Error).message))
-            if (patch.status === "done") window.dispatchEvent(new CustomEvent("todorio:focus-changed"))
-            setMenu(null)
-            load()
-          }}
-          onOpenFull={() => { setOpen(menu.task); setMenu(null) }} />
-      )}
-      {open && <TaskModal task={open} me={me} spaceId={spaceId} onClose={() => setOpen(null)} onChanged={load} />}
-    </div>
-  )
-}
-
-// ---------- notifications ----------
-
-const KIND_ICON: Record<string, React.ReactNode> = {
-  approved: <IconCheckCircle size={15} />, task_assigned: <IconPin size={15} />,
-  comment: <IconMessage size={15} />, reaction: <IconStar size={15} />,
-  overdue: <IconClock size={15} />, space_added: <IconGrid size={15} />, list_shared: <IconList size={15} />,
-  status_changed: <IconRefresh size={15} />, due_changed: <IconClock size={15} />,
-  due_soon: <IconClock size={15} />, due_today: <IconAlertCircle size={15} />,
-  archive_expiring: <IconArchive size={15} />,
-}
-
-export function NotificationsPage({ onRead }: { onRead: () => void }) {
-  const [items, setItems] = useState<any[]>([])
-  const load = () => api.get("/api/notifications").then((r) => setItems(r.notifications)).catch(() => {})
-  useEffect(() => { load() }, [])
-
-  return (
-    <div className="card">
-      <div className="row">
-        <h2 className="grow">{tr("notif.title")}</h2>
-        <button className="nav-btn" onClick={async () => { await api.post("/api/notifications/read"); load(); onRead() }}>
-          {tr("notif.read_all")}
-        </button>
-      </div>
-      {items.length === 0 && <p className="muted">{tr("notif.empty")}</p>}
-      {items.map((n) => (
-        <div key={n.id} className="task-row" style={{ opacity: n.read_at ? 0.55 : 1 }}>
-          <span className="task-title row" style={{ gap: 6 }}>
-            {KIND_ICON[n.kind] || null}
-            <span>
-              {tr("notif.kind." + n.kind)}
-              {n.kind === "due_soon" && n.payload?.days
-                ? tr("notif.days_suffix").replace("{days}", String(n.payload.days)) : ""}
-              {n.kind === "archive_expiring" && n.payload?.days_left
-                ? tr("notif.days_suffix").replace("{days}", String(n.payload.days_left)) : ""}
-              {n.payload?.title ? ` · «${n.payload.title}»` : ""}
-              {n.payload?.task_title ? ` · «${n.payload.task_title}»` : ""}
-              {n.payload?.by ? ` · ${tr("notif.by")} @${n.payload.by}` : ""}
-              {n.payload?.emoji ? ` ${n.payload.emoji}` : ""}
-            </span>
-          </span>
-          <span className="muted">{new Date(n.created_at).toLocaleString(getFormattingLocale())}</span>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-// ---------- admin panel ----------
-
-export function AdminPage({ me }: { me: Me }) {
-  const { confirm, confirmElement } = useConfirm()
-  const [users, setUsers] = useState<any[]>([])
-  const [tempPass, setTempPass] = useState<{ user: string; pass: string } | null>(null)
-  const load = () => api.get("/api/admin/users").then((r) => setUsers(r.users)).catch(() => {})
-  useEffect(() => { load() }, [])
-
-  return (
-    <div className="card">
-      {confirmElement}
-      <h2>{trFormal("admin.users")}</h2>
-      {tempPass && (
-        <div className="card" style={{ borderColor: "var(--accent)", marginBottom: 12 }}>
-          {trFormal("admin.temp_pass_for")} <b>@{tempPass.user}</b>: <code>{tempPass.pass}</code>
-          <div className="muted">{trFormal("admin.shown_once")}</div>
-        </div>
-      )}
-      {users.map((u) => (
-        <div key={u.id} className="task-row" style={{ cursor: "default" }}>
-          <span className="task-title">
-            @{u.username} <span className="muted">· {u.role} · {u.status}</span>
-          </span>
-          {u.status === "pending" && (
-            <>
-              <button className="btn" onClick={async () => { await api.post(`/api/admin/users/${u.id}/approve`, { role: "user" }); load() }}>
-                {trFormal("admin.approve")}
-              </button>
-              <button className="nav-btn" onClick={async () => { await api.post(`/api/admin/users/${u.id}/status`, { status: "rejected" }); load() }}>
-                {trFormal("admin.reject")}
-              </button>
-            </>
-          )}
-          {u.status === "active" && u.role !== "root" && (
-            <>
-              <button className="nav-btn" onClick={() => confirm({
-                title: trFormal("confirm.block_title").replace("{user}", u.username),
-                body: trFormal("confirm.block_body"),
-                confirmLabel: trFormal("admin.block"), danger: true,
-                action: async () => { await api.post(`/api/admin/users/${u.id}/status`, { status: "blocked" }); load() },
-              })}>
-                {trFormal("admin.block")}
-              </button>
-              <button className="nav-btn" onClick={() => confirm({
-                title: trFormal("confirm.reset_pw_title").replace("{user}", u.username),
-                body: trFormal("confirm.reset_pw_body"),
-                confirmLabel: trFormal("admin.reset_password"), danger: true,
-                action: async () => {
-                  const r = await api.post(`/api/admin/users/${u.id}/reset-password`)
-                  setTempPass({ user: u.username, pass: r.temp_password })
-                },
-              })}>
-                {trFormal("admin.reset_password")}
-              </button>
-            </>
-          )}
-          {u.status === "blocked" && (
-            <button className="btn" onClick={async () => { await api.post(`/api/admin/users/${u.id}/status`, { status: "active" }); load() }}>
-              {trFormal("admin.unblock")}
-            </button>
-          )}
-        </div>
-      ))}
-    </div>
-  )
-}
+          <button className={"nav-btn row" + (viewMode === "calendar" ? " active" : "")} style
