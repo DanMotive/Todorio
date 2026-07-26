@@ -10,4 +10,4 @@ import { WorkloadPanel, ImportCard } from "./functional"
 import { IconStar, IconRefresh, IconLock, IconX, IconUser, IconPause, IconSlash, IconClock, IconGrid, IconArrowLeft, IconList, IconFileText, IconActivity, IconMenu, IconColumns, IconTable, IconCheckCircle, IconMessage, IconPin, IconAlertCircle, IconArchive, IconCalendar, IconSliders, IconBarChart, IconEdit, IconCopy } from "./icons"
 import { endOfDayISO, dueClass, dueLabel, formatSystemComment, StatusChip, TaskRow } from "./taskui"
 
-function SpaceRenameAndTools() { return null }
+// PART_MARKER_A
