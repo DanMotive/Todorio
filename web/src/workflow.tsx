@@ -15,7 +15,8 @@ import { IconX } from "./icons"
 
 // trOr(), not `tr(key) || fallback`: t() in i18n.ts ends with `return key`, so an unresolved key
 // comes back truthy and the || fallback was dead code — this screen used to print workflow.title
-// and friends verbatim. The fallbacks now really are fallbacks; en-US and ru-RU carry every key.
+// and friends verbatim. The fallbacks now really are fallbacks, written in English since that is
+// the neutral default this project falls back to across all thirteen locales.
 const t = trOr
 
 const MAX_LEN = 24
@@ -66,7 +67,7 @@ export function WorkflowEditor({ spaceId, isOwner }: { spaceId: number; isOwner:
       // The limit is interpolated at the call site: tr()/trOr() return the string as stored, they
       // do not format, so the locale value carries a {max} placeholder.
       setError(
-        t("workflow.too_long", "Слишком длинное название. Максимум {max} символов.")
+        t("workflow.too_long", "That name is too long. Maximum {max} characters.")
           .replace("{max}", String(MAX_LEN)),
       )
       return
@@ -74,7 +75,7 @@ export function WorkflowEditor({ spaceId, isOwner }: { spaceId: number; isOwner:
     // Case-insensitive, because "QA" and "qa" would render as two columns holding the same work.
     // mergeStatuses only dedupes exact matches, so this check has to happen here.
     if ([...defaults, ...custom].some((s) => s.toLowerCase() === name.toLowerCase())) {
-      setError(t("workflow.duplicate", "Такой статус уже есть"))
+      setError(t("workflow.duplicate", "That status already exists"))
       return
     }
     setDraft("")
@@ -96,24 +97,24 @@ export function WorkflowEditor({ spaceId, isOwner }: { spaceId: number; isOwner:
 
   return (
     <div>
-      <div className="section-title">{t("workflow.title", "Статусы задач")}</div>
+      <div className="section-title">{t("workflow.title", "Task statuses")}</div>
 
       <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
-        {t("workflow.builtin_hint", "Встроенные статусы убрать нельзя: их добавляет сервер, а done закрывает задачу.")}
+        {t("workflow.builtin_hint", "Built-in statuses cannot be removed. The server adds them, and done closes a task.")}
       </div>
       <div className="row" style={{ gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
         {defaults.map((s) => (
-          <span key={s} className="badge" title={t("workflow.builtin", "Встроенный статус")}>
+          <span key={s} className="badge" title={t("workflow.builtin", "Built-in status")}>
             {DEFAULT_STATUSES.includes(s) ? tr("task.status." + s) : s}
           </span>
         ))}
       </div>
 
       <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>
-        {t("workflow.custom_hint", "Свои статусы идут после встроенных — в том же порядке они станут колонками канбан-доски.")}
+        {t("workflow.custom_hint", "Your own statuses come after the built-in ones. In that same order they become kanban columns.")}
       </div>
       {custom.length === 0 && (
-        <p className="muted" style={{ fontSize: 13 }}>{t("workflow.empty", "Своих статусов пока нет.")}</p>
+        <p className="muted" style={{ fontSize: 13 }}>{t("workflow.empty", "No custom statuses yet.")}</p>
       )}
       {custom.map((s, i) => (
         <div key={s} className="row" style={{ gap: 6, marginBottom: 4, fontSize: 13 }}>
@@ -121,9 +122,9 @@ export function WorkflowEditor({ spaceId, isOwner }: { spaceId: number; isOwner:
           {isOwner && (
             <>
               <button className="nav-btn" style={{ padding: "1px 7px" }} disabled={busy || i === 0}
-                title={t("workflow.move_up", "Выше")} onClick={() => move(i, -1)}>↑</button>
+                title={t("workflow.move_up", "Up")} onClick={() => move(i, -1)}>↑</button>
               <button className="nav-btn" style={{ padding: "1px 7px" }} disabled={busy || i === custom.length - 1}
-                title={t("workflow.move_down", "Ниже")} onClick={() => move(i, 1)}>↓</button>
+                title={t("workflow.move_down", "Down")} onClick={() => move(i, 1)}>↓</button>
               <button className="nav-btn" style={{ padding: "1px 6px", color: "var(--due-overdue)" }}
                 disabled={busy} title={tr("common.click_to_remove")}
                 onClick={() => save(custom.filter((x) => x !== s))}>
@@ -138,7 +139,7 @@ export function WorkflowEditor({ spaceId, isOwner }: { spaceId: number; isOwner:
         <>
           <form className="row" style={{ marginTop: 10 }} onSubmit={add}>
             <input className="input grow" maxLength={MAX_LEN} value={draft}
-              placeholder={t("workflow.new_placeholder", "Например: design, qa, blocked")}
+              placeholder={t("workflow.new_placeholder", "For example: design, qa, blocked")}
               onChange={(e) => setDraft(e.target.value)} />
             <button className="btn" type="submit" disabled={busy}>{tr("common.create")}</button>
           </form>
@@ -146,13 +147,13 @@ export function WorkflowEditor({ spaceId, isOwner }: { spaceId: number; isOwner:
               strings on the task row. Those tasks keep displaying the raw name until someone moves
               them, which is recoverable but surprising, so it is said out loud. */}
           <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
-            {t("workflow.remove_hint", "Если убрать статус, задачи в нём не переносятся автоматически — переведите их до удаления.")}
+            {t("workflow.remove_hint", "Removing a status does not move the tasks in it. Move them out before you remove it.")}
           </div>
         </>
       )}
       {!isOwner && (
         <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>
-          {t("workflow.owner_only", "Изменять статусы может только владелец пространства.")}
+          {t("workflow.owner_only", "Only the space owner can change statuses.")}
         </div>
       )}
       {error && <p className="error-text">{error}</p>}
