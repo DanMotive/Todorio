@@ -152,6 +152,15 @@ func (a *API) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/import/trello", a.handleImportTrello)
 	mux.HandleFunc("GET /api/spaces/{id}/workload", a.handleSpaceWorkload)
 
+	// --- outgoing webhooks ---
+	// Owner-only, like export: a webhook sees everything that happens in the space, private
+	// lists included. Registering the routes costs nothing on an install that never uses them.
+	mux.HandleFunc("GET /api/spaces/{id}/webhooks", a.handleListWebhooks)
+	mux.HandleFunc("POST /api/spaces/{id}/webhooks", a.handleCreateWebhook)
+	mux.HandleFunc("PATCH /api/webhooks/{id}", a.handleUpdateWebhook)
+	mux.HandleFunc("DELETE /api/webhooks/{id}", a.handleDeleteWebhook)
+	mux.HandleFunc("POST /api/webhooks/{id}/test", a.handleTestWebhook)
+
 	// --- TOTP (2FA for root/admins) ---
 	mux.HandleFunc("POST /api/me/totp/setup", a.handleTOTPSetup)
 	mux.HandleFunc("POST /api/me/totp/enable", a.handleTOTPEnable)
@@ -231,6 +240,11 @@ func (a *API) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/admin/settings", a.handleGetSettings)
 	mux.HandleFunc("POST /api/admin/settings", a.handleSetSetting)
 	mux.HandleFunc("POST /api/admin/locales", a.handleSetLocale)
+
+	// Routes is called once, at startup, which makes it the natural place to attach the webhook
+	// dispatcher to the event bus — rather than adding a wiring call to main for a feature that
+	// stays completely idle until someone saves a URL.
+	a.startWebhooks()
 }
 
 // ---------- helpers ----------
