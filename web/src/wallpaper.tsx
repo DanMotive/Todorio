@@ -5,12 +5,18 @@
 // rich/lite are threaded down from App.tsx instead, which is why changing either of those
 // touches three files — there was no reason to repeat that here.
 //
-// The choice is per-device (localStorage), not per-account: a wallpaper is a property of the
-// screen you are sitting in front of, and a picture chosen for a 27" monitor is rarely the one
-// you want on a phone. Uploading your own image and storing it server-side is a separate,
-// larger change — it needs a route, a quota and a profile column.
+// Two kinds of state, on purpose:
+//
+//   • *Which* wallpaper is selected, and its dim/blur, live in localStorage — per device. A
+//     picture chosen for a 27" monitor is rarely the one you want on a phone.
+//   • An *uploaded* picture lives on the server (users.wallpaper_path, see
+//     internal/api/wallpaper.go). A file has to be stored somewhere, and re-uploading it on
+//     every device would be worse than syncing it.
+//
+// So a user who uploads a photo on a laptop finds it offered on their phone, but has to pick it
+// there — which is the behaviour you want when the two screens are shaped nothing alike.
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { trOr } from "./i18n"
 
 // Translation keys go through a local alias on purpose. The i18n checker scans for literal
@@ -34,7 +40,35 @@ export type WallpaperState = { id: string; dim: number; blur: number }
 
 const KEY = "todorio.wallpaper"
 const NONE = "none"
+const CUSTOM = "custom"
+const CUSTOM_URL = "/api/me/wallpaper"
 const DEFAULT: WallpaperState = { id: NONE, dim: 0.55, blur: 0 }
+
+// Bumped after a successful upload. The endpoint answers with `private, max-age=3600`, which is
+// what we want for a picture requested on every page load — but it also means that without a
+// changing query string, replacing a wallpaper would keep painting the old one until the cache
+// expired, and the upload would look like it had failed.
+let customVersion = 0
+
+function customWallpaper(): Wallpaper {
+  return {
+    id: CUSTOM,
+    name: t("wallpaper.custom", "\u0421\u0432\u043e\u044f \u043a\u0430\u0440\u0442\u0438\u043d\u043a\u0430"),
+    url: customVersion ? `${CUSTOM_URL}?v=${customVersion}` : CUSTOM_URL,
+  }
+}
+
+/** Whether this account has an uploaded wallpaper. 404 from the endpoint means it has none. */
+async function hasCustomWallpaper(): Promise<boolean> {
+  try {
+    // HEAD, not GET: this only needs the status, and the picture can be a few megabytes.
+    // Go's ServeMux answers HEAD from the registered GET route.
+    const r = await fetch(CUSTOM_URL, { method: "HEAD" })
+    return r.ok
+  } catch {
+    return false
+  }
+}
 
 // Built-ins are gradients, not files. They weigh nothing, never pixelate, and the first two
 // are built from var(--accent), so they re-tint themselves when the colour theme changes.
@@ -171,12 +205,20 @@ export async function loadCatalog(): Promise<Wallpaper[]> {
  * before React mounts and before the login screen renders — a wallpaper that fades in a moment
  * after the rest of the page looks like a bug.
  *
- * A built-in needs no network round trip, so the common case applies synchronously; only a
- * stored image wallpaper waits for the manifest.
+ * Built-ins and the uploaded picture need no network round trip to *identify*, so the common
+ * cases apply synchronously; only a stored system wallpaper waits for the manifest.
+ *
+ * No check that the uploaded file still exists: verifying would cost a request before every
+ * paint, and if the picture was deleted from another device the layer simply renders nothing
+ * over the theme background — which looks exactly like having no wallpaper.
  */
 export function initWallpaper() {
   const state = loadWallpaper()
   if (state.id === NONE) return
+  if (state.id === CUSTOM) {
+    applyWallpaper(state, [customWallpaper()])
+    return
+  }
   if (BUILTIN.some((w) => w.id === state.id)) {
     applyWallpaper(state, BUILTIN)
     return
@@ -217,18 +259,26 @@ function Swatch({ wp, selected, onPick }: { wp: Wallpaper | null; selected: bool
 export function WallpaperPicker() {
   const [state, setState] = useState<WallpaperState>(() => loadWallpaper())
   const [list, setList] = useState<Wallpaper[]>(BUILTIN)
+  const [hasCustom, setHasCustom] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState("")
+  const fileRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
     let alive = true
     loadCatalog().then((c) => { if (alive) setList(c) }).catch(() => {})
+    hasCustomWallpaper().then((yes) => { if (alive) setHasCustom(yes) })
     return () => { alive = false }
   }, [])
+
+  // The uploaded picture goes first: it is the one the user chose deliberately.
+  const fullList = hasCustom ? [customWallpaper(), ...list] : list
 
   function update(patch: Partial<WallpaperState>) {
     const next = { ...state, ...patch }
     setState(next)
     saveWallpaper(next)
-    applyWallpaper(next, list)
+    applyWallpaper(next, fullList)
   }
 
   function pick(wp: Wallpaper | null) {
@@ -236,6 +286,52 @@ export function WallpaperPicker() {
     // the user has just dragged for the wallpaper they are already on.
     const dim = wp && wp.id !== state.id && typeof wp.dim === "number" ? wp.dim : state.dim
     update({ id: wp ? wp.id : NONE, dim })
+  }
+
+  async function upload(file: File) {
+    setBusy(true)
+    setError("")
+    try {
+      const body = new FormData()
+      body.append("file", file)
+      const r = await fetch(CUSTOM_URL, { method: "POST", body })
+      if (!r.ok) {
+        // The server's message is the useful part here — too large, out of storage, or too many
+        // uploads this hour are three different problems with three different fixes.
+        const data = await r.json().catch(() => null)
+        setError((data && data.error) || t("wallpaper.upload_failed", "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044c"))
+        return
+      }
+      customVersion = Date.now()
+      setHasCustom(true)
+      const next = { ...state, id: CUSTOM }
+      setState(next)
+      saveWallpaper(next)
+      applyWallpaper(next, [customWallpaper(), ...list])
+    } catch {
+      setError(t("wallpaper.upload_failed", "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044c"))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function removeCustom() {
+    setBusy(true)
+    setError("")
+    try {
+      await fetch(CUSTOM_URL, { method: "DELETE" })
+      setHasCustom(false)
+      if (state.id === CUSTOM) {
+        const next = { ...state, id: NONE }
+        setState(next)
+        saveWallpaper(next)
+        applyWallpaper(next, list)
+      }
+    } catch {
+      setError(t("wallpaper.upload_failed", "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044c"))
+    } finally {
+      setBusy(false)
+    }
   }
 
   const active = state.id !== NONE
@@ -247,10 +343,37 @@ export function WallpaperPicker() {
       </div>
       <div className="row" style={{ gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
         <Swatch wp={null} selected={!active} onPick={() => pick(null)} />
-        {list.map((wp) => (
+        {fullList.map((wp) => (
           <Swatch key={wp.id} wp={wp} selected={state.id === wp.id} onPick={() => pick(wp)} />
         ))}
       </div>
+      <div className="row" style={{ gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+        <button onClick={() => fileRef.current?.click()} disabled={busy}>
+          {busy
+            ? t("wallpaper.uploading", "\u0417\u0430\u0433\u0440\u0443\u0437\u043a\u0430\u2026")
+            : t("wallpaper.upload", "\u0417\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044c \u0441\u0432\u043e\u044e")}
+        </button>
+        {hasCustom && (
+          <button onClick={removeCustom} disabled={busy}>
+            {t("wallpaper.remove", "\u0423\u0434\u0430\u043b\u0438\u0442\u044c \u0441\u0432\u043e\u044e")}
+          </button>
+        )}
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          style={{ display: "none" }}
+          onChange={(e) => {
+            const f = e.target.files && e.target.files[0]
+            // Cleared so that picking the same file again still fires a change event.
+            e.target.value = ""
+            if (f) upload(f)
+          }}
+        />
+      </div>
+      {error && (
+        <div className="muted" style={{ fontSize: 12, marginBottom: 8, color: "var(--danger, #F87171)" }}>{error}</div>
+      )}
       {active && (
         <div className="row" style={{ gap: 20, flexWrap: "wrap" }}>
           <label className="row" style={{ gap: 8, fontSize: 13 }}>
@@ -266,7 +389,7 @@ export function WallpaperPicker() {
         </div>
       )}
       <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>
-        {t("wallpaper.hint", "\u041e\u0431\u043e\u0438 \u0445\u0440\u0430\u043d\u044f\u0442\u0441\u044f \u0434\u043b\u044f \u044d\u0442\u043e\u0433\u043e \u0443\u0441\u0442\u0440\u043e\u0439\u0441\u0442\u0432\u0430 \u0438 \u043d\u0435 \u043f\u0435\u0440\u0435\u043d\u043e\u0441\u044f\u0442\u0441\u044f \u043d\u0430 \u0434\u0440\u0443\u0433\u0438\u0435.")}
+        {t("wallpaper.hint", "\u0412\u044b\u0431\u043e\u0440 \u043e\u0431\u043e\u0435\u0432 \u0445\u0440\u0430\u043d\u0438\u0442\u0441\u044f \u0434\u043b\u044f \u044d\u0442\u043e\u0433\u043e \u0443\u0441\u0442\u0440\u043e\u0439\u0441\u0442\u0432\u0430. \u0421\u0432\u043e\u044f \u043a\u0430\u0440\u0442\u0438\u043d\u043a\u0430 \u0445\u0440\u0430\u043d\u0438\u0442\u0441\u044f \u0432 \u0430\u043a\u043a\u0430\u0443\u043d\u0442\u0435 \u0438 \u0432\u0438\u0434\u043d\u0430 \u043d\u0430 \u0432\u0441\u0435\u0445 \u0443\u0441\u0442\u0440\u043e\u0439\u0441\u0442\u0432\u0430\u0445.")}
       </div>
     </div>
   )
