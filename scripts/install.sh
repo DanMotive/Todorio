@@ -103,8 +103,13 @@ fi
 # --- 2. PostgreSQL: user and database ---
 say "Configuring PostgreSQL..."
 systemctl enable --now postgresql >/dev/null 2>&1 || true
+# Whether the role is created here decides whether the closing notes mention the
+# default password: an existing installation may well have changed it already,
+# and telling someone to fix something they already fixed teaches them to skip
+# the notes.
+DB_ROLE_CREATED=0
 sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='todorio'" | grep -q 1 \
-  || sudo -u postgres psql -qc "CREATE USER todorio WITH PASSWORD 'todorio';"
+  || { sudo -u postgres psql -qc "CREATE USER todorio WITH PASSWORD 'todorio';"; DB_ROLE_CREATED=1; }
 sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='todorio'" | grep -q 1 \
   || sudo -u postgres psql -qc "CREATE DATABASE todorio OWNER todorio;"
 
@@ -127,7 +132,20 @@ curl -fsSL -o "$TMP/todorio" "$BIN_URL"
 if [ -n "$SUM_URL" ]; then
   curl -fsSL -o "$TMP/checksums.txt" "$SUM_URL"
   GOT="$(sha256sum "$TMP/todorio" | awk '{print $1}')"
-  grep -q "$GOT" "$TMP/checksums.txt" || fail "sha256 mismatch for $ASSET — download is corrupted or tampered with. Aborting."
+  # The hash has to appear on the line for *this* asset, not just somewhere in
+  # the file. checksums.txt lists every published binary, so a bare search for
+  # the hash also passes when the downloaded file is the arm64 build on an
+  # amd64 machine, or any other artefact that happens to ride along in the
+  # release — which is precisely the substitution the check exists to catch.
+  # release.yml produces it with `sha256sum todorio_*`, i.e. "<hash>  <name>"
+  # with bare filenames, so anchoring both ends is safe. The optional '*' covers
+  # sha256sum's binary-mode output.
+  if ! grep -Eq "^${GOT}[[:space:]]+[*]?${ASSET}$" "$TMP/checksums.txt"; then
+    if grep -Eq "[[:space:]][*]?${ASSET}$" "$TMP/checksums.txt"; then
+      fail "sha256 mismatch for $ASSET — download is corrupted or tampered with. Aborting."
+    fi
+    fail "checksums.txt in release $TAG lists no entry for $ASSET — refusing to install a binary that cannot be verified. Install manually (see README.md) if this is intentional."
+  fi
   say "sha256 verified"
 else
   say "WARNING: release $TAG has no checksums.txt — installing without verification."
@@ -135,6 +153,14 @@ fi
 
 install -m 0755 "$TMP/todorio" "$BIN"
 mkdir -p /var/lib/todorio/uploads /var/lib/todorio/backups /etc/todorio
+# A database dump is the whole product in one file: every task, comment, e-mail
+# address and password hash. mkdir leaves 0755 behind and `todorio backup`
+# writes 0644 files into it, so any user with a shell on this machine could read
+# a backup — and /etc/todorio holds the database URL, password included. The
+# server runs as root and nothing else needs these, so they are for root only.
+# Applied on every run, not just on a fresh install, so re-running the installer
+# repairs the permissions on machines set up before this change.
+chmod 0750 /var/lib/todorio /var/lib/todorio/uploads /var/lib/todorio/backups /etc/todorio
 
 # --- 4. systemd unit (no WorkingDirectory needed — the binary is self-contained and every path it uses is absolute) ---
 say "Installing systemd service..."
@@ -143,6 +169,12 @@ cat > /etc/systemd/system/todorio.service <<EOF
 Description=Todorio — todo server
 After=network.target postgresql.service
 Wants=postgresql.service
+# Restart=always stops meaning "always" after 5 restarts in 10 seconds, which is
+# the default rate limit; systemd then leaves the unit dead until someone runs
+# \`systemctl reset-failed\`. The usual reason todorio exits in a tight loop right
+# after boot is PostgreSQL not accepting connections yet — a situation that fixes
+# itself in seconds if the retries are allowed to continue.
+StartLimitIntervalSec=0
 
 [Service]
 ExecStart=$BIN serve
@@ -169,6 +201,11 @@ elif [ -e /dev/tty ] && [ -r /dev/tty ]; then
   say "Done! The site is running. Check: todorio status"
 else
   say "Done! Next: sudo todorio setup && sudo systemctl enable --now todorio"
+fi
+if [ "$DB_ROLE_CREATED" -eq 1 ]; then
+  say "NOTE: the 'todorio' database role was created with the well-known password 'todorio'. PostgreSQL listens on localhost only by default, so it is not reachable from off the machine — but anyone with a shell here can read the whole database. To change it:"
+  say "  sudo -u postgres psql -c \"ALTER USER todorio WITH PASSWORD 'something-long'\""
+  say "  then update the database URL in /etc/todorio/config.json and run: sudo todorio restart"
 fi
 say "To remove Todorio later: sudo todorio uninstall (add --purge to also delete application data and the database, --saveconfig to keep /etc/todorio)"
 say "Day-to-day service control: sudo todorio start / stop / restart"
