@@ -20,6 +20,12 @@ truthy. trOr() compares against the key and is the reason this checker has to kn
 about it: a missing key behind trOr() renders a human-readable fallback instead of a
 raw key, which is nicer for users and completely invisible to the eye during review.
 
+Comments are stripped before the scan. A comment that spells out an example call is
+documentation, not a call site — web/src/wallpaper.tsx explains this very checker and
+quotes tr("...") while doing so, which used to make the run demand a key literally
+named "...". The failure was reported against en-US with no file or line, so the only
+way to find it was to grep the tree.
+
 Dynamic calls like tr("profile.type." + k) can't be resolved statically, so their
 literal prefix is recorded and any key starting with it counts as satisfying it.
 
@@ -45,6 +51,53 @@ EMOJI = re.compile("[\U0001F300-\U0001FAFF☀-➿]")
 # tr("prefix." + expr) form. Keep this list in sync with the helpers exported from
 # web/src/i18n.ts; a helper missing here means its keys go unchecked.
 CALL = re.compile(r'\b(?:tr|trFormal|trOr)\(\s*"([^"]+)"')
+
+
+def strip_comments(text):
+    """Blank out // line comments and /* */ blocks, keeping string literals intact.
+
+    Naively cutting at the first // would also cut at the // inside "https://...",
+    dropping the rest of that line and with it any real call sites on it, so double
+    and backtick quoted strings are tracked and skipped over.
+
+    Single quotes are deliberately not treated as string delimiters: apostrophes in
+    prose ("don't") are far more common in this codebase than single-quoted strings
+    containing a //, and treating one as an opening quote would swallow real code up
+    to the next apostrophe. Regex literals are not parsed either — a bare // inside
+    one would need writing as [/][/] to survive, which nothing here does.
+    """
+    out = []
+    i, n = 0, len(text)
+    quote = None
+    while i < n:
+        ch = text[i]
+        if quote is not None:
+            out.append(ch)
+            if ch == "\\" and i + 1 < n:
+                out.append(text[i + 1])
+                i += 2
+                continue
+            if ch == quote:
+                quote = None
+            i += 1
+            continue
+        nxt = text[i + 1] if i + 1 < n else ""
+        if ch == "/" and nxt == "/":
+            while i < n and text[i] != "\n":
+                i += 1
+            continue
+        if ch == "/" and nxt == "*":
+            end = text.find("*/", i + 2)
+            i = n if end == -1 else end + 2
+            # A space, not nothing: the tokens either side of a block comment must not
+            # be glued together, or tr("k") /* note */ + x would read as a dynamic call.
+            out.append(" ")
+            continue
+        if ch == '"' or ch == "`":
+            quote = ch
+        out.append(ch)
+        i += 1
+    return "".join(out)
 
 
 def load(name):
@@ -88,27 +141,35 @@ def main():
 
     # 3. every tr()/trFormal()/trOr() call in the TSX resolves to a real key
     used, prefixes = set(), set()
+    where = {}
     for fn in sorted(os.listdir(SRC)):
         if not fn.endswith((".tsx", ".ts")):
             continue
         path = os.path.join(SRC, fn)
         with open(path, encoding="utf-8") as fh:
-            text = fh.read()
+            text = strip_comments(fh.read())
         for m in CALL.finditer(text):
             key = m.group(1)
             after = text[m.end():m.end() + 40].lstrip()
+            where.setdefault(key, fn)
             # tr("prefix." + something) — dynamic, treat as a prefix
             if after.startswith("+"):
                 prefixes.add(key)
             else:
                 used.add(key)
 
+    # Name the file. A key that exists in no locale is usually a typo at one call site,
+    # and "en-US: tr('task.dne') used in TSX but no such key" left the reader grepping.
     for key in sorted(used):
         if key not in base_keys:
-            problems.append(f"{BASE}: tr({key!r}) used in TSX but no such key")
+            problems.append(
+                f"{BASE}: tr({key!r}) used in {where.get(key, 'TSX')} but no such key"
+            )
     for pref in sorted(prefixes):
         if not any(k.startswith(pref) for k in base_keys):
-            problems.append(f"{BASE}: dynamic tr({pref!r} + ...) matches no key")
+            problems.append(
+                f"{BASE}: dynamic tr({pref!r} + ...) in {where.get(pref, 'TSX')} matches no key"
+            )
 
     # 4. keys nothing references. A key can legitimately look unused when its call
     # site builds it dynamically from a value this script cannot follow, so this is
