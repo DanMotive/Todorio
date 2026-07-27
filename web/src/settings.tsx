@@ -8,6 +8,7 @@ import { tr, setLocale, SUPPORTED } from "./i18n"
 import { IconCamera, IconTrash, IconGlobe, IconBell, IconClock, IconShield, IconCheckCircle, IconAlertCircle, IconSliders, IconDownload } from "./icons"
 import { TotpCard } from "./extras"
 import { PersonalBotCard } from "./functional"
+import { WallpaperPicker } from "./wallpaper"
 
 const IT_STYLE_LOCALES = ["ru-RU", "en-US"]
 const NOTIFY_TYPES = ["comment", "reaction", "task_assigned", "due_changed", "status_changed", "overdue"]
@@ -423,6 +424,8 @@ export function SettingsPage({ me, theme, onUpdateTheme, onProfileSaved }: {
           </select>
         </label>
       </div>
+      {/* Wallpaper is a per-device choice and keeps its own state, so it needs no props. */}
+      <WallpaperPicker />
       <InstallAppRow />
 
       {/* ---------- notifications ---------- */}
