@@ -27,6 +27,7 @@ Todorio installs on a VPS with a single command and runs without any external Sa
 - [System Requirements](#system-requirements)
 - [Installation](#installation)
 - [CLI Quick Reference](#cli-quick-reference)
+- [Backups](#backups)
 - [Development](#development)
 - [Releasing](#releasing)
 - [Project Structure](#project-structure)
@@ -99,7 +100,7 @@ Ubuntu 20.04 and Debian 11 are **not** recommended: their `apt` PostgreSQL packa
 
 - **CPU:** 1 vCPU.
 - **RAM:** 512 MB with PostgreSQL on the same host. Configure swap if you run at 512 MB; 1 GB is more comfortable for a small team.
-- **Disk:** ~1 GB covers the OS, the binary, and an empty database. **Attachments and backups grow on top of that**, in `/var/lib/todorio/uploads` and `/var/lib/todorio/backups` (written by `sudo todorio backup`). Uploads are **unlimited by default** — set a quota in the root panel or via `sudo todorio server limits set limits.uploads.max_total_storage_mb <MB>` before opening the instance to other people.
+- **Disk:** ~1 GB covers the OS, the binary, and an empty database. **Attachments and backups grow on top of that**, in `/var/lib/todorio/uploads` and `/var/lib/todorio/backups`. Backups are written by `sudo todorio backup create`, or on a schedule once you set one up — see [Backups](#backups), and note that scheduled backups keep the last 7 by default rather than growing forever. Uploads are **unlimited by default** — set a quota in the root panel or via `sudo todorio server limits set limits.uploads.max_total_storage_mb <MB>` before opening the instance to other people.
 
 ### Database
 
@@ -149,12 +150,51 @@ All day-to-day operations can be managed directly via the `todorio` command:
 | `sudo todorio setup` | Interactively configure server settings (port, SSL, root admin) |
 | `sudo todorio resetroot` | Reset the root administrator password |
 | `sudo todorio update` | Fetch and update to the latest release binary with zero extra config |
-| `sudo todorio backup` | Create a snapshot/backup of application data and database |
+| `sudo todorio backup create` | Create a snapshot of the database and attachments right now |
+| `sudo todorio backup list` | List existing backups, newest first, with their sizes |
+| `sudo todorio backup prune --keep <n>` | Delete all but the `<n>` most recent backups |
+| `sudo todorio backup schedule <when>` | Run backups automatically (see [Backups](#backups)) |
 | `sudo todorio uninstall` | Remove Todorio binaries, service, and configs |
 
 *Uninstall flags:*
 - `sudo todorio uninstall --saveconfig` — removes binary & service, keeps config files.
 - `sudo todorio uninstall --purge` — deletes configuration, application data, and the database.
+
+---
+
+## Backups
+
+A backup is two files in `/var/lib/todorio/backups`, sharing one timestamp: a gzipped `pg_dump` of the database (`todorio-<ts>.sql.gz`) and a tarball of the attachments directory (`uploads-<ts>.tar.gz`). `pg_dump` comes from `postgresql-client`; `sudo todorio status` warns if it is missing.
+
+```bash
+sudo todorio backup create              # one backup, now
+sudo todorio backup create --keep 7     # ...and drop everything older than the last 7
+sudo todorio backup list
+sudo todorio backup prune --keep 3
+```
+
+Pruning works on whole backups rather than individual files, so a dump is never left without its attachments. Files it does not recognise are never deleted — anything you copy into that directory yourself is safe.
+
+### On a schedule
+
+`backup schedule` writes a `todorio-backup.timer` / `todorio-backup.service` pair into `/etc/systemd/system` and enables it. systemd owns the clock, so backups keep happening while Todorio itself is stopped, and a machine that was powered off at 03:30 catches up on the next boot (`Persistent=true`) instead of silently skipping the night.
+
+```bash
+sudo todorio backup schedule daily 03:30      # every day
+sudo todorio backup schedule weekly sun 04:00 # every Sunday
+sudo todorio backup schedule hourly
+sudo todorio backup schedule status           # what is scheduled, when it last ran, when it runs next
+sudo todorio backup schedule off              # remove the timer; existing backups are kept
+```
+
+Scheduled runs prune as they go and keep the last **7** backups by default; pass `--keep <n>` to the `schedule` command to choose a different number, or `--keep 0` to keep everything. `sudo todorio status` shows the schedule alongside the backup count, and `sudo todorio uninstall` removes the timer along with the rest of the installation.
+
+Restoring is manual and deliberately so:
+
+```bash
+gunzip -c /var/lib/todorio/backups/todorio-<ts>.sql.gz | psql <database_url>
+tar -xzf /var/lib/todorio/backups/uploads-<ts>.tar.gz -C /var/lib/todorio
+```
 
 ---
 
