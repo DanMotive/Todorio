@@ -4,6 +4,7 @@ import { useConfirm, ArchivedSpacesPanel, StatsCard, NotesPanel, ActivityPanel, 
 import { ImportCard, WorkloadPanel } from "./functional"
 import { tr } from "./i18n"
 import { TimelineView } from "./timeline"
+import { DashboardPanel, dashboardTabLabel } from "./dashboard"
 import { WorkflowEditor } from "./workflow"
 import { IconGrid, IconArchive, IconEdit, IconCopy, IconArrowLeft, IconList, IconFileText, IconActivity, IconColumns, IconLock, IconSliders, IconBarChart } from "./icons"
 import { ListView } from "./viewsPageC"
@@ -121,7 +122,7 @@ function SpaceView({ me, space, onBack }: { me: Me; space: Space; onBack: () => 
   const [currentList, setCurrentList] = useState<List | null>(null)
   const [name, setName] = useState("")
   const [newIsPrivate, setNewIsPrivate] = useState(false)
-  const [tab, setTab] = useState<"lists" | "timeline" | "workload" | "notes" | "activity" | "archive" | "fields" | "workflow">("lists")
+  const [tab, setTab] = useState<"lists" | "dashboard" | "timeline" | "workload" | "notes" | "activity" | "archive" | "fields" | "workflow">("lists")
   const [templates, setTemplates] = useState<Array<{ id: number; name: string }>>([])
   const [progressMode, setProgressMode] = useState<"count" | "weight">(
     () => (localStorage.getItem("todorio.progress_mode") === "weight" ? "weight" : "count"))
@@ -213,6 +214,7 @@ function SpaceView({ me, space, onBack }: { me: Me; space: Space; onBack: () => 
 
       <div className="row tab-strip" style={{ marginBottom: 8, gap: 4 }}>
         <button className={"nav-btn row" + (tab === "lists" ? " active" : "")} style={{ gap: 5, display: "inline-flex" }} onClick={() => setTab("lists")}><IconList size={14} /> {tr("lists.title")}</button>
+        <button className={"nav-btn row" + (tab === "dashboard" ? " active" : "")} style={{ gap: 5, display: "inline-flex" }} onClick={() => setTab("dashboard")}><IconGrid size={14} /> {dashboardTabLabel()}</button>
         <button className={"nav-btn row" + (tab === "timeline" ? " active" : "")} style={{ gap: 5, display: "inline-flex" }} onClick={() => setTab("timeline")}><IconActivity size={14} /> {tr("view.timeline")}</button>
         <button className={"nav-btn row" + (tab === "workload" ? " active" : "")} style={{ gap: 5, display: "inline-flex" }} onClick={() => setTab("workload")}><IconBarChart size={14} /> {tr("workload.title")}</button>
         <button className={"nav-btn row" + (tab === "notes" ? " active" : "")} style={{ gap: 5, display: "inline-flex" }} onClick={() => setTab("notes")}><IconFileText size={14} /> {tr("notes.title")}</button>
@@ -345,6 +347,7 @@ function SpaceView({ me, space, onBack }: { me: Me; space: Space; onBack: () => 
           )}
         </div>
       )}
+      {tab === "dashboard" && <div className="card"><DashboardPanel spaceId={space.id} onOpenTask={openTaskById} /></div>}
       {tab === "timeline" && <div className="card"><TimelineView spaceId={space.id} onOpenTask={openTaskById} /></div>}
       {tab === "workload" && <div className="card"><WorkloadPanel spaceId={space.id} /></div>}
       {tab === "notes" && <div className="card"><NotesPanel spaceId={space.id} /></div>}
