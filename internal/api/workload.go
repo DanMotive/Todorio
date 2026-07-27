@@ -78,9 +78,12 @@ func (a *API) handleSpaceWorkload(w http.ResponseWriter, r *http.Request) {
 	// Private lists stay private: the same visibility rule the task and search queries use, so a
 	// summary can never become a side channel for work the caller cannot open. Admins see the
 	// whole space, matching every other admin-facing view.
+	//
+	// The display name column is users.display_name - there is no users.name, and asking for one
+	// made Postgres reject the whole statement.
 	rows, err := a.DB.Pool.Query(r.Context(), `
 		SELECT
-			u.id, u.username, u.name,
+			u.id, u.username, u.display_name,
 			count(*)::int,
 			COALESCE(sum(t.weight), 0)::int,
 			count(*) FILTER (WHERE t.due_at IS NOT NULL AND t.due_at < now())::int,
@@ -101,7 +104,7 @@ func (a *API) handleSpaceWorkload(w http.ResponseWriter, r *http.Request) {
 		  AND ($2 OR l.is_private = false OR l.id IN (
 				SELECT list_id FROM list_members WHERE user_id = $3
 		  ))
-		GROUP BY u.id, u.username, u.name
+		GROUP BY u.id, u.username, u.display_name
 		ORDER BY 5 DESC, 4 DESC`,
 		spaceID, u.IsAdmin(), u.ID, days)
 	if err != nil {
