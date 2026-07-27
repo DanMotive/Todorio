@@ -52,8 +52,10 @@ type dashboardStatusRow struct {
 type dashboardPersonRow struct {
 	// UserID is nil for the unassigned bucket. Work nobody has picked up is part of how a
 	// space is doing, so it is reported alongside the people rather than dropped.
-	UserID       *int64  `json:"user_id"`
-	Username     *string `json:"username"`
+	UserID   *int64  `json:"user_id"`
+	Username *string `json:"username"`
+	// Name is COALESCE(display_name, username): the users table has no name column, and an
+	// account that never set a display name must still render as something a person can read.
 	Name         *string `json:"name"`
 	OpenCount    int     `json:"open_count"`
 	OverdueCount int     `json:"overdue_count"`
@@ -154,14 +156,14 @@ func (a *API) handleSpaceDashboard(w http.ResponseWriter, r *http.Request) {
 
 	people := []dashboardPersonRow{}
 	rows, err = a.DB.Pool.Query(r.Context(), `
-		SELECT us.id, us.username, us.name,
+		SELECT us.id, us.username, COALESCE(us.display_name, us.username),
 			count(*)::int,
 			count(*) FILTER (WHERE t.due_at IS NOT NULL AND t.due_at < now())::int
 		FROM tasks t
 		JOIN lists l ON l.id = t.list_id
 		LEFT JOIN users us ON us.id = t.assignee_id
 		WHERE t.completed_at IS NULL`+visible+`
-		GROUP BY us.id, us.username, us.name
+		GROUP BY us.id, us.username, us.display_name
 		ORDER BY 4 DESC`,
 		spaceID, u.IsAdmin(), u.ID)
 	if err != nil {
@@ -207,7 +209,7 @@ func (a *API) handleSpaceDashboard(w http.ResponseWriter, r *http.Request) {
 	rows, err = a.DB.Pool.Query(r.Context(), `
 		SELECT t.id, t.title, l.id, l.name, to_char(t.due_at, 'YYYY-MM-DD"T"HH24:MI:SSOF'),
 			EXTRACT(DAY FROM (now() - t.due_at))::int,
-			COALESCE(us.name, us.username)
+			COALESCE(us.display_name, us.username)
 		FROM tasks t
 		JOIN lists l ON l.id = t.list_id
 		LEFT JOIN users us ON us.id = t.assignee_id
@@ -229,12 +231,12 @@ func (a *API) handleSpaceDashboard(w http.ResponseWriter, r *http.Request) {
 	rows.Close()
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"period":       period,
-		"days":         days,
-		"summary":      sum,
-		"by_status":    statuses,
-		"by_assignee":  people,
-		"series":       series,
-		"top_overdue":  overdue,
+		"period":      period,
+		"days":        days,
+		"summary":     sum,
+		"by_status":   statuses,
+		"by_assignee": people,
+		"series":      series,
+		"top_overdue": overdue,
 	})
 }
