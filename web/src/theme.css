@@ -1,8 +1,6 @@
 /* Without this, elements with width:100% plus padding/border (e.g. .input)
    overflow past their parent's edge instead of respecting it. */
 *, *::before, *::after { box-sizing: border-box; }
-
-/* —— Акцентные цвета ——
    --accent-contrast is the text/icon color to put ON TOP of a solid --accent fill (.btn,
    .badge, .sidebar-btn.active). White-on-accent looks fine for red/blue/green, but white
    text on the yellow accent is ~1.9:1 contrast (essentially unreadable) — it needs dark
@@ -36,9 +34,9 @@
 
 /* —— Pulse —— */
 :root {
-  --pulse-ok:    #30A46C;  /* здоровое пространство */
-  --pulse-warn:  #F5B301;  /* есть на что обратить внимание */
-  --pulse-bad:   #E5484D;  /* требует внимания */
+  --pulse-ok:    #30A46C;  /* good */
+  --pulse-warn:  #F5B301;  /* warn */
+  --pulse-bad:   #E5484D;  /* alert */
   --radius: 10px;
 }
 
@@ -169,7 +167,7 @@ body {
 
 .main-content {
   flex: 1;
-  max-width: 900px;
+  max-width: 100%;
   padding: 32px 40px;
   overflow-y: auto;
 }

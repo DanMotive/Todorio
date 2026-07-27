@@ -1,5 +1,3 @@
-/* Дополнительные UI-компоненты поверх theme.css */
-
 .input {
   width: 100%;
   padding: 10px 12px;
@@ -114,7 +112,7 @@
 }
 .pulse-dot--yellow { --pulse-color: var(--pulse-warn); }
 .pulse-dot--red { --pulse-color: var(--pulse-bad); }
-:root[data-visual="rich"] .pulse-dot { animation: pulse-ring 2s ease-in-out infinite; }
+:root[data-visual="rich"] .pulse-dot { animation: pulse-ring 1s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) {
   .pulse-dot { animation: none !important; }
 }
