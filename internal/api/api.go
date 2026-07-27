@@ -25,7 +25,7 @@ import (
 // left in the table by the wider set. The warning emoji carries the U+FE0F variation selector,
 // exactly as the client sends it, so the comparison below is a plain string match.
 var AllowedReactions = map[string]bool{
-	"\u2705": true, "\u274C": true, "\u26A0\uFE0F": true, "\u2753": true,
+	"\\u2705": true, "\\u274C": true, "\\u26A0\\uFE0F": true, "\\u2753": true,
 }
 
 type API struct {
@@ -46,6 +46,12 @@ func (a *API) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/me/avatar", a.handleUploadAvatar)
 	mux.HandleFunc("DELETE /api/me/avatar", a.handleDeleteAvatar)
 	mux.HandleFunc("GET /api/users/{id}/avatar", a.handleGetAvatar)
+	// Wallpapers mirror avatars, with one difference: there is no route for reading another
+	// user's. An avatar is shown next to every task and comment its owner touches; a wallpaper
+	// is only ever displayed to the account it belongs to.
+	mux.HandleFunc("POST /api/me/wallpaper", a.handleUploadWallpaper)
+	mux.HandleFunc("DELETE /api/me/wallpaper", a.handleDeleteWallpaper)
+	mux.HandleFunc("GET /api/me/wallpaper", a.handleGetWallpaper)
 
 	// --- user administration ---
 	mux.HandleFunc("GET /api/admin/users", a.handleAdminUsers)
@@ -342,9 +348,9 @@ func dirSize(root string) (int64, error) {
 }
 
 // checkStorageQuota returns a user-facing error if accepting `incoming` more bytes would push the
-// whole uploads directory (every task attachment and avatar — everything under cfg.UploadsDir)
-// past limits.uploads.max_total_storage_mb. 0 (the default) means unlimited — the whole check is
-// skipped, so upgrading never suddenly caps an existing instance.
+// whole uploads directory (task attachments, avatars, wallpapers, the instance logo — everything
+// under cfg.UploadsDir) past limits.uploads.max_total_storage_mb. 0 (the default) means unlimited
+// — the whole check is skipped, so upgrading never suddenly caps an existing instance.
 func (a *API) checkStorageQuota(ctx context.Context, incoming int64) error {
 	maxMB := a.intSetting(ctx, "limits.uploads.max_total_storage_mb", 0)
 	if maxMB <= 0 {
