@@ -25,7 +25,7 @@ import (
 // left in the table by the wider set. The warning emoji carries the U+FE0F variation selector,
 // exactly as the client sends it, so the comparison below is a plain string match.
 var AllowedReactions = map[string]bool{
-	"\\u2705": true, "\\u274C": true, "\\u26A0\\uFE0F": true, "\\u2753": true,
+	"✅": true, "❌": true, "⚠️": true, "❓": true,
 }
 
 type API struct {
