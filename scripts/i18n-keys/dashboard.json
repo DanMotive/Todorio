@@ -1,0 +1,179 @@
+// ru-RU
+"dashboard.avg_close": "среднее время закрытия",
+"dashboard.by_person": "Нагрузка по людям",
+"dashboard.by_status": "Открытые задачи по статусам",
+"dashboard.days_late": "просрочено на {n} дн.",
+"dashboard.days_short": "дн",
+"dashboard.done_in_period": "закрыто за период",
+"dashboard.empty": "За этот период здесь пока нечего показать.",
+"dashboard.flow": "Создано и закрыто",
+"dashboard.flow_created": "создано",
+"dashboard.flow_done": "закрыто",
+"dashboard.hours_short": "ч",
+"dashboard.title": "Дашборд",
+"dashboard.top_overdue": "Дольше всех просрочены"
+
+// uk-UA
+"dashboard.avg_close": "середній час закриття",
+"dashboard.by_person": "Навантаження за людьми",
+"dashboard.by_status": "Відкриті задачі за статусами",
+"dashboard.days_late": "прострочено на {n} дн.",
+"dashboard.days_short": "дн",
+"dashboard.done_in_period": "закрито за період",
+"dashboard.empty": "За цей період тут поки немає чого показати.",
+"dashboard.flow": "Створено і закрито",
+"dashboard.flow_created": "створено",
+"dashboard.flow_done": "закрито",
+"dashboard.hours_short": "год",
+"dashboard.title": "Дашборд",
+"dashboard.top_overdue": "Найдовше прострочені"
+
+// be-BY
+"dashboard.avg_close": "сярэдні час закрыцця",
+"dashboard.by_person": "Загрузка па людзях",
+"dashboard.by_status": "Адкрытыя задачы па статусах",
+"dashboard.days_late": "пратэрмінавана на {n} дн.",
+"dashboard.days_short": "дн",
+"dashboard.done_in_period": "закрыта за перыяд",
+"dashboard.empty": "За гэты перыяд тут пакуль няма чаго паказаць.",
+"dashboard.flow": "Створана і закрыта",
+"dashboard.flow_created": "створана",
+"dashboard.flow_done": "закрыта",
+"dashboard.hours_short": "г",
+"dashboard.title": "Дашборд",
+"dashboard.top_overdue": "Найдаўжэй пратэрмінаваныя"
+
+// kk-KZ
+"dashboard.avg_close": "жабудың орташа уақыты",
+"dashboard.by_person": "Адамдар бойынша жүктеме",
+"dashboard.by_status": "Статус бойынша ашық тапсырмалар",
+"dashboard.days_late": "{n} күн кешіктірілді",
+"dashboard.days_short": "күн",
+"dashboard.done_in_period": "кезеңде жабылды",
+"dashboard.empty": "Бұл кезеңде көрсететін ештеңе жоқ.",
+"dashboard.flow": "Құрылды және жабылды",
+"dashboard.flow_created": "құрылды",
+"dashboard.flow_done": "жабылды",
+"dashboard.hours_short": "сағ",
+"dashboard.title": "Дашборд",
+"dashboard.top_overdue": "Ең көп кешіктірілгендер"
+
+// es-ES
+"dashboard.avg_close": "tiempo medio de cierre",
+"dashboard.by_person": "Carga por persona",
+"dashboard.by_status": "Tareas abiertas por estado",
+"dashboard.days_late": "{n} d de retraso",
+"dashboard.days_short": "d",
+"dashboard.done_in_period": "cerradas en el periodo",
+"dashboard.empty": "Todavía no hay nada que mostrar en este periodo.",
+"dashboard.flow": "Creadas y cerradas",
+"dashboard.flow_created": "creadas",
+"dashboard.flow_done": "cerradas",
+"dashboard.hours_short": "h",
+"dashboard.title": "Panel",
+"dashboard.top_overdue": "Más retrasadas"
+
+// pt-BR
+"dashboard.avg_close": "tempo médio de fechamento",
+"dashboard.by_person": "Carga por pessoa",
+"dashboard.by_status": "Tarefas abertas por status",
+"dashboard.days_late": "{n} d de atraso",
+"dashboard.days_short": "d",
+"dashboard.done_in_period": "concluídas no período",
+"dashboard.empty": "Ainda não há nada para mostrar neste período.",
+"dashboard.flow": "Criadas e concluídas",
+"dashboard.flow_created": "criadas",
+"dashboard.flow_done": "concluídas",
+"dashboard.hours_short": "h",
+"dashboard.title": "Painel",
+"dashboard.top_overdue": "Mais atrasadas"
+
+// tr-TR
+"dashboard.avg_close": "ortalama kapanma süresi",
+"dashboard.by_person": "Kişi başına yük",
+"dashboard.by_status": "Duruma göre açık görevler",
+"dashboard.days_late": "{n} gün gecikmeli",
+"dashboard.days_short": "g",
+"dashboard.done_in_period": "dönemde kapatıldı",
+"dashboard.empty": "Bu dönem için gösterilecek bir şey yok.",
+"dashboard.flow": "Oluşturulan ve kapatılan",
+"dashboard.flow_created": "oluşturuldu",
+"dashboard.flow_done": "kapatıldı",
+"dashboard.hours_short": "sa",
+"dashboard.title": "Panel",
+"dashboard.top_overdue": "En çok geciken"
+
+// zh-CN
+"dashboard.avg_close": "平均关闭时间",
+"dashboard.by_person": "按人员的负载",
+"dashboard.by_status": "按状态的未完成任务",
+"dashboard.days_late": "逾期 {n} 天",
+"dashboard.days_short": "天",
+"dashboard.done_in_period": "本期已关闭",
+"dashboard.empty": "此时间段暂无可显示的内容。",
+"dashboard.flow": "创建与关闭",
+"dashboard.flow_created": "创建",
+"dashboard.flow_done": "关闭",
+"dashboard.hours_short": "小时",
+"dashboard.title": "仪表盘",
+"dashboard.top_overdue": "逾期最久"
+
+// ja-JP
+"dashboard.avg_close": "平均クローズ時間",
+"dashboard.by_person": "担当者ごとの負荷",
+"dashboard.by_status": "ステータス別の未完了タスク",
+"dashboard.days_late": "{n}日遅延",
+"dashboard.days_short": "日",
+"dashboard.done_in_period": "期間内に完了",
+"dashboard.empty": "この期間に表示できるものはまだありません。",
+"dashboard.flow": "作成と完了",
+"dashboard.flow_created": "作成",
+"dashboard.flow_done": "完了",
+"dashboard.hours_short": "時間",
+"dashboard.title": "ダッシュボード",
+"dashboard.top_overdue": "遅延が長い順"
+
+// ko-KR
+"dashboard.avg_close": "평균 완료 시간",
+"dashboard.by_person": "담당자별 부하",
+"dashboard.by_status": "상태별 미완료 작업",
+"dashboard.days_late": "{n}일 지연",
+"dashboard.days_short": "일",
+"dashboard.done_in_period": "기간 내 완료",
+"dashboard.empty": "이 기간에 표시할 내용이 아직 없습니다.",
+"dashboard.flow": "생성 및 완료",
+"dashboard.flow_created": "생성",
+"dashboard.flow_done": "완료",
+"dashboard.hours_short": "시간",
+"dashboard.title": "대시보드",
+"dashboard.top_overdue": "가장 오래 지연됨"
+
+// hi-IN
+"dashboard.avg_close": "बंद होने का औसत समय",
+"dashboard.by_person": "व्यक्ति के अनुसार भार",
+"dashboard.by_status": "स्थिति के अनुसार खुले कार्य",
+"dashboard.days_late": "{n} दिन देर",
+"dashboard.days_short": "दिन",
+"dashboard.done_in_period": "अवधि में बंद",
+"dashboard.empty": "इस अवधि के लिए अभी दिखाने योग्य कुछ नहीं है।",
+"dashboard.flow": "बनाए गए और बंद किए गए",
+"dashboard.flow_created": "बनाए गए",
+"dashboard.flow_done": "बंद किए गए",
+"dashboard.hours_short": "घं",
+"dashboard.title": "डैशबोर्ड",
+"dashboard.top_overdue": "सबसे अधिक विलंबित"
+
+// bn-BD
+"dashboard.avg_close": "বন্ধ হতে গড় সময়",
+"dashboard.by_person": "ব্যক্তি অনুযায়ী ভার",
+"dashboard.by_status": "স্ট্যাটাস অনুযায়ী খোলা কাজ",
+"dashboard.days_late": "{n} দিন দেরি",
+"dashboard.days_short": "দিন",
+"dashboard.done_in_period": "এই সময়ে বন্ধ হয়েছে",
+"dashboard.empty": "এই সময়ের জন্য এখনও দেখানোর কিছু নেই।",
+"dashboard.flow": "তৈরি ও বন্ধ",
+"dashboard.flow_created": "তৈরি",
+"dashboard.flow_done": "বন্ধ",
+"dashboard.hours_short": "ঘ",
+"dashboard.title": "ড্যাশবোর্ড",
+"dashboard.top_overdue": "সবচেয়ে বেশি দেরি"
