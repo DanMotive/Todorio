@@ -133,6 +133,9 @@ func (a *API) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/spaces/{id}/pulse", a.handlePulse)
 	mux.HandleFunc("GET /api/spaces/{id}/stats", a.handleStats)
 	mux.HandleFunc("GET /api/spaces/{id}/timeline", a.handleTimeline)
+	// The dashboard is the same three questions asked over a period instead of right now, so it
+	// belongs next to them rather than in its own section.
+	mux.HandleFunc("GET /api/spaces/{id}/dashboard", a.handleSpaceDashboard)
 
 	// --- export / import (data portability) ---
 	mux.HandleFunc("GET /api/spaces/{id}/export", a.handleExportSpace)
