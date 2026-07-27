@@ -45,18 +45,21 @@ Todorio installs on a VPS with a single command and runs without any external Sa
   <br/>
 
   ### Kanban Board
-  <!-- ![Kanban View](docs/screenshots/kanban.png) -->
+  <img width="1600" height="860" alt="image" src="https://github.com/user-attachments/assets/ad2b52da-fc77-4cc1-a014-972980342d29" />
 
-  ### Timeline & Gantt
-  <!-- ![Gantt View](docs/screenshots/gantt.png) -->
 
-  ### Space Pulse & Dark Mode
-  <!-- ![Space Pulse](docs/screenshots/space-pulse.png) -->
+  ### Configuration
+  <img width="1600" height="860" alt="image" src="https://github.com/user-attachments/assets/5e1891eb-1ec2-4c84-898a-1f90c2491808" />
+
+
+  ### Space Pulse
+  <img width="1600" height="860" alt="image" src="https://github.com/user-attachments/assets/40d8800b-9e82-42c4-b7a1-c697a515996c" />
+
 </details>
 
 ---
 
-## Features (v1.0.0)
+## Features (v1.2.0)
 
 - **Authentication & Security:** Login/password authentication (no email required), TOTP for any account, manual registration or invite codes.
 - **RBAC:** Root admin / admin / user / viewer, rate-limited login, registration modes (open/invite-only/closed).
