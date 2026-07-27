@@ -11,6 +11,10 @@ package api
 // turn a modest space into a hundred-megabyte JSON file. Attachment metadata is exported so it's
 // clear what existed, and the files themselves live under UploadsDir for a filesystem backup
 // (`todorio backup create`) to capture.
+//
+// What is deliberately NOT carried across, so nobody expects it: archived lists and tasks, task
+// history, watchers, reactions, saved filters, public share links, and the space's member list.
+// An import lands as a space owned by whoever imported it, with everyone else absent.
 
 import (
 	"encoding/json"
@@ -22,8 +26,8 @@ import (
 const exportFormatVersion = 1
 
 type exportTask struct {
-	// Local ids so parent/child and dependency links survive a round trip without colliding
-	// with ids in the destination database.
+	// Local ids so parent/child links survive a round trip without colliding with ids in the
+	// destination database.
 	Ref          int64              `json:"ref"`
 	ParentRef    *int64             `json:"parent_ref,omitempty"`
 	Title        string             `json:"title"`
@@ -35,6 +39,9 @@ type exportTask struct {
 	DueAt        *time.Time         `json:"due_at,omitempty"`
 	Weight       int                `json:"weight"`
 	Progress     *int               `json:"progress,omitempty"`
+	// Manual ordering, including anything arranged by drag and drop. Older files omit it and
+	// decode as 0, which lands the tasks in insertion order — the old behaviour.
+	Position     int                `json:"position"`
 	CustomFields json.RawMessage    `json:"custom_fields,omitempty"`
 	CompletedAt  *time.Time         `json:"completed_at,omitempty"`
 	Comments     []exportComment    `json:"comments,omitempty"`
@@ -129,9 +136,13 @@ func (a *API) handleExportSpace(w http.ResponseWriter, r *http.Request) {
 
 	for _, lr := range lists {
 		el := exportList{Name: lr.name, IsPrivate: lr.priv, Tasks: []exportTask{}}
+		// Nullable columns are coalesced. A task whose description was NULL used to fail Scan,
+		// and the row was skipped in silence: the task simply was not in the export file and
+		// nothing said so.
 		taskRows, err := a.DB.Pool.Query(r.Context(), `
-			SELECT t.id, t.parent_id, t.title, t.description, t.status, COALESCE(t.priority,'normal'),
-				u.username, t.start_at, t.due_at, t.weight, t.progress, t.custom_fields, t.completed_at
+			SELECT t.id, t.parent_id, t.title, COALESCE(t.description,''), COALESCE(t.status,'open'),
+				COALESCE(t.priority,'normal'), u.username, t.start_at, t.due_at,
+				COALESCE(t.weight,1), t.progress, COALESCE(t.position,0), t.custom_fields, t.completed_at
 			FROM tasks t
 			LEFT JOIN users u ON u.id = t.assignee_id
 			WHERE t.list_id=$1 AND t.archived_at IS NULL
@@ -141,46 +152,67 @@ func (a *API) handleExportSpace(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		var taskIDs []int64
+		index := map[int64]int{} // task id -> position in el.Tasks, for the batch queries below
 		for taskRows.Next() {
 			var et exportTask
-			if taskRows.Scan(&et.Ref, &et.ParentRef, &et.Title, &et.Description, &et.Status, &et.Priority,
-				&et.Assignee, &et.StartAt, &et.DueAt, &et.Weight, &et.Progress, &et.CustomFields,
-				&et.CompletedAt) == nil {
-				el.Tasks = append(el.Tasks, et)
-				taskIDs = append(taskIDs, et.Ref)
+			if err := taskRows.Scan(&et.Ref, &et.ParentRef, &et.Title, &et.Description, &et.Status,
+				&et.Priority, &et.Assignee, &et.StartAt, &et.DueAt, &et.Weight, &et.Progress,
+				&et.Position, &et.CustomFields, &et.CompletedAt); err != nil {
+				dbFail(r, "export task row", err)
+				continue
 			}
+			index[et.Ref] = len(el.Tasks)
+			el.Tasks = append(el.Tasks, et)
+			taskIDs = append(taskIDs, et.Ref)
 		}
 		taskRows.Close()
 
-		// Comments and attachment metadata for those tasks.
-		for i := range el.Tasks {
-			tid := el.Tasks[i].Ref
+		// Comments and attachment metadata, one query for the whole list. Asking per task meant
+		// two round trips per task: a few thousand tasks became a few thousand queries inside a
+		// single request, which is how an export starts timing out at a reverse proxy.
+		if len(taskIDs) > 0 {
 			cRows, err := a.DB.Pool.Query(r.Context(), `
-				SELECT u.username, c.body, c.is_system, c.created_at
-				FROM comments c JOIN users u ON u.id = c.author_id
-				WHERE c.task_id=$1 AND c.deleted_at IS NULL ORDER BY c.created_at`, tid)
-			if err == nil {
+				SELECT c.task_id, COALESCE(u.username,''), c.body, c.is_system, c.created_at
+				FROM comments c LEFT JOIN users u ON u.id = c.author_id
+				WHERE c.task_id = ANY($1) AND c.deleted_at IS NULL
+				ORDER BY c.task_id, c.created_at`, taskIDs)
+			if err != nil {
+				dbFail(r, "export comments", err)
+			} else {
 				for cRows.Next() {
+					var tid int64
 					var ec exportComment
-					if cRows.Scan(&ec.Author, &ec.Body, &ec.IsSystem, &ec.CreatedAt) == nil {
-						el.Tasks[i].Comments = append(el.Tasks[i].Comments, ec)
+					// LEFT JOIN, not JOIN: a comment written by a since-deleted account was
+					// being thrown away by the join rather than exported without an author.
+					if cRows.Scan(&tid, &ec.Author, &ec.Body, &ec.IsSystem, &ec.CreatedAt) == nil {
+						if i, ok := index[tid]; ok {
+							el.Tasks[i].Comments = append(el.Tasks[i].Comments, ec)
+						}
 					}
 				}
 				cRows.Close()
 			}
-			aRows, err := a.DB.Pool.Query(r.Context(),
-				`SELECT file_path, mime_type, size_bytes FROM attachments WHERE target_type='task' AND target_id=$1`, tid)
-			if err == nil {
+
+			aRows, err := a.DB.Pool.Query(r.Context(), `
+				SELECT target_id, file_path, COALESCE(mime_type,''), COALESCE(size_bytes,0)
+				FROM attachments
+				WHERE target_type='task' AND target_id = ANY($1)
+				ORDER BY target_id, id`, taskIDs)
+			if err != nil {
+				dbFail(r, "export attachments", err)
+			} else {
 				for aRows.Next() {
+					var tid int64
 					var ea exportAttachment
-					if aRows.Scan(&ea.FilePath, &ea.MimeType, &ea.SizeBytes) == nil {
-						el.Tasks[i].Attachments = append(el.Tasks[i].Attachments, ea)
+					if aRows.Scan(&tid, &ea.FilePath, &ea.MimeType, &ea.SizeBytes) == nil {
+						if i, ok := index[tid]; ok {
+							el.Tasks[i].Attachments = append(el.Tasks[i].Attachments, ea)
+						}
 					}
 				}
 				aRows.Close()
 			}
 		}
-		_ = taskIDs
 		out.Lists = append(out.Lists, el)
 	}
 
@@ -280,6 +312,15 @@ func (a *API) handleImportSpace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	counts := map[string]int{"lists": 0, "tasks": 0, "comments": 0, "notes": 0}
+
+	// Every list is created first and the tasks are placed afterwards, against one shared map of
+	// file ref -> new id. Rebuilding that map per list meant a subtask whose parent lived in a
+	// different list never found it: parent_id is a task id, not a list-local reference.
+	type pendingTask struct {
+		listID int64
+		task   exportTask
+	}
+	var pending []pendingTask
 	for _, el := range in.Lists {
 		var listID int64
 		if err := tx.QueryRow(r.Context(),
@@ -296,54 +337,84 @@ func (a *API) handleImportSpace(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		counts["lists"]++
+		for _, et := range el.Tasks {
+			pending = append(pending, pendingTask{listID: listID, task: et})
+		}
+	}
 
-		// Parents before children, so a subtask's parent_id can be remapped. Two passes over the
-		// list's tasks: roots first, then everything that referenced one.
-		newID := map[int64]int64{}
-		for pass := 0; pass < 2; pass++ {
-			for _, et := range el.Tasks {
-				isRoot := et.ParentRef == nil
-				if (pass == 0) != isRoot {
+	newID := map[int64]int64{}
+	insertTask := func(listID int64, et exportTask, parent *int64) error {
+		cf := "{}"
+		if len(et.CustomFields) > 0 {
+			cf = string(et.CustomFields)
+		}
+		var tid int64
+		if err := tx.QueryRow(r.Context(), `
+			INSERT INTO tasks(list_id, parent_id, title, description, status, priority,
+				assignee_id, start_at, due_at, weight, progress, position, custom_fields,
+				completed_at, creator_id)
+			VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14,$15) RETURNING id`,
+			listID, parent, et.Title, et.Description, et.Status, et.Priority,
+			resolve(et.Assignee), et.StartAt, et.DueAt, maxInt(et.Weight, 1), et.Progress,
+			et.Position, cf, et.CompletedAt, u.ID).Scan(&tid); err != nil {
+			return err
+		}
+		newID[et.Ref] = tid
+		counts["tasks"]++
+
+		for _, ec := range et.Comments {
+			author := resolve(&ec.Author)
+			if author == nil {
+				author = &u.ID // unknown author: attributed to the importer, never dropped
+			}
+			if _, err := tx.Exec(r.Context(),
+				`INSERT INTO comments(task_id, author_id, body, is_system, created_at) VALUES($1,$2,$3,$4,$5)`,
+				tid, *author, ec.Body, ec.IsSystem, ec.CreatedAt); err == nil {
+				counts["comments"]++
+			}
+		}
+		return nil
+	}
+
+	// Place whatever has a known parent, then go round again — a fixed point rather than the old
+	// "roots, then everything else". Two passes only ever handled one level of nesting: a
+	// sub-subtask was looked up against a map that did not contain its parent yet, and silently
+	// became a top-level task. This repeats while it is still making progress, so depth does not
+	// matter and the file's own ordering does not have to cooperate.
+	for len(pending) > 0 {
+		var deferred []pendingTask
+		placed := false
+		for _, p := range pending {
+			var parent *int64
+			if p.task.ParentRef != nil {
+				mapped, ok := newID[*p.task.ParentRef]
+				if !ok {
+					deferred = append(deferred, p)
 					continue
 				}
-				var parent *int64
-				if et.ParentRef != nil {
-					if mapped, ok := newID[*et.ParentRef]; ok {
-						parent = &mapped
-					} // an unresolvable parent becomes a root task rather than being dropped
-				}
-				cf := "{}"
-				if len(et.CustomFields) > 0 {
-					cf = string(et.CustomFields)
-				}
-				var tid int64
-				if err := tx.QueryRow(r.Context(), `
-					INSERT INTO tasks(list_id, parent_id, title, description, status, priority,
-						assignee_id, start_at, due_at, weight, progress, custom_fields, completed_at, creator_id)
-					VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13,$14) RETURNING id`,
-					listID, parent, et.Title, et.Description, et.Status, et.Priority,
-					resolve(et.Assignee), et.StartAt, et.DueAt, maxInt(et.Weight, 1), et.Progress,
-					cf, et.CompletedAt, u.ID).Scan(&tid); err != nil {
-					dbFail(r, "import task", err)
+				parent = &mapped
+			}
+			if err := insertTask(p.listID, p.task, parent); err != nil {
+				dbFail(r, "import task", err)
+				errJSON(w, http.StatusInternalServerError, "could not import a task")
+				return
+			}
+			placed = true
+		}
+		if !placed {
+			// Nothing moved: either a cycle, or parents that are not in the file at all. Import
+			// the remainder as top-level tasks. A hierarchy someone has to rebuild is annoying;
+			// work that vanished without a word is much worse.
+			for _, p := range deferred {
+				if err := insertTask(p.listID, p.task, nil); err != nil {
+					dbFail(r, "import orphan task", err)
 					errJSON(w, http.StatusInternalServerError, "could not import a task")
 					return
 				}
-				newID[et.Ref] = tid
-				counts["tasks"]++
-
-				for _, ec := range et.Comments {
-					author := resolve(&ec.Author)
-					if author == nil {
-						author = &u.ID // unknown author: attributed to the importer, never dropped
-					}
-					if _, err := tx.Exec(r.Context(),
-						`INSERT INTO comments(task_id, author_id, body, is_system, created_at) VALUES($1,$2,$3,$4,$5)`,
-						tid, *author, ec.Body, ec.IsSystem, ec.CreatedAt); err == nil {
-						counts["comments"]++
-					}
-				}
 			}
+			break
 		}
+		pending = deferred
 	}
 
 	for _, en := range in.Notes {
