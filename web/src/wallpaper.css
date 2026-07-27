@@ -1,0 +1,75 @@
+/* Wallpaper layer (see wallpaper.tsx).
+ *
+ * The image is painted by two fixed pseudo-elements on <body> rather than by `background` on
+ * <body> itself, for two reasons:
+ *
+ *  1. The dim overlay needs to sit between the picture and the app without tinting the app.
+ *     A second layer is the only way to do that; `background-blend-mode` would blend the
+ *     content too.
+ *  2. `.card` and `.sidebar` use backdrop-filter over --glass. A backdrop-filter has nothing to
+ *     blur unless there is real painted content behind it, so the acrylic effect only becomes
+ *     visible once the wallpaper is a separate layer underneath.
+ *
+ * Negative z-index puts both layers behind all in-flow content but still above the canvas, so
+ * the app renders on top untouched. Nothing here applies until data-wallpaper="on" is set,
+ * which keeps the default look byte-identical to before.
+ */
+
+:root {
+  --wp-image: none;
+  /* How strongly the wallpaper is muted, 0 = untouched picture, 1 = flat --bg. The default is
+     deliberately high: readable text beats a vivid photo. */
+  --wp-dim: 0.55;
+  --wp-blur: 0px;
+}
+
+/* With a wallpaper on, <body> must be see-through or it would cover the layers below it.
+   The base colour moves to <html> so the canvas still has something opaque to fall back to
+   while a large image is decoding — no white flash on a cold load. */
+:root[data-wallpaper="on"] {
+  background-color: var(--bg);
+}
+
+:root[data-wallpaper="on"] body {
+  background: transparent;
+}
+
+:root[data-wallpaper="on"] body::before,
+:root[data-wallpaper="on"] body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+:root[data-wallpaper="on"] body::before {
+  z-index: -2;
+  background-image: var(--wp-image);
+  background-size: cover;
+  background-position: center center;
+  background-repeat: no-repeat;
+  /* scale() hides the transparent fringe a blur would otherwise leave at the edges. */
+  filter: blur(var(--wp-blur));
+  transform: scale(1.06);
+}
+
+:root[data-wallpaper="on"] body::after {
+  z-index: -1;
+  background: var(--bg);
+  opacity: var(--wp-dim);
+}
+
+/* Lite mode turns --blur off, so panels are opaque and the wallpaper is only seen in the gaps
+   between them — at full strength that reads as noise around the edges of the UI rather than a
+   background. Mute it further instead of hiding it outright. */
+:root[data-wallpaper="on"][data-visual="lite"] body::after {
+  opacity: min(1, calc(var(--wp-dim) + 0.15));
+}
+
+/* A full-bleed picture behind printed text wastes ink and hurts legibility. */
+@media print {
+  :root[data-wallpaper="on"] body::before,
+  :root[data-wallpaper="on"] body::after {
+    display: none;
+  }
+}
