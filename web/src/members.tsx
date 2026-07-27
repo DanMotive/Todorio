@@ -10,9 +10,10 @@
 // and holds eight unrelated screens, and growing it further is what makes the frontend hard to
 // keep up with the backend in the first place.
 //
-// Public links and export/import live in sharing.tsx and are mounted here, next to the space and
-// list pickers this page already has: "who can see this" and "is this list public" are the same
-// question, and answering them on two separate screens with two separate pickers would be worse.
+// Public links, export/import and webhooks live in sharing.tsx and webhooks.tsx and are mounted
+// here, next to the space and list pickers this page already has: "who can see this", "is this
+// list public" and "what leaves this space" are the same question, and answering them on separate
+// screens with separate pickers would be worse.
 
 import { useEffect, useState } from "react"
 import { api, type Me } from "./api"
@@ -20,6 +21,7 @@ import { Avatar } from "./settings"
 import { trOr } from "./i18n"
 import { useConfirm } from "./extras"
 import { ShareLinksPanel, SpaceDataCard } from "./sharing"
+import { WebhooksCard } from "./webhooks"
 
 export type Member = {
   user_id: number
@@ -199,7 +201,7 @@ function MemberRoster({ base, roleKey, roles, meId }: {
   )
 }
 
-/** Space roster + the roster of any one list inside it, plus public links and export/import. */
+/** Space roster + the roster of any one list inside it, plus public links, data and webhooks. */
 export function MembersPage({ me }: { me: Me }) {
   const [spaces, setSpaces] = useState<Array<{ id: number; name: string; my_role: string }>>([])
   const [spaceId, setSpaceId] = useState<number | null>(null)
@@ -287,6 +289,11 @@ export function MembersPage({ me }: { me: Me }) {
             <SpaceDataCard spaceId={spaceId} isOwner={currentSpace?.my_role === "owner"}
               onImported={() => loadSpaces()} />
           )}
+
+          {/* Webhooks are the other way data leaves a space, so they sit directly under export.
+              The card asks the server itself and shows an owner-only note if the answer is 403,
+              rather than trusting my_role from the space list. */}
+          {spaceId !== null && <WebhooksCard spaceId={spaceId} />}
         </>
       )}
     </div>
