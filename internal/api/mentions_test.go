@@ -2,7 +2,7 @@ package api
 
 import (
 	"reflect"
-	"strings"
+	"regexp"
 	"testing"
 )
 
@@ -37,16 +37,38 @@ func TestParseMentions(t *testing.T) {
 	}
 }
 
-// A username is user-controlled text that ends up inside a pattern, which is exactly how the
-// old ILIKE version went wrong. Nothing in it may survive as syntax.
-func TestMentionSQLPatternQuotesTheUsername(t *testing.T) {
-	for _, username := range []string{"an_na", "100%", "a.b", `back\slash`, "br[ackets]"} {
-		pat := mentionSQLPattern(username)
-		if !strings.Contains(pat, "@") {
-			t.Fatalf("pattern for %q lost the @: %q", username, pat)
+// The inbox asks "does this comment mention me?" in SQL, so the same rule has to survive as a
+// pattern string. Go's regexp and Postgres's `~` agree on everything used here (POSIX classes,
+// alternation, anchors), so compiling it locally is a fair test of what the database will do.
+//
+// Each case below is something the previous `body ILIKE '%@' || username || '%'` got wrong.
+func TestMentionSQLPattern(t *testing.T) {
+	cases := []struct {
+		username string
+		body     string
+		want     bool
+	}{
+		{"bob", "@bob please look", true},
+		{"bob", "ping @bob", true},
+		{"bob", "(@bob)", true},
+		{"bob", "@bobby is someone else", false},
+		{"bob", "mail@bob.example", false},
+
+		// `_` is a single-character LIKE wildcard, and usernames may contain it.
+		{"an_na", "@an_na hello", true},
+		{"an_na", "@anXna hello", false},
+
+		// A dot is a regexp wildcard; QuoteMeta has to neutralise it.
+		{"a.bc", "@a.bc hello", true},
+		{"a.bc", "@axbc hello", false},
+	}
+	for _, c := range cases {
+		re, err := regexp.Compile(mentionSQLPattern(c.username))
+		if err != nil {
+			t.Fatalf("pattern for %q does not compile: %v", c.username, err)
 		}
-		if strings.Contains(pat, "@"+username) && username != "an_na" {
-			t.Fatalf("pattern for %q embedded the username unescaped: %q", username, pat)
+		if got := re.MatchString(c.body); got != c.want {
+			t.Errorf("username %q vs body %q: matched=%v, want %v", c.username, c.body, got, c.want)
 		}
 	}
 }
