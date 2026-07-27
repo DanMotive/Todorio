@@ -5,6 +5,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/DanMotive/Todorio/internal/config"
@@ -75,12 +76,26 @@ func usage() {
 	cmdLine("todorio resetroot [flags]", "Reset the root admin's username and password")
 	subLine("--username <name>", "New root admin username (default: keep current)")
 	subLine("--yes", "Skip the confirmation prompt")
-	cmdLine("todorio backup create", "Create a backup")
 	cmdLine("todorio update", "Update to the latest release")
 	cmdLine("todorio uninstall [flags]", "Remove Todorio from this machine")
 	subLine("--purge", "Also remove application data (uploads, backups) and the database")
 	subLine("--saveconfig", "Keep the config (/etc/todorio) instead of removing it by default")
 	subLine("--yes", "Skip the confirmation prompt")
+	fmt.Println()
+
+	fmt.Println(term.Bold("Backups"))
+	cmdLine("todorio backup create [flags]", "Create a backup now (DB dump + attachments)")
+	subLine("--prune", "Delete older backups when the new one is written")
+	subLine("--keep <n>", "Backup sets to keep, implies --prune (default: 7)")
+	cmdLine("todorio backup list", "What is on disk, newest first")
+	cmdLine("todorio backup prune [--keep <n>]", "Delete all but the newest N backup sets")
+	cmdLine("todorio backup schedule <when>", "Back up automatically (installs a systemd timer)")
+	subLine("daily <HH:MM>", "e.g. todorio backup schedule daily 03:30")
+	subLine("weekly <day> <HH:MM>", "e.g. todorio backup schedule weekly sun 04:00")
+	subLine("hourly", "")
+	subLine("--keep <n>", "Backup sets to keep on each run (default: 7, 0 = all)")
+	cmdLine("todorio backup schedule status", "Show the schedule and the next run")
+	cmdLine("todorio backup schedule off", "Stop backing up automatically (keeps existing backups)")
 	fmt.Println()
 
 	fmt.Println(term.Bold("Server configuration"))
@@ -167,13 +182,7 @@ func main() {
 			fail(err)
 		}
 	case "backup":
-		cfg, err := config.Load()
-		if err != nil {
-			fail(fmt.Errorf("config not found — run `todorio setup` first: %w", err))
-		}
-		if err := ops.Backup(cfg); err != nil {
-			fail(err)
-		}
+		backupCommand(os.Args[2:])
 	case "update":
 		if err := ops.Update(version); err != nil {
 			fail(err)
@@ -207,6 +216,112 @@ func main() {
 	default:
 		usage()
 		os.Exit(1)
+	}
+}
+
+// backupCommand handles `todorio backup ...`.
+//
+// Note that the subcommand used to be decorative: the help text has always said
+// `todorio backup create`, but os.Args[2:] was dropped on the floor, so `todorio
+// backup schedule daily 03:30` — or `todorio backup nonsense` — quietly created a
+// backup instead. A bare `todorio backup` still creates one, since that is what
+// it has always done and scripts may rely on it.
+func backupCommand(args []string) {
+	sub := "create"
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		sub = args[0]
+		args = args[1:]
+	}
+
+	switch sub {
+	case "create":
+		prune := false
+		keep := ops.DefaultBackupKeep
+		for i := 0; i < len(args); i++ {
+			switch args[i] {
+			case "--prune":
+				prune = true
+			case "--keep":
+				if i+1 >= len(args) {
+					fail(fmt.Errorf("--keep requires a value"))
+				}
+				i++
+				n, err := strconv.Atoi(args[i])
+				if err != nil || n < 0 {
+					fail(fmt.Errorf("--keep expects a whole number of backup sets, got %q", args[i]))
+				}
+				// Asking for a retention count and not getting it would be a
+				// nasty surprise on a disk that fills up, so --keep implies --prune.
+				keep = n
+				prune = true
+			default:
+				fail(fmt.Errorf("unknown flag for backup create: %s", args[i]))
+			}
+		}
+		cfg, err := config.Load()
+		if err != nil {
+			fail(fmt.Errorf("config not found — run `todorio setup` first: %w", err))
+		}
+		if err := ops.Backup(cfg); err != nil {
+			fail(err)
+		}
+		// Only after a successful backup: pruning old copies because the new one
+		// failed is how a week of history disappears in one command.
+		if prune {
+			if err := ops.PruneBackups(keep); err != nil {
+				fail(err)
+			}
+		}
+	case "list":
+		if len(args) > 0 {
+			fail(fmt.Errorf("backup list takes no flags"))
+		}
+		if err := ops.BackupList(); err != nil {
+			fail(err)
+		}
+	case "prune":
+		keep := ops.DefaultBackupKeep
+		for i := 0; i < len(args); i++ {
+			switch args[i] {
+			case "--keep":
+				if i+1 >= len(args) {
+					fail(fmt.Errorf("--keep requires a value"))
+				}
+				i++
+				n, err := strconv.Atoi(args[i])
+				if err != nil || n < 0 {
+					fail(fmt.Errorf("--keep expects a whole number of backup sets, got %q", args[i]))
+				}
+				keep = n
+			default:
+				fail(fmt.Errorf("unknown flag for backup prune: %s", args[i]))
+			}
+		}
+		if err := ops.PruneBackups(keep); err != nil {
+			fail(err)
+		}
+	case "schedule":
+		if len(args) == 0 || args[0] == "status" {
+			if err := ops.BackupScheduleStatus(); err != nil {
+				fail(err)
+			}
+			return
+		}
+		if args[0] == "off" || args[0] == "none" {
+			if err := ops.BackupScheduleOff(); err != nil {
+				fail(err)
+			}
+			return
+		}
+		s, err := ops.ParseBackupSchedule(args)
+		if err != nil {
+			fail(err)
+		}
+		if err := ops.BackupScheduleSet(s); err != nil {
+			fail(err)
+		}
+	default:
+		fail(fmt.Errorf("unknown backup subcommand %q — expected create, list, prune or schedule", sub))
 	}
 }
 
