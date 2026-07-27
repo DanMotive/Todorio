@@ -169,6 +169,19 @@ func Status(cfg config.Config, version string) error {
 		warn("no backups yet — `todorio backup create`")
 	}
 
+	// Whether backups keep happening, which the count above cannot answer: a
+	// directory full of files from one afternoon in March looks exactly like a
+	// healthy backup regime until the day it is needed.
+	if _, err := os.Stat(backupTimerPath); err == nil {
+		if cal := unitValue(backupTimerPath, "OnCalendar"); cal != "" {
+			ok("scheduled backups: " + cal + " · `todorio backup schedule status`")
+		} else {
+			ok("scheduled backups: " + backupTimerPath)
+		}
+	} else {
+		warn("backups are not scheduled — `todorio backup schedule daily 03:30`")
+	}
+
 	// pg_dump for backups
 	if _, err := exec.LookPath("pg_dump"); err == nil {
 		ok("pg_dump found")
@@ -378,6 +391,19 @@ func Uninstall(cfg config.Config, purge bool, saveConfig bool, yes bool) error {
 		_ = os.Remove("/etc/systemd/system/todorio.service")
 		_ = exec.Command("systemctl", "daemon-reload").Run()
 		ok("removed the systemd service")
+	}
+
+	// The backup timer, if `todorio backup schedule` ever installed one. It is a
+	// separate pair of units that nothing above knows about by name, and leaving
+	// them behind means systemd keeps a timer armed against a binary this command
+	// is about to delete — a failed unit on every boot, long after Todorio is gone.
+	// The backups themselves are data, so they follow the --purge rule below.
+	if _, err := os.Stat(backupTimerPath); err == nil {
+		_ = exec.Command("systemctl", "disable", "--now", backupTimerName).Run()
+		_ = os.Remove(backupTimerPath)
+		_ = os.Remove(backupServicePath)
+		_ = exec.Command("systemctl", "daemon-reload").Run()
+		ok("removed the scheduled backup timer")
 	}
 
 	// binary
