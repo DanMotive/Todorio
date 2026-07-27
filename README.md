@@ -5,7 +5,7 @@
 <h1 align="center">Todorio</h1>
 
 <p align="center">
-  A private, self-hosted task manager for personal use and small teams.
+  A private, self-hosted task manager for personal use and teams.
 </p>
 
 <p align="center">
