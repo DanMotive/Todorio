@@ -9,10 +9,12 @@
 //      dangerouslySetInnerHTML anywhere in this file, by design.
 //
 // Supported, deliberately a subset: ATX headings, unordered and ordered lists, blockquotes,
-// fenced and inline code, bold, italic, strikethrough, links, horizontal rules, and paragraphs.
-// Anything unsupported degrades to plain text rather than disappearing.
+// fenced and inline code, bold, italic, strikethrough, links, references to tasks and notes,
+// horizontal rules, and paragraphs. Anything unsupported degrades to plain text rather than
+// disappearing.
 
 import type React from "react"
+import { REF_AT_START, RefLink, refBoundaryOk } from "./refs"
 
 // Only http(s) and mailto links become anchors. A "javascript:" URL in a note must never be
 // clickable — notes are user content and other members of the space read them.
@@ -30,7 +32,15 @@ function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
   let k = 0
 
   // Ordered by precedence: code first, because backticks must win over emphasis inside them.
-  const rules: Array<{ re: RegExp; render: (m: RegExpMatchArray, key: string) => React.ReactNode }> = [
+  //
+  // `boundary` marks a rule that may only fire at the start of a word. References need it —
+  // otherwise a colour like #336699 and the "12" in "issue#12abc" would both light up — and the
+  // scanner below is the only place that knows which character preceded this position.
+  const rules: Array<{
+    re: RegExp
+    boundary?: boolean
+    render: (m: RegExpMatchArray, key: string) => React.ReactNode
+  }> = [
     { re: /^`([^`]+)`/, render: (m, key) => <code key={key}>{m[1]}</code> },
     {
       re: /^\[([^\]]*)\]\(([^)\s]+)\)/,
@@ -44,6 +54,13 @@ function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
           </a>
         )
       },
+    },
+    {
+      re: REF_AT_START,
+      boundary: true,
+      render: (m, key) => (
+        <RefLink key={key} kind={m[1] === "#" ? "task" : "note"} id={Number(m[2])} />
+      ),
     },
     { re: /^\*\*([^*]+)\*\*/, render: (m, key) => <strong key={key}>{m[1]}</strong> },
     { re: /^__([^_]+)__/, render: (m, key) => <strong key={key}>{m[1]}</strong> },
@@ -63,6 +80,9 @@ function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
   while (rest.length > 0) {
     let matched = false
     for (const rule of rules) {
+      // The character immediately before this position, as far as this scan knows: an empty
+      // string at the very start, or right after another inline element ended.
+      if (rule.boundary && !refBoundaryOk(buffer.slice(-1))) continue
       const m = rest.match(rule.re)
       if (m) {
         flush()
@@ -115,7 +135,8 @@ export function renderMarkdown(src: string): React.ReactNode {
       continue
     }
 
-    // ATX heading (# … ######)
+    // ATX heading (# … ######). A heading needs a space after the hashes, so "#123" stays a
+    // task reference and is handled inline below.
     const h = line.match(/^(#{1,6})\s+(.*)$/)
     if (h) {
       const level = h[1].length
