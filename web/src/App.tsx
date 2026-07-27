@@ -169,6 +169,9 @@ export default function App() {
   // Navigating always dismisses the drawer — otherwise it would stay open over the page the
   // user just chose. Escape closes it too, matching the modal behaviour.
   useEffect(() => { setNavOpen(false) }, [view])
+  // Opening the notifications page is what "reading" them means here — there's no separate
+  // per-item read action surfaced from this list, so the sidebar badge clears on arrival.
+  useEffect(() => { if (view === "notifications") setUnread(0) }, [view])
   useEffect(() => {
     if (!navOpen) return
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setNavOpen(false) }
@@ -381,7 +384,7 @@ export default function App() {
           <NoteModal note={searchNote} spaceId={searchNote.space_id} onClose={() => setSearchNote(null)}
             onChanged={() => openSearchNote(searchNote.id)} />
         )}
-        {view === "notifications" && <NotificationsPage onRead={() => setUnread(0)} />}
+        {view === "notifications" && <NotificationsPage onNavigateTask={openSearchTask} />}
         {view === "settings" && <SettingsPage me={me} theme={theme} onUpdateTheme={updateTheme} onProfileSaved={setProfile} />}
         {view === "about" && (
           <AboutPage siteName={siteName} version={boot?.version}

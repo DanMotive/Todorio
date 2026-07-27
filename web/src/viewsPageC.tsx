@@ -5,7 +5,7 @@ import { tr, trFormal, getFormattingLocale } from "./i18n"
 import { IconX, IconSliders, IconArrowLeft, IconMenu, IconColumns, IconTable, IconCalendar } from "./icons"
 import { dueClass, dueLabel, StatusChip, TaskRow } from "./taskui"
 import { FocusPresence } from "./extras"
-import { TaskContextMenu } from "./viewsPageA"
+import { TaskContextMenu, TaskModal } from "./viewsPageA"
 
 export function KanbanBoard({ tasks, statuses, onOpen, onDrop, meId }: {
   tasks: Task[]; statuses: string[]; onOpen: (t: Task) => void; onDrop: (task: Task, status: string) => void; meId?: number

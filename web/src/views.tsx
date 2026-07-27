@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { api, type List, type Me, type Pulse, type Space, type Task } from "./api"
-import { useConfirm, ImportCard, ArchivedSpacesPanel, StatsCard, WorkloadPanel, NotesPanel, ActivityPanel, ArchivePanel, FieldsPanel } from "./extras"
+import { useConfirm, ArchivedSpacesPanel, StatsCard, NotesPanel, ActivityPanel, ArchivePanel, FieldsPanel } from "./extras"
+import { ImportCard, WorkloadPanel } from "./functional"
 import { tr } from "./i18n"
 import { TimelineView } from "./timeline"
 import { WorkflowEditor } from "./workflow"
