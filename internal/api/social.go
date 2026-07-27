@@ -3,13 +3,10 @@ package api
 import (
 	"fmt"
 	"net/http"
-	"regexp"
 	"time"
 
 	"github.com/DanMotive/Todorio/internal/events"
 )
-
-var mentionRe = regexp.MustCompile(`@([a-zA-Z0-9_]{3,32})`)
 
 // GET /api/tasks/{id}/comments
 func (a *API) handleListComments(w http.ResponseWriter, r *http.Request) {
@@ -150,12 +147,11 @@ func (a *API) handleCreateComment(w http.ResponseWriter, r *http.Request) {
 	if assigneeID != nil {
 		recipients[*assigneeID] = true
 	}
-	for _, m := range mentionRe.FindAllStringSubmatch(in.Body, -1) {
-		var mid int64
-		if a.DB.Pool.QueryRow(r.Context(),
-			`SELECT id FROM users WHERE username=$1 AND status='active'`, m[1]).Scan(&mid) == nil {
-			recipients[mid] = true
-		}
+	// Mentions resolve through mentions.go: a boundary before the `@` (so an email address in
+	// the body is not a mention), and only users who can see this list — notifying someone
+	// without access would hand them the task's title in the payload.
+	for _, mid := range a.mentionedUserIDs(r.Context(), listID, in.Body) {
+		recipients[mid] = true
 	}
 	// The person being replied to is the most directly concerned party.
 	if parentAuthor != nil {

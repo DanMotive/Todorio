@@ -29,6 +29,10 @@ func (a *API) handleInbox(w http.ResponseWriter, r *http.Request) {
 	//   unassigned — I created it, nobody owns it
 	//   review     — assigned to me and waiting on review
 	//
+	// The mention test is a POSIX match on the pattern built by mentionSQLPattern, not a LIKE:
+	// see mentions.go for why (`bob` used to collect every `@bobby`, and an underscore in a
+	// username was a wildcard).
+	//
 	// Visibility mirrors the rule used everywhere else: admins see all, others need list
 	// membership or a non-private list in a space they belong to.
 	rows, err := a.DB.Pool.Query(r.Context(), `
@@ -60,12 +64,12 @@ func (a *API) handleInbox(w http.ResponseWriter, r *http.Request) {
 		   OR EXISTS (
 		        SELECT 1 FROM comments c
 		        WHERE c.task_id = v.id AND c.deleted_at IS NULL
-		          AND c.body ILIKE '%@' || $3 || '%'
+		          AND c.body ~ $3
 		          AND c.author_id <> $1
 		          AND COALESCE(v.assignee_id, 0) <> $1
 		      )
 		ORDER BY v.created_at DESC
-		LIMIT 200`, u.ID, u.IsAdmin(), u.Username)
+		LIMIT 200`, u.ID, u.IsAdmin(), mentionSQLPattern(u.Username))
 	if err != nil {
 		dbFail(r, "inbox", err)
 		errJSON(w, http.StatusInternalServerError, "database error")
