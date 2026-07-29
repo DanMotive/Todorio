@@ -318,12 +318,10 @@
   "onboarding.progress_title": "Primeros pasos",
   "pending.text": "Un administrador debe aprobar tu registro. Vuelve más tarde.",
   "pending.title": "Cuenta pendiente de aprobación",
-<<<<<<< Updated upstream
   "portability.export": "Exportar",
   "portability.hint": "Exporta o importa tus datos en formato JSON.",
   "portability.import": "Importar",
   "portability.title": "Portabilidad",
-=======
   "portability.bad_format": "Formato de exportación no compatible",
   "portability.comments": "comentarios",
   "portability.confirm": "Se creará un espacio nuevo",
@@ -339,7 +337,6 @@
   "portability.tasks": "tareas",
   "portability.title": "Portabilidad",
   "portability.too_big": "El archivo supera los 32 MB y el servidor no lo aceptará",
->>>>>>> Stashed changes
   "profile.avatar_hint": "JPG, PNG, WEBP o GIF.",
   "profile.avatar_remove": "Eliminar",
   "profile.avatar_upload": "Subir foto",
