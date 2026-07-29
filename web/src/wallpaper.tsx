@@ -19,12 +19,6 @@
 import { useEffect, useRef, useState } from "react"
 import { trOr } from "./i18n"
 
-// Translation keys go through a local alias on purpose. The i18n checker scans for literal
-// tr("...") / trOr("...") call sites and requires the key in all 13 locale files; routing
-// through `t` keeps the build green while these strings live only as fallbacks, and the keys
-// can be filled in later without touching this file.
-const t = (key: string, fallback: string) => trOr(key, fallback)
-
 export type Wallpaper = {
   id: string
   name: string
@@ -53,7 +47,7 @@ let customVersion = 0
 function customWallpaper(): Wallpaper {
   return {
     id: CUSTOM,
-    name: t("wallpaper.custom", "\u0421\u0432\u043e\u044f \u043a\u0430\u0440\u0442\u0438\u043d\u043a\u0430"),
+    name: trOr("wallpaper.custom", "\u0421\u0432\u043e\u044f \u043a\u0430\u0440\u0442\u0438\u043d\u043a\u0430"),
     url: customVersion ? `${CUSTOM_URL}?v=${customVersion}` : CUSTOM_URL,
   }
 }
@@ -226,8 +220,20 @@ export function initWallpaper() {
   loadCatalog().then((list) => applyWallpaper(state, list)).catch(() => {})
 }
 
+function wallpaperName(wp: Wallpaper): string {
+  switch (wp.id) {
+    case "accent-glow": return trOr("wallpaper.builtin.accent_glow", "Accent glow")
+    case "aurora": return trOr("wallpaper.builtin.aurora", "Aurora")
+    case "dusk": return trOr("wallpaper.builtin.dusk", "Dusk")
+    case "grid": return trOr("wallpaper.builtin.grid", "Grid")
+    case "depth": return trOr("wallpaper.builtin.depth", "Depth")
+    case "roadtothemoon": return trOr("wallpaper.system.road_to_the_moon", "Road to the Moon")
+    default: return wp.name
+  }
+}
+
 function Swatch({ wp, selected, onPick }: { wp: Wallpaper | null; selected: boolean; onPick: () => void }) {
-  const label = wp ? wp.name : t("wallpaper.none", "\u0411\u0435\u0437 \u043e\u0431\u043e\u0435\u0432")
+  const label = wp ? wallpaperName(wp) : trOr("wallpaper.none", "\u0411\u0435\u0437 \u043e\u0431\u043e\u0435\u0432")
   return (
     <button
       onClick={onPick}
@@ -299,7 +305,7 @@ export function WallpaperPicker() {
         // The server's message is the useful part here — too large, out of storage, or too many
         // uploads this hour are three different problems with three different fixes.
         const data = await r.json().catch(() => null)
-        setError((data && data.error) || t("wallpaper.upload_failed", "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044c"))
+        setError((data && data.error) || trOr("wallpaper.upload_failed", "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044c"))
         return
       }
       customVersion = Date.now()
@@ -309,7 +315,7 @@ export function WallpaperPicker() {
       saveWallpaper(next)
       applyWallpaper(next, [customWallpaper(), ...list])
     } catch {
-      setError(t("wallpaper.upload_failed", "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044c"))
+      setError(trOr("wallpaper.upload_failed", "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044c"))
     } finally {
       setBusy(false)
     }
@@ -328,7 +334,7 @@ export function WallpaperPicker() {
         applyWallpaper(next, list)
       }
     } catch {
-      setError(t("wallpaper.upload_failed", "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044c"))
+      setError(trOr("wallpaper.upload_failed", "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044c"))
     } finally {
       setBusy(false)
     }
@@ -339,7 +345,7 @@ export function WallpaperPicker() {
   return (
     <div style={{ marginBottom: 16 }}>
       <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>
-        {t("wallpaper.title", "\u041e\u0431\u043e\u0438")}
+        {trOr("wallpaper.title", "\u041e\u0431\u043e\u0438")}
       </div>
       <div className="row" style={{ gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
         <Swatch wp={null} selected={!active} onPick={() => pick(null)} />
@@ -350,12 +356,12 @@ export function WallpaperPicker() {
       <div className="row" style={{ gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
         <button onClick={() => fileRef.current?.click()} disabled={busy}>
           {busy
-            ? t("wallpaper.uploading", "\u0417\u0430\u0433\u0440\u0443\u0437\u043a\u0430\u2026")
-            : t("wallpaper.upload", "\u0417\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044c \u0441\u0432\u043e\u044e")}
+            ? trOr("wallpaper.uploading", "\u0417\u0430\u0433\u0440\u0443\u0437\u043a\u0430\u2026")
+            : trOr("wallpaper.upload", "\u0417\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044c \u0441\u0432\u043e\u044e")}
         </button>
         {hasCustom && (
           <button onClick={removeCustom} disabled={busy}>
-            {t("wallpaper.remove", "\u0423\u0434\u0430\u043b\u0438\u0442\u044c \u0441\u0432\u043e\u044e")}
+            {trOr("wallpaper.remove", "\u0423\u0434\u0430\u043b\u0438\u0442\u044c \u0441\u0432\u043e\u044e")}
           </button>
         )}
         <input
@@ -377,19 +383,19 @@ export function WallpaperPicker() {
       {active && (
         <div className="row" style={{ gap: 20, flexWrap: "wrap" }}>
           <label className="row" style={{ gap: 8, fontSize: 13 }}>
-            {t("wallpaper.dim", "\u0417\u0430\u0442\u0435\u043c\u043d\u0435\u043d\u0438\u0435")}
+            {trOr("wallpaper.dim", "\u0417\u0430\u0442\u0435\u043c\u043d\u0435\u043d\u0438\u0435")}
             <input type="range" min={0} max={100} step={5} value={Math.round(state.dim * 100)}
               onChange={(e) => update({ dim: Number(e.target.value) / 100 })} />
           </label>
           <label className="row" style={{ gap: 8, fontSize: 13 }}>
-            {t("wallpaper.blur", "\u0420\u0430\u0437\u043c\u044b\u0442\u0438\u0435")}
+            {trOr("wallpaper.blur", "\u0420\u0430\u0437\u043c\u044b\u0442\u0438\u0435")}
             <input type="range" min={0} max={24} step={2} value={state.blur}
               onChange={(e) => update({ blur: Number(e.target.value) })} />
           </label>
         </div>
       )}
       <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>
-        {t("wallpaper.hint", "\u0412\u044b\u0431\u043e\u0440 \u043e\u0431\u043e\u0435\u0432 \u0445\u0440\u0430\u043d\u0438\u0442\u0441\u044f \u0434\u043b\u044f \u044d\u0442\u043e\u0433\u043e \u0443\u0441\u0442\u0440\u043e\u0439\u0441\u0442\u0432\u0430. \u0421\u0432\u043e\u044f \u043a\u0430\u0440\u0442\u0438\u043d\u043a\u0430 \u0445\u0440\u0430\u043d\u0438\u0442\u0441\u044f \u0432 \u0430\u043a\u043a\u0430\u0443\u043d\u0442\u0435 \u0438 \u0432\u0438\u0434\u043d\u0430 \u043d\u0430 \u0432\u0441\u0435\u0445 \u0443\u0441\u0442\u0440\u043e\u0439\u0441\u0442\u0432\u0430\u0445.")}
+        {trOr("wallpaper.hint", "\u0412\u044b\u0431\u043e\u0440 \u043e\u0431\u043e\u0435\u0432 \u0445\u0440\u0430\u043d\u0438\u0442\u0441\u044f \u0434\u043b\u044f \u044d\u0442\u043e\u0433\u043e \u0443\u0441\u0442\u0440\u043e\u0439\u0441\u0442\u0432\u0430. \u0421\u0432\u043e\u044f \u043a\u0430\u0440\u0442\u0438\u043d\u043a\u0430 \u0445\u0440\u0430\u043d\u0438\u0442\u0441\u044f \u0432 \u0430\u043a\u043a\u0430\u0443\u043d\u0442\u0435 \u0438 \u0432\u0438\u0434\u043d\u0430 \u043d\u0430 \u0432\u0441\u0435\u0445 \u0443\u0441\u0442\u0440\u043e\u0439\u0441\u0442\u0432\u0430\u0445.")}
       </div>
     </div>
   )

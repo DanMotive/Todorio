@@ -10,7 +10,9 @@ Four classes of bug this catches, all of which ship silently otherwise:
 3. Emoji in interface strings. The product deliberately keeps emoji out of the UI
    (they render differently per OS/browser); the fixed reaction set is user content
    and lives in Go, not here, so anything found in a locale file is a regression.
-4. Keys no call site references any more — dead weight that every translator still
+4. Broken fallback expressions such as tr("key") || "fallback". A missing lookup
+   returns the truthy key, so these expressions expose raw keys instead of falling back.
+5. Keys no call site references any more — dead weight that every translator still
    has to carry. Reported for information only unless --strict is passed, because a
    call site can reach a key in ways this script cannot see statically.
 
@@ -47,10 +49,30 @@ BASE = "en-US"
 OVERLAYS = {"ru-RU-it", "en-US-it"}
 
 EMOJI = re.compile("[\U0001F300-\U0001FAFF☀-➿]")
-# tr("literal") / trFormal("literal") / trOr("literal", "fallback") — and the dynamic
+# tr("literal") / trFormal('literal') / trOr(`literal`, "fallback") — and the dynamic
 # tr("prefix." + expr) form. Keep this list in sync with the helpers exported from
 # web/src/i18n.ts; a helper missing here means its keys go unchecked.
-CALL = re.compile(r'\b(?:tr|trFormal|trOr)\(\s*"([^"]+)"')
+CALL = re.compile(
+    r'\b(?:tr|trFormal|trOr)\(\s*(?P<quote>["\'`])(?P<key>[^"\'`]+)(?P=quote)'
+)
+# A missing tr()/trFormal() lookup returns the key, which is truthy, so || can never
+# supply a human-readable fallback. trOr() is exempt because it handles the sentinel.
+BROKEN_FALLBACK = re.compile(
+    r'\b(?P<helper>tr|trFormal)\(\s*["\'](?P<key>[^"\']+)["\']\s*\)\s*\|\|'
+)
+# Catch wrappers that merely hide the same bug from both review and CALL. This is
+# intentionally narrow: it only rejects a local function whose returned expression is
+# directly tr(key) || fallback (or trFormal(...)); unrelated uses of || remain valid.
+BROKEN_FALLBACK_HELPER = re.compile(
+    r'\b(?:const|let|var)\s+(?P<name>[A-Za-z_$][\w$]*)\s*=\s*'
+    r'\([^)]*\)\s*=>\s*(?:\([^)]*\)\s*=>\s*)?'
+    r'(?P<helper>tr|trFormal)\([^;\n]*\)\s*\|\|'
+)
+
+
+def line_number(text, offset):
+    """Return a one-based source line for a regex match offset."""
+    return text.count("\n", 0, offset) + 1
 
 
 def strip_comments(text):
@@ -60,10 +82,11 @@ def strip_comments(text):
     dropping the rest of that line and with it any real call sites on it, so double
     and backtick quoted strings are tracked and skipped over.
 
-    Single quotes are deliberately not treated as string delimiters: apostrophes in
-    prose ("don't") are far more common in this codebase than single-quoted strings
-    containing a //, and treating one as an opening quote would swallow real code up
-    to the next apostrophe. Regex literals are not parsed either — a bare // inside
+    Single quotes are deliberately not treated as delimiters while stripping comments:
+    apostrophes in prose ("don't") are more common here than single-quoted strings containing
+    //, and treating one as an opening quote could swallow real code up to the next apostrophe.
+    CALL can still recognize ordinary single-quoted translation keys after this pass. Regex
+    literals are not parsed either — a bare // inside
     one would need writing as [/][/] to survive, which nothing here does.
     """
     out = []
@@ -139,7 +162,8 @@ def main():
             if isinstance(v, str) and EMOJI.search(v):
                 problems.append(f"{name}: emoji in {k!r}: {v!r}")
 
-    # 3. every tr()/trFormal()/trOr() call in the TSX resolves to a real key
+    # 3. every tr()/trFormal()/trOr() call in the TSX resolves to a real key,
+    # and 4. no call relies on the broken truthy-key || fallback pattern.
     used, prefixes = set(), set()
     where = {}
     for fn in sorted(os.listdir(SRC)):
@@ -147,31 +171,45 @@ def main():
             continue
         path = os.path.join(SRC, fn)
         with open(path, encoding="utf-8") as fh:
-            text = strip_comments(fh.read())
+            source = fh.read()
+        text = strip_comments(source)
         for m in CALL.finditer(text):
-            key = m.group(1)
+            key = m.group("key")
             after = text[m.end():m.end() + 40].lstrip()
-            where.setdefault(key, fn)
-            # tr("prefix." + something) — dynamic, treat as a prefix
+            where.setdefault(key, f"{fn}:{line_number(text, m.start())}")
+            # tr("prefix." + something) and tr(`prefix.${value}`) are dynamic; only
+            # the literal prefix before interpolation can be validated statically.
             if after.startswith("+"):
                 prefixes.add(key)
+            elif "${" in key:
+                prefixes.add(key.split("${", 1)[0])
             else:
                 used.add(key)
+        for m in BROKEN_FALLBACK.finditer(text):
+            problems.append(
+                f"{fn}:{line_number(text, m.start())}: "
+                f"{m.group('helper')}({m.group('key')!r}) || fallback never falls back; use trOr()"
+            )
+        for m in BROKEN_FALLBACK_HELPER.finditer(text):
+            problems.append(
+                f"{fn}:{line_number(text, m.start())}: helper {m.group('name')!r} "
+                f"wraps {m.group('helper')}(...) || fallback; use trOr()"
+            )
 
     # Name the file. A key that exists in no locale is usually a typo at one call site,
     # and "en-US: tr('task.dne') used in TSX but no such key" left the reader grepping.
     for key in sorted(used):
         if key not in base_keys:
             problems.append(
-                f"{BASE}: tr({key!r}) used in {where.get(key, 'TSX')} but no such key"
+                f"{BASE}: tr({key!r}) used at {where.get(key, 'TSX')} but no such key"
             )
     for pref in sorted(prefixes):
         if not any(k.startswith(pref) for k in base_keys):
             problems.append(
-                f"{BASE}: dynamic tr({pref!r} + ...) in {where.get(pref, 'TSX')} matches no key"
+                f"{BASE}: dynamic tr({pref!r} + ...) at {where.get(pref, 'TSX')} matches no key"
             )
 
-    # 4. keys nothing references. A key can legitimately look unused when its call
+    # 5. keys nothing references. A key can legitimately look unused when its call
     # site builds it dynamically from a value this script cannot follow, so this is
     # a report by default and only fails the run under --strict.
     unused = sorted(

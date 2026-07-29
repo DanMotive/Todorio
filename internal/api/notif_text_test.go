@@ -1,6 +1,9 @@
 package api
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
 
 // These exercise formatNotifText/trServer without a database — the only dependency is the
 // embedded web/src/locales/*.json, which is always present (source, not build output).
@@ -64,6 +67,37 @@ func TestFormatNotifTextFallsBackToEnglishForUnknownLocale(t *testing.T) {
 	want := "Task assigned to you"
 	if got != want {
 		t.Errorf("formatNotifText(xx-XX) = %q, want %q (en-US fallback)", got, want)
+	}
+}
+
+func TestNotificationItemAddsLocalizedTextAndTaskID(t *testing.T) {
+	got := notificationItem("ru-RU", 7, "task_assigned", json.RawMessage(`{"task_id":42,"title":"Выпустить релиз","by":"dan"}`), nil, "now")
+	if got["text"] != "Вам назначена задача · «Выпустить релиз» · от @dan" {
+		t.Errorf("notificationItem text = %q", got["text"])
+	}
+	if got["task_id"] != 42 {
+		t.Errorf("notificationItem task_id = %#v, want 42", got["task_id"])
+	}
+	payload, ok := got["payload"].(map[string]any)
+	if !ok || payload["title"] != "Выпустить релиз" {
+		t.Errorf("notificationItem payload = %#v", got["payload"])
+	}
+}
+
+func TestNotificationItemSurvivesMalformedPayload(t *testing.T) {
+	got := notificationItem("ru-RU", 8, "approved", json.RawMessage(`{not-json`), nil, nil)
+	if got["text"] != "Аккаунт одобрен" {
+		t.Errorf("notificationItem malformed payload text = %q, want localized kind", got["text"])
+	}
+	if _, ok := got["task_id"]; ok {
+		t.Errorf("notificationItem unexpectedly added task_id: %#v", got["task_id"])
+	}
+}
+
+func TestNotificationItemUnknownKindIsStillVisible(t *testing.T) {
+	got := notificationItem("ru-RU", 9, "future_event", json.RawMessage(`{}`), nil, nil)
+	if got["text"] != "notif.kind.future_event" {
+		t.Errorf("notificationItem unknown kind text = %q, want visible fallback key", got["text"])
 	}
 }
 

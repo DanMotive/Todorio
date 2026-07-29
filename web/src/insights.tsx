@@ -13,10 +13,7 @@
 
 import { useEffect, useState } from "react"
 import { api, type FocusStats } from "./api"
-import { tr } from "./i18n"
-
-// tr() with an inline fallback — same helper and same reasoning as members.tsx and sharing.tsx.
-const t = (key: string, fallback: string) => tr(key) || fallback
+import { trOr } from "./i18n"
 
 export type AuditEntry = {
   id: number
@@ -50,7 +47,7 @@ const actionLabel = (action: string) => {
   const found = ACTIONS.find(([key]) => key === action)
   // An unknown action still renders as its raw name: a future action must never be invisible in
   // the log just because this list is out of date.
-  return found ? t(`audit.action.${action}`, found[1]) : action
+  return found ? trOr(`audit.action.${action}`, found[1]) : action
 }
 
 function formatWhen(value: string) {
@@ -97,40 +94,40 @@ export function AuditLogCard() {
   return (
     <div className="card">
       <div className="row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        <b>{t("audit.title", "Журнал действий администраторов")}</b>
-        <button className="ctrl-btn" disabled={busy} title={t("audit.refresh", "Обновить")}
+        <b>{trOr("audit.title", "Журнал действий администраторов")}</b>
+        <button className="ctrl-btn" disabled={busy} title={trOr("audit.refresh", "Обновить")}
           style={{ marginLeft: "auto" }} onClick={load}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
         </button>
       </div>
 
       <p className="muted" style={{ fontSize: 13 }}>
-        {t("audit.hint", "Записывается кто, что и когда сделал. Пароли и токены в журнал не попадают — только факт изменения.")}
+        {trOr("audit.hint", "Записывается кто, что и когда сделал. Пароли и токены в журнал не попадают — только факт изменения.")}
       </p>
 
       <div className="row" style={{ gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
         <select className="input" style={{ width: "auto" }} value={action}
           onChange={(e) => setAction(e.target.value)}>
-          <option value="">{t("audit.all_actions", "Все действия")}</option>
+          <option value="">{trOr("audit.all_actions", "Все действия")}</option>
           {ACTIONS.map(([key, label]) => (
-            <option key={key} value={key}>{t(`audit.action.${key}`, label)}</option>
+            <option key={key} value={key}>{trOr(`audit.action.${key}`, label)}</option>
           ))}
         </select>
         <select className="input" style={{ width: "auto" }} value={limit}
           onChange={(e) => setLimit(Number(e.target.value))}>
           {LIMITS.map((n) => (
-            <option key={n} value={n}>{n} {t("audit.records", "записей")}</option>
+            <option key={n} value={n}>{n} {trOr("audit.records", "записей")}</option>
           ))}
         </select>
         <input className="input" style={{ maxWidth: 180 }} value={actorFilter}
-          placeholder={t("audit.actor_placeholder", "Логин администратора")}
+          placeholder={trOr("audit.actor_placeholder", "Логин администратора")}
           onChange={(e) => setActorFilter(e.target.value)} />
       </div>
 
       {err && <div className="muted" style={{ color: "var(--danger, #c33)", marginBottom: 8 }}>{err}</div>}
-      {entries === null && <div className="muted">{t("audit.loading", "Загрузка…")}</div>}
+      {entries === null && <div className="muted">{trOr("audit.loading", "Загрузка…")}</div>}
       {entries !== null && shown.length === 0 && !err && (
-        <div className="muted">{t("audit.empty", "Записей нет")}</div>
+        <div className="muted">{trOr("audit.empty", "Записей нет")}</div>
       )}
 
       {shown.map((e) => {
@@ -153,7 +150,7 @@ export function AuditLogCard() {
             {hasDetails && (
               <details style={{ marginTop: 4 }}>
                 <summary className="muted" style={{ fontSize: 12, cursor: "pointer" }}>
-                  {t("audit.details", "Подробности")}
+                  {trOr("audit.details", "Подробности")}
                 </summary>
                 <pre style={{ fontSize: 12, overflowX: "auto", margin: "6px 0 0" }}>
                   {JSON.stringify(e.details, null, 2)}
@@ -170,9 +167,9 @@ export function AuditLogCard() {
 function formatDuration(totalSeconds: number) {
   const h = Math.floor(totalSeconds / 3600)
   const m = Math.round((totalSeconds % 3600) / 60)
-  if (h === 0 && m === 0) return `0 ${t("focus.minutes_short", "мин")}`
-  if (h === 0) return `${m} ${t("focus.minutes_short", "мин")}`
-  return `${h} ${t("focus.hours_short", "ч")} ${m} ${t("focus.minutes_short", "мин")}`
+  if (h === 0 && m === 0) return `0 ${trOr("focus.minutes_short", "мин")}`
+  if (h === 0) return `${m} ${trOr("focus.minutes_short", "мин")}`
+  return `${h} ${trOr("focus.hours_short", "ч")} ${m} ${trOr("focus.minutes_short", "мин")}`
 }
 
 /** The caller's own focused time for the last week or month. */
@@ -198,33 +195,33 @@ export function FocusStatsCard() {
   return (
     <div className="card">
       <div className="row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        <b>{t("focus.stats_title", "Время в фокусе")}</b>
+        <b>{trOr("focus.stats_title", "Время в фокусе")}</b>
         <div className="row" style={{ gap: 6, marginLeft: "auto" }}>
           <button className={"btn" + (period === "week" ? " active" : "")}
-            onClick={() => setPeriod("week")}>{t("focus.week", "Неделя")}</button>
+            onClick={() => setPeriod("week")}>{trOr("focus.week", "Неделя")}</button>
           <button className={"btn" + (period === "month" ? " active" : "")}
-            onClick={() => setPeriod("month")}>{t("focus.month", "Месяц")}</button>
+            onClick={() => setPeriod("month")}>{trOr("focus.month", "Месяц")}</button>
         </div>
       </div>
 
       {err && <div className="muted" style={{ color: "var(--danger, #c33)" }}>{err}</div>}
-      {!err && stats === null && <div className="muted">{t("focus.loading", "Загрузка…")}</div>}
+      {!err && stats === null && <div className="muted">{trOr("focus.loading", "Загрузка…")}</div>}
 
       {!err && stats && (
         <div className="row" style={{ gap: 20, flexWrap: "wrap", marginTop: 6 }}>
           <div>
             <div style={{ fontSize: 22, fontWeight: 600 }}>{formatDuration(stats.total_seconds)}</div>
-            <div className="muted" style={{ fontSize: 12 }}>{t("focus.total", "всего")}</div>
+            <div className="muted" style={{ fontSize: 12 }}>{trOr("focus.total", "всего")}</div>
           </div>
           <div>
             <div style={{ fontSize: 22, fontWeight: 600 }}>{stats.sessions}</div>
-            <div className="muted" style={{ fontSize: 12 }}>{t("focus.sessions", "сессий")}</div>
+            <div className="muted" style={{ fontSize: 12 }}>{trOr("focus.sessions", "сессий")}</div>
           </div>
           <div>
             <div style={{ fontSize: 22, fontWeight: 600 }}>
               {formatDuration(Math.round(stats.total_seconds / stats.sessions))}
             </div>
-            <div className="muted" style={{ fontSize: 12 }}>{t("focus.average", "в среднем за сессию")}</div>
+            <div className="muted" style={{ fontSize: 12 }}>{trOr("focus.average", "в среднем за сессию")}</div>
           </div>
         </div>
       )}
@@ -232,7 +229,7 @@ export function FocusStatsCard() {
       <p className="muted" style={{ fontSize: 12, marginBottom: 0 }}>
         {/* Only closed sessions are summed server-side, so the currently running timer is
             deliberately not part of these numbers. */}
-        {t("focus.stats_hint", "Считаются только завершённые сессии — идущий сейчас таймер сюда не входит.")}
+        {trOr("focus.stats_hint", "Считаются только завершённые сессии — идущий сейчас таймер сюда не входит.")}
       </p>
     </div>
   )

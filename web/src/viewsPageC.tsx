@@ -443,19 +443,29 @@ const KIND_ICON: Record<string, string> = {
   review_submitted: "👀", review_returned: "↩️", digest: "📬",
 }
 
+type NotificationItem = {
+  id: number
+  kind: string
+  text: string
+  task_id?: number
+  read_at: string | null
+  created_at: string
+  payload: Record<string, unknown>
+}
+
 export function NotificationsPage({ onNavigateTask }: { onNavigateTask: (taskId: number) => void }) {
-  const [items, setItems] = useState<any[]>([])
+  const [items, setItems] = useState<NotificationItem[]>([])
   const load = () => api.get("/api/notifications").then((r) => setItems(r.notifications)).catch(() => {})
   useEffect(() => { load() }, [])
 
-  async function markRead(n: any) {
-    if (!n.read_at) await api.post(`/api/notifications/${n.id}/read`).catch(() => {})
+  async function markRead(n: NotificationItem) {
+    if (!n.read_at) await api.post("/api/notifications/read", { ids: [n.id] }).catch(() => {})
     if (n.task_id) onNavigateTask(n.task_id)
     load()
   }
 
   async function markAllRead() {
-    await api.post("/api/notifications/read_all").catch(() => {})
+    await api.post("/api/notifications/read").catch(() => {})
     load()
   }
 

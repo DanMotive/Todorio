@@ -10,11 +10,7 @@
 
 import { useEffect, useState } from "react"
 import { api } from "./api"
-import { tr } from "./i18n"
-
-// tr() with an inline fallback - the same helper, for the same reason, as insights.tsx,
-// members.tsx and sharing.tsx: the screen is legible before its keys land in all 13 locales.
-const t = (key: string, fallback: string) => tr(key) || fallback
+import { tr, trOr } from "./i18n"
 
 type Summary = {
   open_count: number
@@ -57,7 +53,7 @@ export type Dashboard = {
 }
 
 /** The label the space tab strip uses. Exported so views.tsx does not need its own tr() key. */
-export const dashboardTabLabel = () => t("dashboard.title", "Дашборд")
+export const dashboardTabLabel = () => trOr("dashboard.title", "Дашборд")
 
 // Built-in statuses get their existing translated names; anything else is a custom workflow
 // status and is shown exactly as the space defined it. Inventing a label for a word the owner
@@ -69,7 +65,7 @@ const STATUS_KEYS: Record<string, string> = {
   done: "task.status.done",
 }
 const statusLabel = (status: string) =>
-  STATUS_KEYS[status] ? tr(STATUS_KEYS[status]) || status : status
+  STATUS_KEYS[status] ? trOr(STATUS_KEYS[status], status) : status
 
 // Status colours reuse the board tokens, so a status is the same colour here as on the kanban.
 const statusColor = (status: string) =>
@@ -77,9 +73,9 @@ const statusColor = (status: string) =>
 
 function formatHours(hours: number) {
   if (!hours || hours <= 0) return "—"
-  if (hours < 1) return `${Math.max(1, Math.round(hours * 60))} ${t("focus.minutes_short", "мин")}`
-  if (hours < 48) return `${Math.round(hours)} ${t("dashboard.hours_short", "ч")}`
-  return `${Math.round(hours / 24)} ${t("dashboard.days_short", "дн")}`
+  if (hours < 1) return `${Math.max(1, Math.round(hours * 60))} ${trOr("focus.minutes_short", "мин")}`
+  if (hours < 48) return `${Math.round(hours)} ${trOr("dashboard.hours_short", "ч")}`
+  return `${Math.round(hours / 24)} ${trOr("dashboard.days_short", "дн")}`
 }
 
 // "07.21" - short enough that a month of them fits under the chart without rotating labels.
@@ -206,7 +202,7 @@ export function DashboardPanel({ spaceId, onOpenTask }: {
       {err && <div className="muted" style={{ color: "var(--due-overdue)" }}>{err}</div>}
       {!err && data === null && <div className="muted">{tr("common.loading")}</div>}
       {!err && nothing && (
-        <div className="muted">{t("dashboard.empty", "За этот период здесь пока нечего показать.")}</div>
+        <div className="muted">{trOr("dashboard.empty", "За этот период здесь пока нечего показать.")}</div>
       )}
 
       {!err && data && !nothing && (
@@ -216,16 +212,16 @@ export function DashboardPanel({ spaceId, onOpenTask }: {
             <Metric value={String(data.summary.overdue_count)} caption={tr("workload.overdue")}
               tone={data.summary.overdue_count > 0 ? "var(--due-overdue)" : undefined} />
             <Metric value={String(data.summary.done_in_period)}
-              caption={t("dashboard.done_in_period", "закрыто за период")} />
+              caption={trOr("dashboard.done_in_period", "закрыто за период")} />
             <Metric value={formatHours(data.summary.avg_close_hours)}
-              caption={t("dashboard.avg_close", "среднее время закрытия")} />
+              caption={trOr("dashboard.avg_close", "среднее время закрытия")} />
           </div>
 
           <div style={{ marginBottom: 14 }}>
             <div className="row" style={{ gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
-              <b style={{ fontSize: 13 }}>{t("dashboard.flow", "Создано и закрыто")}</b>
+              <b style={{ fontSize: 13 }}>{trOr("dashboard.flow", "Создано и закрыто")}</b>
               <span className="muted" style={{ fontSize: 12 }}>
-                {t("dashboard.flow_created", "создано")} · {t("dashboard.flow_done", "закрыто")}
+                {trOr("dashboard.flow_created", "создано")} · {trOr("dashboard.flow_done", "закрыто")}
               </span>
             </div>
             {lite ? (
@@ -238,7 +234,7 @@ export function DashboardPanel({ spaceId, onOpenTask }: {
           </div>
 
           <div style={{ marginBottom: 14 }}>
-            <b style={{ fontSize: 13 }}>{t("dashboard.by_status", "Открытые задачи по статусам")}</b>
+            <b style={{ fontSize: 13 }}>{trOr("dashboard.by_status", "Открытые задачи по статусам")}</b>
             {data.by_status.length === 0 && <div className="muted" style={{ fontSize: 13 }}>{tr("workload.empty")}</div>}
             {data.by_status.map((s) => (
               <BarRow key={s.status} label={statusLabel(s.status)} count={s.count}
@@ -247,7 +243,7 @@ export function DashboardPanel({ spaceId, onOpenTask }: {
           </div>
 
           <div style={{ marginBottom: 14 }}>
-            <b style={{ fontSize: 13 }}>{t("dashboard.by_person", "Нагрузка по людям")}</b>
+            <b style={{ fontSize: 13 }}>{trOr("dashboard.by_person", "Нагрузка по людям")}</b>
             {data.by_assignee.map((p) => (
               <BarRow key={p.user_id ?? "none"}
                 label={p.name || p.username || tr("workload.unassigned")}
@@ -260,7 +256,7 @@ export function DashboardPanel({ spaceId, onOpenTask }: {
 
           {data.top_overdue.length > 0 && (
             <div>
-              <b style={{ fontSize: 13 }}>{t("dashboard.top_overdue", "Дольше всех просрочены")}</b>
+              <b style={{ fontSize: 13 }}>{trOr("dashboard.top_overdue", "Дольше всех просрочены")}</b>
               {data.top_overdue.map((task) => (
                 <div key={task.id} className="task-row" style={{ cursor: onOpenTask ? "pointer" : undefined }}
                   onClick={() => onOpenTask?.(task.id)}>
@@ -268,7 +264,7 @@ export function DashboardPanel({ spaceId, onOpenTask }: {
                   <span className="muted" style={{ fontSize: 12 }}>{task.list_name}</span>
                   {task.assignee && <span className="muted" style={{ fontSize: 12 }}>{task.assignee}</span>}
                   <span style={{ color: "var(--due-overdue)", fontSize: 12, marginLeft: "auto" }}>
-                    {t("dashboard.days_late", "просрочено на {n} дн.").replace("{n}", String(task.days_late))}
+                    {trOr("dashboard.days_late", "просрочено на {n} дн.").replace("{n}", String(task.days_late))}
                   </span>
                 </div>
               ))}

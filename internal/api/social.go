@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
@@ -316,16 +317,37 @@ func (a *API) handleListNotifications(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer rows.Close()
+	locale := ""
+	_ = a.DB.Pool.QueryRow(r.Context(), `SELECT COALESCE(locale, '') FROM users WHERE id=$1`, u.ID).Scan(&locale)
+	locale = a.normalizeLocale(locale)
 	list := []map[string]any{}
 	for rows.Next() {
 		var id int64
 		var kind string
-		var payload, readAt, createdAt any
-		if rows.Scan(&id, &kind, &payload, &readAt, &createdAt) == nil {
-			list = append(list, map[string]any{"id": id, "kind": kind, "payload": payload, "read_at": readAt, "created_at": createdAt})
+		var payloadJSON json.RawMessage
+		var readAt, createdAt any
+		if rows.Scan(&id, &kind, &payloadJSON, &readAt, &createdAt) == nil {
+			list = append(list, notificationItem(locale, id, kind, payloadJSON, readAt, createdAt))
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"notifications": list})
+}
+
+// notificationItem turns a stored notification row into the DTO consumed by NotificationsPage.
+// Keeping this transformation separate makes the JSONB decoding and localization testable without
+// a database, and prevents the frontend from having to know PostgreSQL's JSON representation.
+func notificationItem(locale string, id int64, kind string, payloadJSON json.RawMessage, readAt, createdAt any) map[string]any {
+	payload := map[string]any{}
+	_ = json.Unmarshal(payloadJSON, &payload)
+	item := map[string]any{
+		"id": id, "kind": kind, "payload": payload,
+		"text": formatNotifText(locale, kind, payload),
+		"read_at": readAt, "created_at": createdAt,
+	}
+	if taskID, ok := toInt(payload["task_id"]); ok {
+		item["task_id"] = taskID
+	}
+	return item
 }
 
 // POST /api/notifications/read {ids?: []} — marks all as read when ids is omitted.

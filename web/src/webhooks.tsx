@@ -11,12 +11,6 @@ import { api } from "./api"
 import { trOr } from "./i18n"
 import { useConfirm } from "./extras"
 
-// trOr, not `tr(key) || fallback`: tr returns the key itself when it cannot resolve it, and a key
-// is a truthy string, so the fallback would never run and the screen would print "webhooks.title"
-// at the user. See the longer note in members.tsx. Fallbacks are English because they are what
-// every locale falls back to, not a Russian-only safety net.
-const t = trOr
-
 export type Webhook = {
   id: number
   url: string
@@ -103,14 +97,14 @@ export function WebhooksCard({ spaceId }: { spaceId: number }) {
   async function sendTest(h: Webhook) {
     setBusy(true)
     setErr("")
-    setTestResult((prev) => ({ ...prev, [h.id]: t("webhooks.testing", "Sending…") }))
+    setTestResult((prev) => ({ ...prev, [h.id]: trOr("webhooks.testing", "Sending…") }))
     try {
       const r = await api.post(`/api/webhooks/${h.id}/test`, {})
       setTestResult((prev) => ({
         ...prev,
         [h.id]: r.ok
-          ? `${t("webhooks.test_ok", "Delivered")} (HTTP ${r.status})`
-          : `${t("webhooks.test_failed", "Not delivered")}: ${r.error || `HTTP ${r.status}`}`,
+          ? `${trOr("webhooks.test_ok", "Delivered")} (HTTP ${r.status})`
+          : `${trOr("webhooks.test_failed", "Not delivered")}: ${r.error || `HTTP ${r.status}`}`,
       }))
       await load()
     } catch (e) {
@@ -122,8 +116,8 @@ export function WebhooksCard({ spaceId }: { spaceId: number }) {
 
   function remove(h: Webhook) {
     confirm({
-      title: t("webhooks.delete_confirm", "Delete this endpoint? Events will stop being sent to it."),
-      confirmLabel: t("webhooks.delete", "Delete"),
+      title: trOr("webhooks.delete_confirm", "Delete this endpoint? Events will stop being sent to it."),
+      confirmLabel: trOr("webhooks.delete", "Delete"),
       danger: true,
       action: async () => {
         setBusy(true)
@@ -140,14 +134,14 @@ export function WebhooksCard({ spaceId }: { spaceId: number }) {
     })
   }
 
-  if (hooks === null) return <div className="muted">{t("webhooks.loading", "Loading…")}</div>
+  if (hooks === null) return <div className="muted">{trOr("webhooks.loading", "Loading…")}</div>
 
   if (notOwner) {
     return (
       <div className="card">
-        <b>{t("webhooks.title", "Webhooks")}</b>
+        <b>{trOr("webhooks.title", "Webhooks")}</b>
         <p className="muted" style={{ fontSize: 13, marginBottom: 0 }}>
-          {t("webhooks.owner_only", "Only the space owner manages webhooks.")}
+          {trOr("webhooks.owner_only", "Only the space owner manages webhooks.")}
         </p>
       </div>
     )
@@ -156,16 +150,16 @@ export function WebhooksCard({ spaceId }: { spaceId: number }) {
   return (
     <div className="card">
       {confirmElement}
-      <b>{t("webhooks.title", "Webhooks")}</b>
+      <b>{trOr("webhooks.title", "Webhooks")}</b>
       <p className="muted" style={{ fontSize: 13 }}>
-        {t("webhooks.hint", "When something happens in this space, the server POSTs it as JSON to the address you add here. Until an address is added, nothing is sent anywhere.")}
+        {trOr("webhooks.hint", "When something happens in this space, the server POSTs it as JSON to the address you add here. Until an address is added, nothing is sent anywhere.")}
       </p>
 
       {err && <div className="muted" style={{ color: "var(--danger, #c33)", marginBottom: 8 }}>{err}</div>}
 
       {hooks.length === 0 && (
         <div className="muted" style={{ marginBottom: 10, fontSize: 13 }}>
-          {t("webhooks.empty", "No endpoints yet.")}
+          {trOr("webhooks.empty", "No endpoints yet.")}
         </div>
       )}
 
@@ -175,27 +169,27 @@ export function WebhooksCard({ spaceId }: { spaceId: number }) {
             <code style={{ fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", maxWidth: 320 }}>
               {h.url}
             </code>
-            {!h.is_active && <span className="badge">{t("webhooks.off", "off")}</span>}
+            {!h.is_active && <span className="badge">{trOr("webhooks.off", "off")}</span>}
             {h.has_secret && (
-              <span className="badge" title={t("webhooks.signed_hint",
+              <span className="badge" title={trOr("webhooks.signed_hint",
                 "Every delivery is signed with an X-Todorio-Signature header")}>
-                {t("webhooks.signed", "signed")}
+                {trOr("webhooks.signed", "signed")}
               </span>
             )}
             <span className="muted" style={{ fontSize: 12 }}>
               {h.events.length === 0
-                ? t("webhooks.all_events", "all events")
+                ? trOr("webhooks.all_events", "all events")
                 : h.events.join(", ")}
             </span>
 
             <div className="row" style={{ gap: 6, marginLeft: "auto" }}>
               <button className="btn" disabled={busy} onClick={() => sendTest(h)}>
-                {t("webhooks.test", "Test")}
+                {trOr("webhooks.test", "Test")}
               </button>
               <button className="btn" disabled={busy} onClick={() => toggle(h)}>
-                {h.is_active ? t("webhooks.disable", "Disable") : t("webhooks.enable", "Enable")}
+                {h.is_active ? trOr("webhooks.disable", "Disable") : trOr("webhooks.enable", "Enable")}
               </button>
-              <button className="ctrl-btn" disabled={busy} title={t("webhooks.delete", "Delete")}
+              <button className="ctrl-btn" disabled={busy} title={trOr("webhooks.delete", "Delete")}
                 onClick={() => remove(h)}>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
               </button>
@@ -206,19 +200,19 @@ export function WebhooksCard({ spaceId }: { spaceId: number }) {
           <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
             {h.last_delivery_at ? (
               <>
-                {t("webhooks.last", "Last delivery")}: {new Date(h.last_delivery_at).toLocaleString()}
+                {trOr("webhooks.last", "Last delivery")}: {new Date(h.last_delivery_at).toLocaleString()}
                 {h.last_status ? ` — HTTP ${h.last_status}` : ""}
                 {h.last_error && (
                   <span style={{ color: "var(--danger, #c33)" }}> — {h.last_error}</span>
                 )}
                 {h.failure_count > 0 && (
                   <span style={{ color: "var(--danger, #c33)" }}>
-                    {" "}({t("webhooks.failures", "failures in a row")}: {h.failure_count})
+                    {" "}({trOr("webhooks.failures", "failures in a row")}: {h.failure_count})
                   </span>
                 )}
               </>
             ) : (
-              t("webhooks.never", "Nothing sent yet")
+              trOr("webhooks.never", "Nothing sent yet")
             )}
           </div>
 
@@ -231,7 +225,7 @@ export function WebhooksCard({ spaceId }: { spaceId: number }) {
       {!adding ? (
         <div style={{ marginTop: 10 }}>
           <button className="btn" disabled={busy} onClick={() => setAdding(true)}>
-            {t("webhooks.add", "Add endpoint")}
+            {trOr("webhooks.add", "Add endpoint")}
           </button>
         </div>
       ) : (
@@ -240,10 +234,10 @@ export function WebhooksCard({ spaceId }: { spaceId: number }) {
             onChange={(e) => setUrl(e.target.value)} />
           <input className="input" style={{ marginTop: 6 }} value={secret} disabled={busy}
             autoComplete="new-password"
-            placeholder={t("webhooks.secret_placeholder", "Signing secret (optional)")}
+            placeholder={trOr("webhooks.secret_placeholder", "Signing secret (optional)")}
             onChange={(e) => setSecret(e.target.value)} />
           <p className="muted" style={{ fontSize: 12, marginTop: 6, marginBottom: 6 }}>
-            {t("webhooks.secret_hint", "The secret is never shown again: each delivery body is signed with HMAC-SHA256 and arrives in the X-Todorio-Signature header.")}
+            {trOr("webhooks.secret_hint", "The secret is never shown again: each delivery body is signed with HMAC-SHA256 and arrives in the X-Todorio-Signature header.")}
           </p>
 
           <div className="row" style={{ gap: 10, flexWrap: "wrap", marginBottom: 6 }}>
@@ -258,12 +252,12 @@ export function WebhooksCard({ spaceId }: { spaceId: number }) {
             ))}
           </div>
           <p className="muted" style={{ fontSize: 12, marginTop: 0 }}>
-            {t("webhooks.all_events_hint", "With nothing ticked, every event is sent.")}
+            {trOr("webhooks.all_events_hint", "With nothing ticked, every event is sent.")}
           </p>
 
           <div className="row" style={{ gap: 6 }}>
             <button className="btn" disabled={busy || !url.trim()} onClick={add}>
-              {t("webhooks.save", "Save")}
+              {trOr("webhooks.save", "Save")}
             </button>
             <button className="btn" disabled={busy} onClick={() => {
               setAdding(false)
@@ -271,7 +265,7 @@ export function WebhooksCard({ spaceId }: { spaceId: number }) {
               setSecret("")
               setPicked([])
             }}>
-              {t("webhooks.cancel", "Cancel")}
+              {trOr("webhooks.cancel", "Cancel")}
             </button>
           </div>
         </div>

@@ -7,7 +7,7 @@ import { AboutPage, AnnouncementsBanner, GlobalFocusTimer, InboxPage, ModalShell
 import { MembersPage } from "./members"
 import { AuditLogCard, FocusStatsCard } from "./insights"
 import { Avatar, SettingsPage, ForcedPasswordChange } from "./settings"
-import { detectLocale, setLocale, tr } from "./i18n"
+import { detectLocale, setLocale, tr, trOr } from "./i18n"
 import { IconInbox, IconKeyboard, IconMenu, IconSliders } from "./icons"
 
 type Bootstrap = {
@@ -54,7 +54,7 @@ function notifyBrowser(raw: string) {
   if (document.visibilityState === "visible") return
   let kind = "", payload: any = {}
   try { const d = JSON.parse(raw); kind = d.kind; payload = d.payload || {} } catch { return }
-  const title = tr("profile.type." + kind) || tr("nav.notifications")
+  const title = trOr("profile.type." + kind, tr("nav.notifications"))
   const body = payload.title || payload.task_title || (payload.by ? "@" + payload.by : "")
   try {
     const n = new Notification(title, { body, tag: "todorio-" + kind, icon: "/icons/icon-192.png" })
@@ -291,7 +291,7 @@ export default function App() {
               still see it: the roster answers "who can see this?", which is not a write. */}
           <button className={"sidebar-btn" + (view === "members" ? " active" : "")} onClick={() => setView("members")}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-            {tr("nav.members") || "Участники"}
+            {tr("nav.members")}
           </button>
           
           <button className={"sidebar-btn" + (view === "search" ? " active" : "")} onClick={() => setView("search")}>
@@ -423,7 +423,7 @@ export default function App() {
               <code>m</code><span>{tr("nav.my")}</span>
               <code>i</code><span>{tr("inbox.title")}</span>
               <code>s</code><span>{tr("nav.spaces")}</span>
-              <code>u</code><span>{tr("nav.members") || "Участники"}</span>
+              <code>u</code><span>{tr("nav.members")}</span>
               <code>/</code><span>{tr("nav.search")}</span>
               <code>n</code><span>{tr("nav.notifications")}</span>
               <code>Esc</code><span>{tr("help.close")}</span>

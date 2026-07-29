@@ -3,7 +3,9 @@
   padding: 10px 12px;
   border-radius: 10px;
   border: 1px solid var(--border, #2a3245);
-  background: var(--surface, #171e2e);
+  background: var(--glass-control, var(--surface, #171e2e));
+  -webkit-backdrop-filter: var(--blur, none);
+  backdrop-filter: var(--blur, none);
   color: var(--text, #e8e7ff);
   font: inherit;
 }
@@ -17,20 +19,25 @@
   border-bottom: 1px solid var(--border, #2a3245);
   position: sticky;
   top: 0;
-  background: var(--bg, #0f1420);
+  background: var(--glass-nav, var(--bg, #0f1420));
+  -webkit-backdrop-filter: var(--blur, none);
+  backdrop-filter: var(--blur, none);
   z-index: 10;
 }
 .nav .spacer { flex: 1; }
 .nav-btn {
-  background: none;
-  border: none;
+  background: var(--glass-button, transparent);
+  -webkit-backdrop-filter: var(--blur, none);
+  backdrop-filter: var(--blur, none);
+  border: 1px solid transparent;
   color: var(--text, #e8e7ff);
   padding: 8px 12px;
   border-radius: 8px;
   cursor: pointer;
   font: inherit;
 }
-.nav-btn.active, .nav-btn:hover { background: var(--hover-bg, var(--surface, #171e2e)); }
+.nav-btn.active, .nav-btn:hover { background: var(--glass-hover, var(--hover-bg, var(--surface, #171e2e))); border-color: var(--border, transparent); }
+.nav-btn:disabled { opacity: 0.55; cursor: default; }
 
 .badge {
   display: inline-flex;
@@ -54,11 +61,11 @@
   border-radius: 10px;
   cursor: pointer;
 }
-.task-row:hover { background: var(--hover-bg, var(--surface, #171e2e)); }
+.task-row:hover { background: var(--glass-hover, var(--hover-bg, var(--surface, #171e2e))); }
 .task-row.done .task-title { text-decoration: line-through; opacity: 0.55; }
 .task-title { flex: 1; }
 
-.due { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--surface, #171e2e); }
+.due { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--glass-control, var(--surface, #171e2e)); -webkit-backdrop-filter: var(--blur, none); backdrop-filter: var(--blur, none); }
 .due.overdue { color: var(--due-overdue); border: 1px solid var(--due-overdue); }
 .due.today   { color: var(--due-today); border: 1px solid var(--due-today); }
 .due.soon    { color: var(--due-soon); border: 1px solid var(--due-soon); }
@@ -74,22 +81,27 @@
   width: min(680px, 92vw);
   max-height: 86vh;
   overflow: auto;
-  background: var(--surface, #171e2e);
+  background: var(--glass-dense, var(--surface, #171e2e));
+  -webkit-backdrop-filter: var(--blur, none);
+  backdrop-filter: var(--blur, none);
   border: 1px solid var(--border, #2a3245);
   border-radius: 16px;
   padding: 20px;
 }
-/* Cards nested inside a modal must be opaque. Elsewhere .card is deliberately translucent
-   (var(--glass)) for the "rich" visual mode, but over a modal that lets the page underneath
-   — footer text, list rows — bleed through the panel and makes it unreadable. */
+/* Nested modal surfaces use the denser glass token. This keeps the rich material visible while
+   preventing page text behind the dialog from bleeding through; lite resolves the token to the
+   same fully opaque surface as before. */
 .modal .card {
-  background: var(--surface);
-  backdrop-filter: none;
+  background: var(--glass-dense, var(--surface));
+  -webkit-backdrop-filter: var(--blur, none);
+  backdrop-filter: var(--blur, none);
 }
 
 .reaction {
   border: 1px solid var(--border, #2a3245);
-  background: none;
+  background: var(--glass-button, transparent);
+  -webkit-backdrop-filter: var(--blur, none);
+  backdrop-filter: var(--blur, none);
   border-radius: 999px;
   padding: 2px 8px;
   cursor: pointer;
@@ -155,7 +167,9 @@
   margin-top: 10px;
   padding: 8px 10px;
   border-left: 3px solid var(--accent);
-  background: var(--surface-2, rgba(127, 127, 127, 0.07));
+  background: var(--glass-subtle, rgba(127, 127, 127, 0.07));
+  -webkit-backdrop-filter: var(--blur, none);
+  backdrop-filter: var(--blur, none);
   border-radius: 0 var(--radius) var(--radius) 0;
   font-size: 13px;
 }
@@ -193,7 +207,9 @@
   .kanban-board { grid-template-columns: 1fr; }
 }
 .kanban-col {
-  background: var(--surface);
+  background: var(--glass, var(--surface));
+  -webkit-backdrop-filter: var(--blur, none);
+  backdrop-filter: var(--blur, none);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 12px;
@@ -214,6 +230,7 @@
 }
 .kanban-card {
   background: var(--glass);
+  -webkit-backdrop-filter: var(--blur);
   backdrop-filter: var(--blur);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -244,7 +261,9 @@
 }
 .calendar-cell {
   min-height: 84px;
-  background: var(--surface);
+  background: var(--glass, var(--surface));
+  -webkit-backdrop-filter: var(--blur, none);
+  backdrop-filter: var(--blur, none);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 6px;
@@ -260,7 +279,9 @@
   font-size: 11px;
   padding: 2px 5px;
   border-radius: 5px;
-  background: var(--hover-bg, var(--surface));
+  background: var(--glass-hover, var(--hover-bg, var(--surface)));
+  -webkit-backdrop-filter: var(--blur, none);
+  backdrop-filter: var(--blur, none);
   border-left: 3px solid var(--due-later);
   white-space: nowrap;
   overflow: hidden;
@@ -280,6 +301,8 @@
    link) where a real <a href> would trigger a full page load in this SPA. */
 .linklike {
   background: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
   border: none;
   padding: 0;
   font: inherit;
@@ -314,7 +337,9 @@ a:hover { text-decoration-color: var(--accent); }
   position: sticky;
   top: 0;
   z-index: 2;
-  background: var(--surface);
+  background: var(--glass-dense, var(--surface));
+  -webkit-backdrop-filter: var(--blur, none);
+  backdrop-filter: var(--blur, none);
   border-bottom: 1px solid var(--border);
 }
 .timeline-head-label { flex-shrink: 0; }
@@ -377,7 +402,7 @@ a:hover { text-decoration-color: var(--accent); }
   position: absolute;
   height: 20px;
   border-radius: 5px;
-  background: var(--accent-soft);
+  background: var(--glass-accent-soft, var(--accent-soft));
   border: 1px solid var(--accent);
   cursor: pointer;
   overflow: hidden;
@@ -465,7 +490,7 @@ a:hover { text-decoration-color: var(--accent); }
   margin-top: 8px;
   padding: 6px 8px;
   border-radius: var(--radius);
-  background: var(--accent-soft);
+  background: var(--glass-accent-soft, var(--accent-soft));
   border: 1px solid var(--accent);
   font-size: 13px;
 }
@@ -491,7 +516,7 @@ a:hover { text-decoration-color: var(--accent); }
   margin: 0 0 10px;
   padding: 6px 12px;
   border-left: 3px solid var(--accent);
-  background: var(--accent-soft);
+  background: var(--glass-accent-soft, var(--accent-soft));
   color: var(--text-muted);
 }
 .md-pre {
@@ -513,7 +538,7 @@ a:hover { text-decoration-color: var(--accent); }
 .md-hr { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
 
 /* ---------- bulk selection + right-click menu ---------- */
-.task-row.selected { background: var(--accent-soft); }
+.task-row.selected { background: var(--glass-accent-soft, var(--accent-soft)); }
 .task-select { accent-color: var(--accent); }
 
 .bulk-bar {
@@ -525,7 +550,7 @@ a:hover { text-decoration-color: var(--accent); }
   padding: 8px 10px;
   border: 1px solid var(--accent);
   border-radius: var(--radius);
-  background: var(--accent-soft);
+  background: var(--glass-accent-soft, var(--accent-soft));
   font-size: 13px;
 }
 
@@ -535,7 +560,9 @@ a:hover { text-decoration-color: var(--accent); }
   position: fixed;
   max-height: 80vh;
   overflow-y: auto;
-  background: var(--surface);
+  background: var(--glass-dense, var(--surface));
+  -webkit-backdrop-filter: var(--blur, none);
+  backdrop-filter: var(--blur, none);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: 0 10px 34px rgb(0 0 0 / 0.45);
@@ -565,13 +592,13 @@ a:hover { text-decoration-color: var(--accent); }
   padding: 5px 8px;
   border: none;
   border-radius: 6px;
-  background: none;
+  background: var(--glass-button, transparent);
   color: inherit;
   font: inherit;
   cursor: pointer;
 }
-.ctx-item:hover { background: var(--hover-bg); }
-.ctx-item.active { background: var(--accent); color: var(--accent-contrast); }
+.ctx-item:hover { background: var(--glass-hover, var(--hover-bg)); }
+.ctx-item.active { background: var(--glass-accent, var(--accent)); color: var(--accent-contrast); }
 .ctx-sep { height: 1px; background: var(--border); margin: 5px 2px; }
 
 /* ---------- attachment thumbnail delete overlay ---------- */
@@ -610,13 +637,18 @@ a:hover { text-decoration-color: var(--accent); }
   position: absolute; top: calc(100% + 4px); left: 0; z-index: 40;
   display: flex; flex-direction: column; min-width: 150px; padding: 4px;
   border: 1px solid var(--border); border-radius: var(--radius, 10px);
-  background: var(--surface); box-shadow: var(--shadow, 0 8px 30px rgb(0 0 0 / 0.25));
+  background: var(--glass-dense, var(--surface));
+  -webkit-backdrop-filter: var(--blur, none);
+  backdrop-filter: var(--blur, none);
+  box-shadow: var(--shadow, 0 8px 30px rgb(0 0 0 / 0.25));
 }
 .status-opt {
   display: flex; align-items: center; gap: 8px; padding: 6px 8px;
-  border: 0; border-radius: 6px; background: none; color: var(--text);
+  border: 0; border-radius: 6px;
+  background: var(--glass-button, transparent);
+  color: var(--text);
   font-size: 13px; text-align: left; cursor: pointer;
 }
-.status-opt:hover { background: var(--hover-bg, var(--surface)); }
+.status-opt:hover { background: var(--glass-hover, var(--hover-bg, var(--surface))); }
 .status-opt.current { font-weight: 600; }
 .status-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }

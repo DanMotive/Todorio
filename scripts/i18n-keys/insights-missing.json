@@ -1,0 +1,80 @@
+{
+  "overwrite": false,
+  "keys": {
+    "audit.empty": {
+      "en-US": "No audit records",
+      "ru-RU": "Записей нет",
+      "uk-UA": "Записів немає",
+      "be-BY": "Запісаў няма",
+      "kk-KZ": "Жазбалар жоқ",
+      "es-ES": "No hay registros de auditoría",
+      "pt-BR": "Nenhum registro de auditoria",
+      "tr-TR": "Denetim kaydı yok",
+      "zh-CN": "没有审计记录",
+      "hi-IN": "कोई ऑडिट रिकॉर्ड नहीं",
+      "bn-BD": "কোনো অডিট রেকর্ড নেই",
+      "ja-JP": "監査記録はありません",
+      "ko-KR": "감사 기록이 없습니다"
+    },
+    "audit.loading": {
+      "en-US": "Loading…",
+      "ru-RU": "Загрузка…",
+      "uk-UA": "Завантаження…",
+      "be-BY": "Загрузка…",
+      "kk-KZ": "Жүктелуде…",
+      "es-ES": "Cargando…",
+      "pt-BR": "Carregando…",
+      "tr-TR": "Yükleniyor…",
+      "zh-CN": "正在加载…",
+      "hi-IN": "लोड हो रहा है…",
+      "bn-BD": "লোড হচ্ছে…",
+      "ja-JP": "読み込み中…",
+      "ko-KR": "불러오는 중…"
+    },
+    "audit.refresh": {
+      "en-US": "Refresh",
+      "ru-RU": "Обновить",
+      "uk-UA": "Оновити",
+      "be-BY": "Абнавіць",
+      "kk-KZ": "Жаңарту",
+      "es-ES": "Actualizar",
+      "pt-BR": "Atualizar",
+      "tr-TR": "Yenile",
+      "zh-CN": "刷新",
+      "hi-IN": "रीफ़्रेश करें",
+      "bn-BD": "রিফ্রেশ করুন",
+      "ja-JP": "更新",
+      "ko-KR": "새로 고침"
+    },
+    "focus.hours_short": {
+      "en-US": "h",
+      "ru-RU": "ч",
+      "uk-UA": "год",
+      "be-BY": "г",
+      "kk-KZ": "сағ",
+      "es-ES": "h",
+      "pt-BR": "h",
+      "tr-TR": "sa",
+      "zh-CN": "小时",
+      "hi-IN": "घं",
+      "bn-BD": "ঘণ্টা",
+      "ja-JP": "時間",
+      "ko-KR": "시간"
+    },
+    "focus.loading": {
+      "en-US": "Loading…",
+      "ru-RU": "Загрузка…",
+      "uk-UA": "Завантаження…",
+      "be-BY": "Загрузка…",
+      "kk-KZ": "Жүктелуде…",
+      "es-ES": "Cargando…",
+      "pt-BR": "Carregando…",
+      "tr-TR": "Yükleniyor…",
+      "zh-CN": "正在加载…",
+      "hi-IN": "लोड हो रहा है…",
+      "bn-BD": "লোড হচ্ছে…",
+      "ja-JP": "読み込み中…",
+      "ko-KR": "불러오는 중…"
+    }
+  }
+}
