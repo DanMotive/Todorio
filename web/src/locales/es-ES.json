@@ -74,16 +74,13 @@
   "audit.actor_placeholder": "Buscar por usuario",
   "audit.all_actions": "Todas las acciones",
   "audit.details": "Detalles",
-<<<<<<< Updated upstream
   "audit.hint": "Registro de todas las acciones de los usuarios.",
   "audit.records": "{count} registros",
-=======
   "audit.empty": "No hay registros de auditoría",
   "audit.hint": "Registro de todas las acciones de los usuarios.",
   "audit.loading": "Cargando…",
   "audit.records": "{count} registros",
   "audit.refresh": "Actualizar",
->>>>>>> Stashed changes
   "audit.title": "Auditoría",
   "auth.have_account": "¿Ya tienes cuenta? Entra",
   "auth.invite": "Código de invitación (si tienes)",
