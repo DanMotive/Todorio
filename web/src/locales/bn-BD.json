@@ -74,16 +74,13 @@
   "audit.actor_placeholder": "ব্যবহারকারী দ্বারা অনুসন্ধান",
   "audit.all_actions": "সমস্ত কর্ম",
   "audit.details": "বিস্তারিত",
-<<<<<<< Updated upstream
   "audit.hint": "সমস্ত ব্যবহারকারীর কার্যকলাপের লগ।",
   "audit.records": "{count}টি রেকর্ড",
-=======
   "audit.empty": "কোনো অডিট রেকর্ড নেই",
   "audit.hint": "সমস্ত ব্যবহারকারীর কার্যকলাপের লগ।",
   "audit.loading": "লোড হচ্ছে…",
   "audit.records": "{count}টি রেকর্ড",
   "audit.refresh": "রিফ্রেশ করুন",
->>>>>>> Stashed changes
   "audit.title": "অডিট",
   "auth.have_account": "অ্যাকাউন্ট আছে? সাইন ইন করুন",
   "auth.invite": "ইনভাইট কোড (থাকলে)",
@@ -321,12 +318,10 @@
   "onboarding.progress_title": "শুরু করা",
   "pending.text": "একজন অ্যাডমিনকে আপনার নিবন্ধন অনুমোদন করতে হবে। পরে আবার দেখুন।",
   "pending.title": "অ্যাকাউন্ট অনুমোদনের অপেক্ষায়",
-<<<<<<< Updated upstream
   "portability.export": "এক্সপোর্ট",
   "portability.hint": "JSON ফরম্যাটে ডেটা এক্সপোর্ট বা ইমপোর্ট করুন।",
   "portability.import": "ইমপোর্ট",
   "portability.title": "পোর্টেবিলিটি",
-=======
   "portability.bad_format": "অসমর্থিত এক্সপোর্ট ফরম্যাট",
   "portability.comments": "মন্তব্য",
   "portability.confirm": "একটি নতুন স্পেস তৈরি হবে",
@@ -342,7 +337,6 @@
   "portability.tasks": "কাজ",
   "portability.title": "পোর্টেবিলিটি",
   "portability.too_big": "ফাইলটি ৩২ MB-এর বেশি, তাই সার্ভার এটি গ্রহণ করবে না",
->>>>>>> Stashed changes
   "profile.avatar_hint": "JPG, PNG, WEBP অথবা GIF।",
   "profile.avatar_remove": "মুছুন",
   "profile.avatar_upload": "ছবি আপলোড করুন",
