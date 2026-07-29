@@ -74,16 +74,13 @@
   "audit.actor_placeholder": "Пошук па карыстальніку",
   "audit.all_actions": "Усе дзеянні",
   "audit.details": "Дэталі",
-<<<<<<< Updated upstream
   "audit.hint": "Часопіс усіх дзеянняў карыстальнікаў.",
   "audit.records": "{count} запісаў",
-=======
   "audit.empty": "Запісаў няма",
   "audit.hint": "Часопіс усіх дзеянняў карыстальнікаў.",
   "audit.loading": "Загрузка…",
   "audit.records": "{count} запісаў",
   "audit.refresh": "Абнавіць",
->>>>>>> Stashed changes
   "audit.title": "Аўдыт",
   "auth.have_account": "Ужо ёсць акаўнт? Уваход",
   "auth.invite": "Інвайт-код (калі ёсць)",
@@ -321,12 +318,10 @@
   "onboarding.progress_title": "Першыя крокі",
   "pending.text": "Адміністратар павінен пацвердзіць рэгістрацыю. Зазірніце пазней.",
   "pending.title": "Акаўнт чакае ўхвалення",
-<<<<<<< Updated upstream
   "portability.export": "Экспарт",
   "portability.hint": "Экспартуйце або імпартуйце даныя ў фармаце JSON.",
   "portability.import": "Імпарт",
   "portability.title": "Пераноснасць",
-=======
   "portability.bad_format": "Фармат экспарту не падтрымліваецца",
   "portability.comments": "каментароў",
   "portability.confirm": "Будзе створана новая прастора",
@@ -342,7 +337,6 @@
   "portability.tasks": "задач",
   "portability.title": "Пераноснасць",
   "portability.too_big": "Файл большы за 32 МБ — сервер яго не прыме",
->>>>>>> Stashed changes
   "profile.avatar_hint": "JPG, PNG, WEBP або GIF.",
   "profile.avatar_remove": "Выдаліць",
   "profile.avatar_upload": "Загрузіць фота",
