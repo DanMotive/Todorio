@@ -1063,10 +1063,10 @@ export function ServerSettingsCard({ me }: { me: Me }) {
       <LogoSettingRow />
       {settings.map((s) => (
         <div key={s.key} className="row" style={{ margin: "8px 0", flexWrap: "wrap" }}>
-          <label style={{ width: 260 }}>{s.label}</label>
+          <label style={{ width: 260 }}>{trFormal("server_setting." + s.key)}</label>
           {s.type === "select" && (
             <select className="input" style={{ width: "auto" }} defaultValue={s.value} onChange={(e) => save(s.key, e.target.value)}>
-              {(s.options || []).map((o) => <option key={o} value={o}>{o}</option>)}
+              {(s.options || []).map((o) => <option key={o} value={o}>{trFormal("server_setting.option." + o)}</option>)}
             </select>
           )}
           {s.type === "bool" && (

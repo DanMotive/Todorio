@@ -42,6 +42,7 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, "web", "src")
 LOCALES = os.path.join(SRC, "locales")
+SERVER_SETTINGS = os.path.join(ROOT, "internal", "api", "settings.go")
 
 BASE = "en-US"
 # The -it files are slang overlays: a partial set on purpose. Missing keys fall back
@@ -68,6 +69,10 @@ BROKEN_FALLBACK_HELPER = re.compile(
     r'\([^)]*\)\s*=>\s*(?:\([^)]*\)\s*=>\s*)?'
     r'(?P<helper>tr|trFormal)\([^;\n]*\)\s*\|\|'
 )
+# Labels returned by /api/admin/settings are metadata, not translated server responses. The web
+# client derives server_setting.<key> from these stable setting keys, so ensure every key declared
+# by the backend has a translation even though the call site is dynamic.
+SERVER_SETTING_KEY = re.compile(r'\{Key:\s*"(?P<key>[^"]+)"')
 
 
 def line_number(text, offset):
@@ -209,13 +214,28 @@ def main():
                 f"{BASE}: dynamic tr({pref!r} + ...) at {where.get(pref, 'TSX')} matches no key"
             )
 
+    # Server settings are rendered through trFormal("server_setting." + s.key), where s.key is
+    # supplied by the backend. Static TS scanning can only see the prefix, so validate the backend
+    # declaration itself to prevent a newly added setting from silently appearing in English.
+    with open(SERVER_SETTINGS, encoding="utf-8") as fh:
+        server_settings_source = fh.read()
+    server_setting_keys = {m.group("key") for m in SERVER_SETTING_KEY.finditer(server_settings_source)}
+    for key in sorted(server_setting_keys):
+        locale_key = "server_setting." + key
+        if locale_key not in base_keys:
+            problems.append(
+                f"{BASE}: backend setting {key!r} has no translation key {locale_key!r}"
+            )
+
     # 5. keys nothing references. A key can legitimately look unused when its call
     # site builds it dynamically from a value this script cannot follow, so this is
     # a report by default and only fails the run under --strict.
     unused = sorted(
         k
         for k in base_keys
-        if k not in used and not any(k.startswith(p) for p in prefixes)
+        if k not in used
+        and not any(k.startswith(p) for p in prefixes)
+        and k not in {"server_setting." + key for key in server_setting_keys}
     )
 
     counts = ", ".join(

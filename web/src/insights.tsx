@@ -46,8 +46,10 @@ const LIMITS = [50, 100, 200, 500]
 const actionLabel = (action: string) => {
   const found = ACTIONS.find(([key]) => key === action)
   // An unknown action still renders as its raw name: a future action must never be invisible in
-  // the log just because this list is out of date.
-  return found ? trOr(`audit.action.${action}`, found[1]) : action
+  // the log just because this list is out of date. setting.change uses an underscore in the
+  // historical locale key, while the remaining action keys mirror their server names directly.
+  const localeKey = action === "setting.change" ? "audit.action.setting_change" : `audit.action.${action}`
+  return found ? trOr(localeKey, found[1]) : action
 }
 
 function formatWhen(value: string) {
