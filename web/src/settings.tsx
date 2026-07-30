@@ -208,9 +208,14 @@ function TelegramLinkRow({ telegramEnabled, onToggleEnabled }: {
     setBusy(false)
   }
   async function disconnect() {
-    await api.post("/api/telegram/unlink").catch(() => {})
-    setLink(null)
-    refresh()
+    setBusy(true)
+    try {
+      await api.post("/api/telegram/unlink")
+      setLink(null)
+      refresh()
+    } finally {
+      setBusy(false)
+    }
   }
 
   if (status.linked) {
@@ -320,11 +325,16 @@ export function SettingsPage({ me, theme, onUpdateTheme, onProfileSaved }: {
   }
 
   async function removeAvatar() {
-    await api.del("/api/me/avatar").catch(() => {})
-    setAvatarKey((k) => k + 1)
-    const r = await api.get("/api/me")
-    setProfile(r.profile)
-    onProfileSaved(r.profile)
+    setMsg(null)
+    try {
+      await api.del("/api/me/avatar")
+      setAvatarKey((k) => k + 1)
+      const r = await api.get("/api/me")
+      setProfile(r.profile)
+      onProfileSaved(r.profile)
+    } catch (err) {
+      setMsg({ ok: false, text: (err as Error).message })
+    }
   }
 
   async function changePassword(e: React.FormEvent) {

@@ -154,9 +154,12 @@ export function ShareLinksPanel({ listId }: { listId: number }) {
         const expired = !!link.expires_at && new Date(link.expires_at).getTime() < Date.now()
         return (
           <div key={link.id} className="row" style={{ gap: 8, alignItems: "center", padding: "6px 0", flexWrap: "wrap" }}>
-            <code style={{ fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", maxWidth: 260 }}>
-              /s/{link.token}
-            </code>
+            <a href={publicUrl(link.token)} target="_blank" rel="noreferrer"
+              title={publicUrl(link.token)}
+              style={{ fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", maxWidth: 420,
+                whiteSpace: "nowrap", color: "var(--accent)" }}>
+              {publicUrl(link.token)}
+            </a>
             {link.has_password && (
               <span className="badge" title={trOr("share.password_set_hint",
                 "Пароль задан при создании и не может быть показан снова")}>

@@ -359,11 +359,22 @@ func (a *API) handleReadNotifications(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		IDs []int64 `json:"ids"`
 	}
-	_ = readJSON(r, &in)
+	if r.ContentLength > 0 {
+		if err := readJSON(r, &in); err != nil {
+			errJSON(w, http.StatusBadRequest, "invalid request")
+			return
+		}
+	}
+	var err error
 	if len(in.IDs) == 0 {
-		_, _ = a.DB.Pool.Exec(r.Context(), `UPDATE notifications SET read_at=now() WHERE user_id=$1 AND read_at IS NULL`, u.ID)
+		_, err = a.DB.Pool.Exec(r.Context(), `UPDATE notifications SET read_at=now() WHERE user_id=$1 AND read_at IS NULL`, u.ID)
 	} else {
-		_, _ = a.DB.Pool.Exec(r.Context(), `UPDATE notifications SET read_at=now() WHERE user_id=$1 AND id=ANY($2)`, u.ID, in.IDs)
+		_, err = a.DB.Pool.Exec(r.Context(), `UPDATE notifications SET read_at=now() WHERE user_id=$1 AND id=ANY($2)`, u.ID, in.IDs)
+	}
+	if err != nil {
+		dbFail(r, "mark notifications read", err)
+		errJSON(w, http.StatusInternalServerError, "database error")
+		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }

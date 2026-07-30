@@ -163,7 +163,7 @@ export function TaskHistorySection({ taskId, onRestored }: { taskId: number; onR
       title: tr("task.history_confirm_restore"),
       confirmLabel: tr("task.history_restore"),
       action: async () => {
-        await api.post(`/api/tasks/${taskId}/versions/${versionId}/restore`).catch(() => {})
+        await api.post(`/api/tasks/${taskId}/versions/${versionId}/restore`)
         onRestored()
         load()
       },
@@ -232,9 +232,14 @@ export function TaskModal({ task, me, spaceId, onClose, onChanged }: {
   useEffect(() => { loadWatchers() }, [task.id])
 
   async function toggleWatch() {
-    if (watching) await api.del(`/api/tasks/${task.id}/watch`).catch(() => {})
-    else await api.post(`/api/tasks/${task.id}/watch`).catch(() => {})
-    loadWatchers()
+    setError("")
+    try {
+      if (watching) await api.del(`/api/tasks/${task.id}/watch`)
+      else await api.post(`/api/tasks/${task.id}/watch`)
+      loadWatchers()
+    } catch (err) {
+      setError((err as Error).message)
+    }
   }
 
   async function submitForReview() {
@@ -294,17 +299,27 @@ export function TaskModal({ task, me, spaceId, onClose, onChanged }: {
     e.preventDefault()
     const title = newSubtaskTitle.trim()
     if (!title) return
-    await api.post(`/api/lists/${task.list_id}/tasks`, { title, parent_id: task.id }).catch(() => {})
-    setNewSubtaskTitle("")
-    loadSubtasks()
-    onChanged()
+    setError("")
+    try {
+      await api.post(`/api/lists/${task.list_id}/tasks`, { title, parent_id: task.id })
+      setNewSubtaskTitle("")
+      loadSubtasks()
+      onChanged()
+    } catch (err) {
+      setError((err as Error).message)
+    }
   }
 
   async function toggleSubtask(sub: Task) {
     const nextStatus = sub.status === "done" ? "open" : "done"
-    await api.patch(`/api/tasks/${sub.id}`, { status: nextStatus }).catch(() => {})
-    loadSubtasks()
-    onChanged()
+    setError("")
+    try {
+      await api.patch(`/api/tasks/${sub.id}`, { status: nextStatus })
+      loadSubtasks()
+      onChanged()
+    } catch (err) {
+      setError((err as Error).message)
+    }
   }
 
   async function setCustomField(k: string, v: string) {
@@ -444,8 +459,13 @@ export function TaskModal({ task, me, spaceId, onClose, onChanged }: {
   }
 
   async function react(commentId: number, emoji: string) {
-    await api.post("/api/reactions", { target_type: "comment", target_id: commentId, emoji }).catch(() => {})
-    load()
+    setError("")
+    try {
+      await api.post("/api/reactions", { target_type: "comment", target_id: commentId, emoji })
+      load()
+    } catch (err) {
+      setError((err as Error).message)
+    }
   }
 
   return (

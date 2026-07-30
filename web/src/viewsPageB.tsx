@@ -4,7 +4,6 @@ import { useConfirm } from "./extras"
 import { tr, getFormattingLocale } from "./i18n"
 import { IconAlertCircle, IconMessage, IconClock, IconUser, IconPause, IconSlash, IconCalendar, IconSliders } from "./icons"
 import { dueClass, TaskRow } from "./taskui"
-import { TaskModal } from "./viewsPageA"
 
 function MyWeekView({ tasks, favorites, onOpen, onToggle, onToggleFavorite, meId }: {
   tasks: Task[]; favorites: Set<number>; onOpen: (t: Task) => void; onToggle: (t: Task) => void
@@ -108,13 +107,13 @@ function OnboardingProgressBar() {
   )
 }
 
-export function MyTasksPage({ me }: { me: Me }) {
+export function MyTasksPage({ me, onOpenTask }: { me: Me; onOpenTask: (task: Task) => void }) {
   const [tasks, setTasks] = useState<Task[]>([])
-  const [open, setOpen] = useState<Task | null>(null)
   const [tab, setTab] = useState<"list" | "week" | "stats">("list")
   const [subTab, setSubTab] = useState<MySubTab>("all")
   const [mentions, setMentions] = useState<any[]>([])
   const [favorites, setFavorites] = useState<Set<number>>(new Set())
+  const [error, setError] = useState("")
   const load = () => api.get("/api/my/tasks").then((r) => setTasks(r.tasks)).catch(() => {})
   const loadFavorites = () => api.get("/api/favorites").then((r) => {
     setFavorites(new Set(
@@ -131,19 +130,29 @@ export function MyTasksPage({ me }: { me: Me }) {
   }, [subTab, me.username])
 
   async function toggle(task: Task) {
-    await api.patch(`/api/tasks/${task.id}`, { status: task.completed_at ? "open" : "done" }).catch(() => {})
-    window.dispatchEvent(new CustomEvent("todorio:focus-changed"))
-    load()
+    setError("")
+    try {
+      await api.patch(`/api/tasks/${task.id}`, { status: task.completed_at ? "open" : "done" })
+      window.dispatchEvent(new CustomEvent("todorio:focus-changed"))
+      load()
+    } catch (err) {
+      setError((err as Error).message)
+    }
   }
 
   async function toggleFavorite(task: Task) {
-    await api.post("/api/favorites", { target_type: "task", target_id: task.id }).catch(() => {})
-    loadFavorites()
+    setError("")
+    try {
+      await api.post("/api/favorites", { target_type: "task", target_id: task.id })
+      loadFavorites()
+    } catch (err) {
+      setError((err as Error).message)
+    }
   }
 
   async function openMentionedTask(taskID: number) {
     const r = await api.get(`/api/tasks/${taskID}`).catch(() => null)
-    if (r?.task) setOpen(r.task)
+    if (r?.task) onOpenTask(r.task)
   }
 
   const subFiltered = tasks.filter((t) => {
@@ -167,6 +176,7 @@ export function MyTasksPage({ me }: { me: Me }) {
           <button className={"nav-btn" + (tab === "stats" ? " active" : "")} onClick={() => setTab("stats")}>{tr("mystats.title")}</button>
         </div>
       </div>
+      {error && <p className="error-text">{error}</p>}
       {tab === "list" && (
         <>
           <div className="row" style={{ gap: 4, marginBottom: 10, flexWrap: "wrap" }}>
@@ -190,7 +200,7 @@ export function MyTasksPage({ me }: { me: Me }) {
             <>
               {subFiltered.length === 0 && <p className="muted">{tr("my.empty")}</p>}
               {subFiltered.map((task) => (
-                <TaskRow key={task.id} task={task} onToggle={toggle} onOpen={setOpen}
+                <TaskRow key={task.id} task={task} onToggle={toggle} onOpen={onOpenTask}
                   favorite={favorites.has(task.id)} onToggleFavorite={toggleFavorite} meId={me.id} />
               ))}
             </>
@@ -198,10 +208,9 @@ export function MyTasksPage({ me }: { me: Me }) {
         </>
       )}
       {tab === "week" && (
-        <MyWeekView tasks={tasks} favorites={favorites} onOpen={setOpen} onToggle={toggle} onToggleFavorite={toggleFavorite} meId={me.id} />
+        <MyWeekView tasks={tasks} favorites={favorites} onOpen={onOpenTask} onToggle={toggle} onToggleFavorite={toggleFavorite} meId={me.id} />
       )}
       {tab === "stats" && <MyStatsPanel />}
-      {open && <TaskModal task={open} me={me} onClose={() => setOpen(null)} onChanged={load} />}
     </div>
   )
 }

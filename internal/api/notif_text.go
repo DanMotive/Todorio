@@ -11,6 +11,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 
@@ -27,6 +28,7 @@ func loadLocaleStrings() map[string]map[string]string {
 		localeStrings = map[string]map[string]string{}
 		entries, err := assets.Locales.ReadDir("web/src/locales")
 		if err != nil {
+			log.Printf("notification locales: read directory: %v", err)
 			return
 		}
 		for _, e := range entries {
@@ -36,10 +38,12 @@ func loadLocaleStrings() map[string]map[string]string {
 			}
 			b, err := assets.Locales.ReadFile("web/src/locales/" + name)
 			if err != nil {
+				log.Printf("notification locales: read %s: %v", name, err)
 				continue
 			}
 			var m map[string]string
-			if json.Unmarshal(b, &m) != nil {
+			if err := json.Unmarshal(b, &m); err != nil {
+				log.Printf("notification locales: parse %s: %v", name, err)
 				continue
 			}
 			localeStrings[strings.TrimSuffix(name, ".json")] = m

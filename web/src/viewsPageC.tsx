@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react"
 import { api, DEFAULT_STATUSES, type List, type Me, type Task, type Workflow } from "./api"
 import { useConfirm } from "./extras"
-import { tr, trFormal, getFormattingLocale } from "./i18n"
+import { tr, getFormattingLocale } from "./i18n"
 import { IconX, IconSliders, IconArrowLeft, IconMenu, IconColumns, IconTable, IconCalendar } from "./icons"
 import { dueClass, dueLabel, StatusChip, TaskRow } from "./taskui"
 import { FocusPresence } from "./extras"
-import { TaskContextMenu, TaskModal } from "./viewsPageA"
+import { TaskContextMenu } from "./viewsPageA"
 
 export function KanbanBoard({ tasks, statuses, onOpen, onDrop, meId }: {
   tasks: Task[]; statuses: string[]; onOpen: (t: Task) => void; onDrop: (task: Task, status: string) => void; meId?: number
@@ -152,6 +152,7 @@ export function FiltersBar({ listId, statuses, onFilter }: {
   const [filters, setFilters] = useState<SavedFilterT[]>([])
   const [activeId, setActiveId] = useState<number | null>(null)
   const [showForm, setShowForm] = useState(false)
+  const [error, setError] = useState("")
   const [name, setName] = useState("")
   const [fStatus, setFStatus] = useState("")
   const [fPriority, setFPriority] = useState("")
@@ -175,15 +176,25 @@ export function FiltersBar({ listId, statuses, onFilter }: {
     if (fStatus) query.status = fStatus
     if (fPriority) query.priority = fPriority
     if (fOverdue) query.overdue = true
-    await api.post("/api/filters", { name, list_id: listId ?? null, query }).catch(() => {})
-    setName(""); setFStatus(""); setFPriority(""); setFOverdue(false); setShowForm(false)
-    load()
+    setError("")
+    try {
+      await api.post("/api/filters", { name, list_id: listId ?? null, query })
+      setName(""); setFStatus(""); setFPriority(""); setFOverdue(false); setShowForm(false)
+      load()
+    } catch (err) {
+      setError((err as Error).message)
+    }
   }
 
   async function remove(id: number) {
-    await api.del(`/api/filters/${id}`).catch(() => {})
-    if (activeId === id) apply(null)
-    load()
+    setError("")
+    try {
+      await api.del(`/api/filters/${id}`)
+      if (activeId === id) apply(null)
+      load()
+    } catch (err) {
+      setError((err as Error).message)
+    }
   }
 
   return (
@@ -198,6 +209,7 @@ export function FiltersBar({ listId, statuses, onFilter }: {
         </span>
       ))}
       <button className="nav-btn row" style={{ gap: 4, display: "inline-flex" }} onClick={() => setShowForm((v) => !v)}>+ {tr("filters.new")}</button>
+      {error && <span className="error-text" style={{ width: "100%" }}>{error}</span>}
       {showForm && (
         <form className="row" style={{ gap: 6, width: "100%", marginTop: 4, flexWrap: "wrap" }} onSubmit={save}>
           <input className="input" style={{ maxWidth: 160 }} placeholder={tr("filters.name_placeholder")} value={name} onChange={(e) => setName(e.target.value)} />
@@ -222,9 +234,14 @@ export function FiltersBar({ listId, statuses, onFilter }: {
   )
 }
 
-export function ListView({ me, list, spaceId, onBack }: { me: Me; list: List; spaceId: number; onBack: () => void }) {
+export function ListView({ me, list, spaceId, onBack, onOpenTask }: {
+  me: Me
+  list: List
+  spaceId: number
+  onBack: () => void
+  onOpenTask: (task: Task) => void
+}) {
   const [tasks, setTasks] = useState<Task[]>([])
-  const [open, setOpen] = useState<Task | null>(null)
   const [title, setTitle] = useState("")
   const [due, setDue] = useState("")
   const [viewMode, setViewMode] = useState<"list" | "kanban" | "table" | "calendar">("list")
@@ -259,10 +276,12 @@ export function ListView({ me, list, spaceId, onBack }: { me: Me; list: List; sp
 
   async function archiveMany() {
     const ids = [...selected]
+    let failed = 0
     for (const id of ids) {
-      await api.del(`/api/tasks/${id}`).catch(() => {})
+      try { await api.del(`/api/tasks/${id}`) } catch { failed++ }
     }
-    setSelected(new Set())
+    if (failed === 0) setSelected(new Set())
+    else setCreateError(tr("bulk.partial").replace("{n}", String(failed)))
     window.dispatchEvent(new CustomEvent("todorio:focus-changed"))
     load()
   }
@@ -277,14 +296,24 @@ export function ListView({ me, list, spaceId, onBack }: { me: Me; list: List; sp
   }, [spaceId])
 
   async function toggle(task: Task) {
-    await api.patch(`/api/tasks/${task.id}`, { status: task.completed_at ? "open" : "done" }).catch(() => {})
-    window.dispatchEvent(new CustomEvent("todorio:focus-changed"))
-    load()
+    setCreateError("")
+    try {
+      await api.patch(`/api/tasks/${task.id}`, { status: task.completed_at ? "open" : "done" })
+      window.dispatchEvent(new CustomEvent("todorio:focus-changed"))
+      load()
+    } catch (err) {
+      setCreateError((err as Error).message)
+    }
   }
 
   async function moveToStatus(task: Task, status: string) {
-    await api.patch(`/api/tasks/${task.id}`, { status }).catch(() => {})
-    load()
+    setCreateError("")
+    try {
+      await api.patch(`/api/tasks/${task.id}`, { status })
+      load()
+    } catch (err) {
+      setCreateError((err as Error).message)
+    }
   }
 
   // Drag-and-drop reordering of root-level tasks within this list (spec parity with the Kanban
@@ -303,7 +332,11 @@ export function ListView({ me, list, spaceId, onBack }: { me: Me; list: List; sp
     nextRoots.splice(targetIdx, 0, moved)
     const reordered = nextRoots.flatMap((r) => [r, ...tasks.filter((s) => s.parent_id === r.id)])
     setTasks(reordered)
-    await Promise.all(nextRoots.map((t, i) => api.patch(`/api/tasks/${t.id}`, { position: i }).catch(() => {})))
+    try {
+      await Promise.all(nextRoots.map((t, i) => api.patch(`/api/tasks/${t.id}`, { position: i })))
+    } catch (err) {
+      setCreateError((err as Error).message)
+    }
     load()
   }
 
@@ -383,13 +416,13 @@ export function ListView({ me, list, spaceId, onBack }: { me: Me; list: List; sp
             setDraggedTaskId(null)
           }}
           onDragEnd={() => setDraggedTaskId(null)}>
-          <TaskRow task={task} onToggle={toggle} onOpen={setOpen} meId={me.id}
+          <TaskRow task={task} onToggle={toggle} onOpen={onOpenTask} meId={me.id}
             selected={selected.has(task.id)} onSelect={toggleSelect}
             statuses={statuses} onStatus={moveToStatus}
             onContext={(t, x, y) => setMenu({ task: t, x, y })} />
           {tasks.filter((s) => s.parent_id === task.id).map((sub) => (
             <div key={sub.id} style={{ marginLeft: 28 }}>
-              <TaskRow task={sub} onToggle={toggle} onOpen={setOpen} meId={me.id}
+              <TaskRow task={sub} onToggle={toggle} onOpen={onOpenTask} meId={me.id}
                 selected={selected.has(sub.id)} onSelect={toggleSelect}
                 statuses={statuses} onStatus={moveToStatus}
                 onContext={(t, x, y) => setMenu({ task: t, x, y })} />
@@ -397,9 +430,9 @@ export function ListView({ me, list, spaceId, onBack }: { me: Me; list: List; sp
           ))}
         </div>
       ))}
-      {viewMode === "kanban" && <KanbanBoard tasks={filteredRoots} statuses={statuses} onOpen={setOpen} onDrop={moveToStatus} meId={me.id} />}
-      {viewMode === "table" && <TableView tasks={filteredRoots} onOpen={setOpen} onToggle={toggle} meId={me.id} />}
-      {viewMode === "calendar" && <CalendarView tasks={filteredRoots} onOpen={setOpen} />}
+      {viewMode === "kanban" && <KanbanBoard tasks={filteredRoots} statuses={statuses} onOpen={onOpenTask} onDrop={moveToStatus} meId={me.id} />}
+      {viewMode === "table" && <TableView tasks={filteredRoots} onOpen={onOpenTask} onToggle={toggle} meId={me.id} />}
+      {viewMode === "calendar" && <CalendarView tasks={filteredRoots} onOpen={onOpenTask} />}
 
       <form className="row" style={{ marginTop: 12 }} onSubmit={async (e) => {
         e.preventDefault()
@@ -431,9 +464,8 @@ export function ListView({ me, list, spaceId, onBack }: { me: Me; list: List; sp
             setMenu(null)
             load()
           }}
-          onOpenFull={() => { setOpen(menu.task); setMenu(null) }} />
+          onOpenFull={() => { onOpenTask(menu.task); setMenu(null) }} />
       )}
-      {open && <TaskModal task={open} me={me} spaceId={spaceId} onClose={() => setOpen(null)} onChanged={load} />}
     </div>
   )
 }
@@ -455,18 +487,32 @@ type NotificationItem = {
 
 export function NotificationsPage({ onNavigateTask }: { onNavigateTask: (taskId: number) => void }) {
   const [items, setItems] = useState<NotificationItem[]>([])
-  const load = () => api.get("/api/notifications").then((r) => setItems(r.notifications)).catch(() => {})
+  const [error, setError] = useState("")
+  const load = () => {
+    setError("")
+    api.get("/api/notifications").then((r) => setItems(r.notifications)).catch((err) => setError((err as Error).message))
+  }
   useEffect(() => { load() }, [])
 
   async function markRead(n: NotificationItem) {
-    if (!n.read_at) await api.post("/api/notifications/read", { ids: [n.id] }).catch(() => {})
-    if (n.task_id) onNavigateTask(n.task_id)
-    load()
+    setError("")
+    try {
+      if (!n.read_at) await api.post("/api/notifications/read", { ids: [n.id] })
+      if (n.task_id) onNavigateTask(n.task_id)
+      load()
+    } catch (err) {
+      setError((err as Error).message)
+    }
   }
 
   async function markAllRead() {
-    await api.post("/api/notifications/read").catch(() => {})
-    load()
+    setError("")
+    try {
+      await api.post("/api/notifications/read")
+      load()
+    } catch (err) {
+      setError((err as Error).message)
+    }
   }
 
   return (
@@ -475,6 +521,7 @@ export function NotificationsPage({ onNavigateTask }: { onNavigateTask: (taskId:
         <h2 className="grow" style={{ margin: 0 }}>{tr("notifications.title")}</h2>
         <button className="nav-btn" onClick={markAllRead}>{tr("notifications.mark_all_read")}</button>
       </div>
+      {error && <p className="error-text">{error}</p>}
       {items.length === 0 && <p className="muted">{tr("notifications.empty")}</p>}
       {items.map((n) => (
         <div key={n.id} className="task-row" style={{ opacity: n.read_at ? 0.6 : 1, cursor: "pointer" }}
@@ -484,98 +531,6 @@ export function NotificationsPage({ onNavigateTask }: { onNavigateTask: (taskId:
           <span className="muted">{new Date(n.created_at).toLocaleString(getFormattingLocale())}</span>
         </div>
       ))}
-    </div>
-  )
-}
-
-export function AdminPage({ me }: { me: Me }) {
-  const [users, setUsers] = useState<any[]>([])
-  const [invites, setInvites] = useState<any[]>([])
-  const [settings, setSettings] = useState<any>(null)
-  const [announcement, setAnnouncement] = useState("")
-  const [tab, setTab] = useState<"users" | "invites" | "settings" | "announcements">("users")
-
-  const load = () => {
-    api.get("/api/admin/users").then((r) => setUsers(r.users)).catch(() => {})
-    api.get("/api/admin/invites").then((r) => setInvites(r.invites)).catch(() => {})
-    api.get("/api/admin/settings").then(setSettings).catch(() => {})
-  }
-  useEffect(() => { load() }, [])
-
-  async function approve(id: number) {
-    await api.post(`/api/admin/users/${id}/approve`).catch(() => {})
-    load()
-  }
-
-  async function setRole(id: number, role: string) {
-    await api.patch(`/api/admin/users/${id}`, { role }).catch(() => {})
-    load()
-  }
-
-  async function createInvite() {
-    await api.post("/api/admin/invites", {}).catch(() => {})
-    load()
-  }
-
-  async function saveSettings() {
-    await api.patch("/api/admin/settings", settings).catch(() => {})
-    load()
-  }
-
-  async function postAnnouncement() {
-    if (!announcement.trim()) return
-    await api.post("/api/announcements", { text: announcement }).catch(() => {})
-    setAnnouncement("")
-  }
-
-  return (
-    <div className="card">
-      <h2>{trFormal("admin.title")}</h2>
-      <div className="row" style={{ gap: 4, marginBottom: 10 }}>
-        <button className={"nav-btn" + (tab === "users" ? " active" : "")} onClick={() => setTab("users")}>{trFormal("admin.users")}</button>
-        <button className={"nav-btn" + (tab === "invites" ? " active" : "")} onClick={() => setTab("invites")}>{trFormal("admin.invites")}</button>
-        <button className={"nav-btn" + (tab === "settings" ? " active" : "")} onClick={() => setTab("settings")}>{trFormal("admin.settings")}</button>
-        <button className={"nav-btn" + (tab === "announcements" ? " active" : "")} onClick={() => setTab("announcements")}>{trFormal("admin.announcements")}</button>
-      </div>
-      {tab === "users" && users.map((u) => (
-        <div key={u.id} className="task-row">
-          <span className="grow">@{u.username} {!u.approved && <span className="badge">{trFormal("admin.pending")}</span>}</span>
-          {!u.approved && <button className="nav-btn" onClick={() => approve(u.id)}>{trFormal("admin.approve")}</button>}
-          <select className="input" style={{ width: "auto" }} value={u.role} onChange={(e) => setRole(u.id, e.target.value)}>
-            <option value="member">{trFormal("admin.role_member")}</option>
-            <option value="admin">{trFormal("admin.role_admin")}</option>
-            <option value="root">{trFormal("admin.role_root")}</option>
-          </select>
-        </div>
-      ))}
-      {tab === "invites" && (
-        <div>
-          <button className="btn" onClick={createInvite}>{trFormal("admin.create_invite")}</button>
-          {invites.map((i) => (
-            <div key={i.id} className="task-row">
-              <code className="grow">{i.code}</code>
-              <span className="muted">{i.used_by ? trFormal("admin.invite_used") : trFormal("admin.invite_unused")}</span>
-            </div>
-          ))}
-        </div>
-      )}
-      {tab === "settings" && settings && (
-        <div>
-          <label className="row" style={{ gap: 6, marginBottom: 8 }}>
-            <input type="checkbox" checked={settings.require_approval}
-              onChange={(e) => setSettings({ ...settings, require_approval: e.target.checked })} />
-            {trFormal("admin.require_approval")}
-          </label>
-          <button className="btn" onClick={saveSettings}>{tr("common.save")}</button>
-        </div>
-      )}
-      {tab === "announcements" && (
-        <div>
-          <textarea className="input" style={{ width: "100%", minHeight: 80 }} value={announcement}
-            onChange={(e) => setAnnouncement(e.target.value)} placeholder={trFormal("admin.announcement_placeholder")} />
-          <button className="btn" style={{ marginTop: 8 }} onClick={postAnnouncement}>{trFormal("admin.post_announcement")}</button>
-        </div>
-      )}
     </div>
   )
 }

@@ -5,6 +5,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -290,7 +291,19 @@ func readJSON(r *http.Request, dst any) error {
 	// and a truncated body already fails decoding, which every caller turns into a 400.
 	dec := json.NewDecoder(io.LimitReader(r.Body, maxJSONBody))
 	dec.DisallowUnknownFields()
-	return dec.Decode(dst)
+	if err := dec.Decode(dst); err != nil {
+		return err
+	}
+	// Exactly one JSON value is accepted. Without this check, {"ok":true}{"ignored":true}
+	// was treated as the first object and the trailing data silently disappeared.
+	var trailing any
+	if err := dec.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return errors.New("request body must contain a single JSON value")
+		}
+		return err
+	}
+	return nil
 }
 
 func pathID(r *http.Request) (int64, error) {
@@ -466,7 +479,11 @@ func (a *API) notify(r *http.Request, userID int64, kind string, payload map[str
 	if !a.notifyTypeEnabled(r.Context(), userID, kind) {
 		return
 	}
-	b, _ := json.Marshal(payload)
+	b, err := json.Marshal(payload)
+	if err != nil {
+		log.Printf("notification: encode payload for user %d kind %q: %v", userID, kind, err)
+		return
+	}
 
 	// Coalesce a burst about the same task. Editing a task's status, then its deadline, then its
 	// assignee within a minute used to produce three separate bell entries; the recipient only
@@ -487,8 +504,11 @@ func (a *API) notify(r *http.Request, userID int64, kind string, payload map[str
 				ORDER BY created_at DESC LIMIT 1`,
 				userID, kind, fmt.Sprint(taskID), window).Scan(&existing)
 			if err == nil {
-				_, _ = a.DB.Pool.Exec(r.Context(),
-					`UPDATE notifications SET payload=$2, created_at=now() WHERE id=$1`, existing, string(b))
+				if _, err := a.DB.Pool.Exec(r.Context(),
+					`UPDATE notifications SET payload=$2, created_at=now() WHERE id=$1`, existing, string(b)); err != nil {
+					log.Printf("notification: refresh %d for user %d: %v", existing, userID, err)
+					return
+				}
 				if a.inDoNotDisturb(r.Context(), userID) {
 					return
 				}
@@ -498,8 +518,11 @@ func (a *API) notify(r *http.Request, userID int64, kind string, payload map[str
 		}
 	}
 
-	_, _ = a.DB.Pool.Exec(r.Context(),
-		`INSERT INTO notifications(user_id, kind, payload) VALUES($1,$2,$3)`, userID, kind, string(b))
+	if _, err := a.DB.Pool.Exec(r.Context(),
+		`INSERT INTO notifications(user_id, kind, payload) VALUES($1,$2,$3)`, userID, kind, string(b)); err != nil {
+		log.Printf("notification: insert for user %d kind %q: %v", userID, kind, err)
+		return
+	}
 	if a.inDoNotDisturb(r.Context(), userID) {
 		return
 	}

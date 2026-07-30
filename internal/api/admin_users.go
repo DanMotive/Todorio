@@ -1,9 +1,11 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/DanMotive/Todorio/internal/setup"
+	"github.com/jackc/pgx/v5"
 )
 
 // GET /api/admin/users?status=pending|active|blocked|rejected (no filter = all)
@@ -54,31 +56,47 @@ func (a *API) handleApproveUser(w http.ResponseWriter, r *http.Request) {
 		Role        string         `json:"role"` // user | viewer | admin (only root can assign admin)
 		Permissions map[string]any `json:"permissions"`
 	}
-	if err := readJSON(r, &in); err != nil || in.Role == "" {
-		in.Role = "user"
+	in.Role = "user"
+	if r.ContentLength > 0 {
+		if err := readJSON(r, &in); err != nil {
+			errJSON(w, http.StatusBadRequest, "invalid request")
+			return
+		}
 	}
-	if in.Role == "admin" && admin.Role != "root" {
-		errJSON(w, http.StatusForbidden, "only root can assign admins")
-		return
-	}
-	if in.Role == "root" {
-		errJSON(w, http.StatusForbidden, "there can be only one root")
+	switch in.Role {
+	case "user", "viewer":
+	case "admin":
+		if admin.Role != "root" {
+			errJSON(w, http.StatusForbidden, "only root can assign admins")
+			return
+		}
+	default:
+		errJSON(w, http.StatusBadRequest, "allowed roles: user | viewer | admin")
 		return
 	}
 	if in.Permissions == nil {
 		in.Permissions = map[string]any{}
 	}
-	_, err = a.DB.Pool.Exec(r.Context(),
-		`UPDATE users SET status='active', role=$2, permissions=$3 WHERE id=$1 AND status='pending'`,
-		id, in.Role, in.Permissions)
+
+	// The conditional UPDATE is the idempotency boundary: onboarding must run exactly once and
+	// only for a real pending account. A repeated click or stale admin tab receives 409 instead
+	// of creating another personal space and another set of onboarding tasks.
+	var username string
+	err = a.DB.Pool.QueryRow(r.Context(), `
+		UPDATE users SET status='active', role=$2, permissions=$3
+		WHERE id=$1 AND status='pending'
+		RETURNING username`, id, in.Role, in.Permissions).Scan(&username)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errJSON(w, http.StatusConflict, "user not found or no longer pending")
+			return
+		}
+		dbFail(r, "approve user", err)
 		errJSON(w, http.StatusInternalServerError, "database error")
 		return
 	}
 	a.notify(r, id, "approved", map[string]any{"role": in.Role})
 	// demo space, personal space, auto_apply templates, and onboarding quests
-	var username string
-	_ = a.DB.Pool.QueryRow(r.Context(), `SELECT username FROM users WHERE id=$1`, id).Scan(&username)
 	a.postApprove(r.Context(), id, username, in.Role)
 	a.audit(r, admin, auditUserApprove, "user", id, map[string]any{"username": username, "role": in.Role})
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
@@ -122,10 +140,29 @@ func (a *API) handleSetUserStatus(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, http.StatusForbidden, "only root can manage admins")
 		return
 	}
-	_, _ = a.DB.Pool.Exec(r.Context(), `UPDATE users SET status=$2 WHERE id=$1`, id, in.Status)
+	tx, err := a.DB.Pool.Begin(r.Context())
+	if err != nil {
+		errJSON(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	defer func() { _ = tx.Rollback(r.Context()) }()
+	if _, err = tx.Exec(r.Context(), `UPDATE users SET status=$2 WHERE id=$1`, id, in.Status); err != nil {
+		errJSON(w, http.StatusInternalServerError, "database error")
+		return
+	}
 	if in.Status == "blocked" || in.Status == "rejected" {
-		_, _ = a.DB.Pool.Exec(r.Context(), `DELETE FROM sessions WHERE user_id=$1`, id)
-		_, _ = a.DB.Pool.Exec(r.Context(), `UPDATE tasks SET assignee_id=NULL WHERE assignee_id=$1 AND completed_at IS NULL`, id)
+		if _, err = tx.Exec(r.Context(), `DELETE FROM sessions WHERE user_id=$1`, id); err != nil {
+			errJSON(w, http.StatusInternalServerError, "database error")
+			return
+		}
+		if _, err = tx.Exec(r.Context(), `UPDATE tasks SET assignee_id=NULL WHERE assignee_id=$1 AND completed_at IS NULL`, id); err != nil {
+			errJSON(w, http.StatusInternalServerError, "database error")
+			return
+		}
+	}
+	if err = tx.Commit(r.Context()); err != nil {
+		errJSON(w, http.StatusInternalServerError, "database error")
+		return
 	}
 	a.audit(r, admin, auditUserStatus, "user", id, map[string]any{"status": in.Status, "target_role": targetRole})
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
@@ -142,6 +179,19 @@ func (a *API) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, http.StatusBadRequest, "invalid id")
 		return
 	}
+	var targetRole string
+	if err := a.DB.Pool.QueryRow(r.Context(), `SELECT role FROM users WHERE id=$1 AND archived_at IS NULL`, id).Scan(&targetRole); err != nil {
+		errJSON(w, http.StatusNotFound, "user not found")
+		return
+	}
+	if targetRole == "root" {
+		errJSON(w, http.StatusForbidden, "root password cannot be reset via the web")
+		return
+	}
+	if targetRole == "admin" && admin.Role != "root" {
+		errJSON(w, http.StatusForbidden, "only root can manage admins")
+		return
+	}
 	temp, err := setup.GeneratePassword()
 	if err != nil {
 		errJSON(w, http.StatusInternalServerError, "generation error")
@@ -152,11 +202,28 @@ func (a *API) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, http.StatusInternalServerError, "server error")
 		return
 	}
-	_, _ = a.DB.Pool.Exec(r.Context(),
+	tx, err := a.DB.Pool.Begin(r.Context())
+	if err != nil {
+		errJSON(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	defer func() { _ = tx.Rollback(r.Context()) }()
+	tag, err := tx.Exec(r.Context(),
 		`UPDATE users SET password_hash=$2, must_change_password=true WHERE id=$1`, id, hash)
-	_, _ = a.DB.Pool.Exec(r.Context(), `DELETE FROM sessions WHERE user_id=$1`, id)
+	if err != nil || tag.RowsAffected() != 1 {
+		errJSON(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	if _, err = tx.Exec(r.Context(), `DELETE FROM sessions WHERE user_id=$1`, id); err != nil {
+		errJSON(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	if err = tx.Commit(r.Context()); err != nil {
+		errJSON(w, http.StatusInternalServerError, "database error")
+		return
+	}
 	// The temporary password is shown to the admin once and never written to logs — including
 	// the audit trail, which records only that a reset happened.
-	a.audit(r, admin, auditUserResetPassword, "user", id, nil)
+	a.audit(r, admin, auditUserResetPassword, "user", id, map[string]any{"target_role": targetRole})
 	writeJSON(w, http.StatusOK, map[string]string{"temp_password": temp})
 }

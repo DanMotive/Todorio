@@ -209,13 +209,20 @@ func (a *API) applyTemplate(ctx context.Context, raw []byte, spaceID, userID int
 	if err := json.Unmarshal(raw, &body); err != nil {
 		return 0, err
 	}
+	tx, err := a.DB.Pool.Begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
 	var listID int64
-	if err := a.DB.Pool.QueryRow(ctx,
+	if err := tx.QueryRow(ctx,
 		`INSERT INTO lists(space_id, name) VALUES($1,$2) RETURNING id`, spaceID, body.ListName).Scan(&listID); err != nil {
 		return 0, err
 	}
-	_, _ = a.DB.Pool.Exec(ctx,
-		`INSERT INTO list_members(list_id,user_id,permission) VALUES($1,$2,'owner') ON CONFLICT DO NOTHING`, listID, userID)
+	if _, err := tx.Exec(ctx,
+		`INSERT INTO list_members(list_id,user_id,permission) VALUES($1,$2,'owner') ON CONFLICT DO NOTHING`, listID, userID); err != nil {
+		return 0, err
+	}
 	for _, t := range body.Tasks {
 		priority := t.Priority
 		if priority == "" {
@@ -226,10 +233,15 @@ func (a *API) applyTemplate(ctx context.Context, raw []byte, spaceID, userID int
 			d := time.Now().AddDate(0, 0, *t.DueInDays)
 			due = &d
 		}
-		_, _ = a.DB.Pool.Exec(ctx, `
+		if _, err := tx.Exec(ctx, `
 			INSERT INTO tasks(list_id, title, description, priority, assignee_id, due_at, creator_id)
 			VALUES($1,$2,$3,$4,$5,$6,$7)`,
-			listID, t.Title, t.Description, priority, userID, due, userID)
+			listID, t.Title, t.Description, priority, userID, due, userID); err != nil {
+			return 0, err
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return 0, err
 	}
 	return listID, nil
 }

@@ -14,9 +14,7 @@
 // become a title-shaped hole that says "there is a task here you are not allowed to open".
 
 import { useEffect, useState } from "react"
-import { api, type Me, type Note, type Task } from "./api"
-import { TaskModal } from "./views"
-import { NoteModal } from "./extras"
+import { api } from "./api"
 
 export type RefKind = "task" | "note"
 
@@ -100,53 +98,6 @@ export function RefLink({ kind, id }: { kind: RefKind; id: number }) {
   )
 }
 
-// RefOpener answers the events above by opening the same modals every other screen uses.
-//
-// It is mounted once next to <App/> instead of inside it: a reference can be clicked from any
-// view, and the two modals here are exactly the ones App already opens for global search hits.
-// It fetches /api/me lazily - on the first click, not on load - so it costs nothing until a
-// reference is actually followed.
-export function RefOpener() {
-  const [me, setMe] = useState<Me | null>(null)
-  const [task, setTask] = useState<Task | null>(null)
-  const [note, setNote] = useState<Note | null>(null)
-
-  useEffect(() => {
-    async function onOpen(e: Event) {
-      const detail = (e as CustomEvent).detail as { kind: RefKind; id: number } | undefined
-      if (!detail) return
-      if (detail.kind === "task") {
-        const [t, who] = await Promise.all([
-          api.get(`/api/tasks/${detail.id}`).catch(() => null),
-          me ? Promise.resolve({ user: me }) : api.get("/api/me").catch(() => null),
-        ])
-        if (who?.user) setMe(who.user)
-        // TaskModal needs the current user; without it there is nothing sensible to render, so
-        // a failed /api/me leaves the click as a no-op rather than a half-drawn dialog.
-        if (t?.task && (who?.user || me)) setTask(t.task)
-        return
-      }
-      const n = await api.get(`/api/notes/${detail.id}`).catch(() => null)
-      if (n?.note) setNote(n.note)
-    }
-    window.addEventListener("todorio:open-ref", onOpen as EventListener)
-    return () => window.removeEventListener("todorio:open-ref", onOpen as EventListener)
-  }, [me])
-
-  return (
-    <>
-      {task && me && (
-        <TaskModal task={task} me={me} onClose={() => setTask(null)}
-          onChanged={() => {
-            api.get(`/api/tasks/${task.id}`).then((r) => { if (r?.task) setTask(r.task) }).catch(() => {})
-          }} />
-      )}
-      {note && (
-        <NoteModal note={note} spaceId={note.space_id} onClose={() => setNote(null)}
-          onChanged={() => {
-            api.get(`/api/notes/${note.id}`).then((r) => { if (r?.note) setNote(r.note) }).catch(() => {})
-          }} />
-      )}
-    </>
-  )
-}
+// App listens for todorio:open-ref and converts it into the canonical task/note route.
+// Keeping reference resolution and navigation separate means read-only rendering can still use
+// this module without importing modal or router code.

@@ -46,16 +46,15 @@ func (a *API) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Resolve the invite code (if any) up front: a wrong/expired code fails loudly here instead of
-	// silently falling back to "pending" and leaving the user confused about why nothing happened.
-	var invite *inviteRow
-	if code := strings.TrimSpace(in.InviteCode); code != "" {
-		iv, err := a.lookupInvite(r.Context(), code)
-		if err != nil {
+	// Resolve the invite code up front for a clear error before doing the expensive password hash.
+	// This is only a friendly pre-check: the real use is claimed atomically inside the registration
+	// transaction below, so a concurrent request cannot redeem the same final use.
+	inviteCode := strings.TrimSpace(in.InviteCode)
+	if inviteCode != "" {
+		if _, err := a.lookupInvite(r.Context(), inviteCode); err != nil {
 			errJSON(w, http.StatusBadRequest, "invalid or expired invite code")
 			return
 		}
-		invite = iv
 	} else if mode == "invite_only" {
 		errJSON(w, http.StatusForbidden, "an invite code is required to register")
 		return
@@ -78,30 +77,59 @@ func (a *API) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Registration is one transaction for both privilege decisions:
+	//   * an advisory transaction lock serialises the "first account becomes root" check;
+	//   * an invite use is claimed with a conditional UPDATE before the user is inserted.
+	// A rollback returns the invite use if the username INSERT subsequently fails.
+	tx, err := a.DB.Pool.Begin(r.Context())
+	if err != nil {
+		dbFail(r, "begin registration", err)
+		errJSON(w, http.StatusInternalServerError, "server error")
+		return
+	}
+	defer func() { _ = tx.Rollback(r.Context()) }()
+	if _, err = tx.Exec(r.Context(), `SELECT pg_advisory_xact_lock(743646746)`); err != nil {
+		dbFail(r, "lock registration bootstrap", err)
+		errJSON(w, http.StatusInternalServerError, "server error")
+		return
+	}
+
 	var total int
-	_ = a.DB.Pool.QueryRow(r.Context(), `SELECT count(*) FROM users`).Scan(&total)
+	if err = tx.QueryRow(r.Context(), `SELECT count(*) FROM users`).Scan(&total); err != nil {
+		dbFail(r, "count users during registration", err)
+		errJSON(w, http.StatusInternalServerError, "server error")
+		return
+	}
 	role, status := "user", "pending"
-	switch {
-	case total == 0:
+	if total == 0 {
 		// Dev bootstrap: the very first account on the server becomes root.
-		//
-		// This is convenient locally and dangerous in production: an instance that is reachable
-		// before `todorio setup` has been run hands root to whoever registers first. Operators who
-		// provision the root account another way can shut the door with
-		//   todorio server policy set registration.bootstrap_root false
-		// The default stays true so existing installs behave exactly as before.
 		if a.DB.Setting(r.Context(), "policy.registration.bootstrap_root", "true") != "true" {
 			errJSON(w, http.StatusForbidden, "registration is closed until an administrator completes setup")
 			return
 		}
 		log.Printf("register: granting root to the first account %q (bootstrap)", in.Username)
 		role, status = "root", "active"
-	case invite != nil:
-		role, status = invite.Role, "active" // invite codes activate instantly, no manual approval
+	} else if inviteCode != "" {
+		err = tx.QueryRow(r.Context(), `
+			UPDATE invites
+			SET used_count = used_count + 1
+			WHERE code=$1 AND used_count < max_uses
+			  AND (expires_at IS NULL OR expires_at > now())
+			RETURNING role`, inviteCode).Scan(&role)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				errJSON(w, http.StatusBadRequest, "invalid or expired invite code")
+			} else {
+				dbFail(r, "claim invite", err)
+				errJSON(w, http.StatusInternalServerError, "server error")
+			}
+			return
+		}
+		status = "active"
 	}
 
 	var id int64
-	err = a.DB.Pool.QueryRow(r.Context(),
+	err = tx.QueryRow(r.Context(),
 		`INSERT INTO users(username, password_hash, role, status) VALUES($1,$2,$3,$4)
 		 ON CONFLICT (username) DO NOTHING RETURNING id`,
 		in.Username, hash, role, status).Scan(&id)
@@ -124,8 +152,10 @@ func (a *API) handleRegister(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	if invite != nil {
-		a.consumeInvite(r.Context(), invite.ID)
+	if err := tx.Commit(r.Context()); err != nil {
+		dbFail(r, "commit registration", err)
+		errJSON(w, http.StatusInternalServerError, "server error")
+		return
 	}
 	if status == "active" && total != 0 {
 		a.postApprove(r.Context(), id, in.Username, role)

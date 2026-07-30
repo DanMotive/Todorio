@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { api, DEVELOPER_NAME, type Me, type Note, type ActivityEvent, type SearchResult, type SettingDef, type ActiveFocus, type Inbox, type InboxItem } from "./api"
-import { tr, trFormal, getFormattingLocale } from "./i18n"
+import { tr, trFormal, trOr, getFormattingLocale } from "./i18n"
 import { renderMarkdown } from "./markdown"
 import { NoteTasksBlock } from "./functional"
 import {
@@ -399,17 +399,42 @@ export function InvitesCard({ me }: { me: Me }) {
 export function PublicListPage({ token }: { token: string }) {
   const [data, setData] = useState<any>(null)
   const [error, setError] = useState("")
+  const [needsPassword, setNeedsPassword] = useState(false)
+  const [password, setPassword] = useState("")
+  const [busy, setBusy] = useState(false)
 
-  useEffect(() => {
-    fetch(`/api/public/${token}`)
-      .then(async (r) => {
-        const d = await r.json()
-        if (!r.ok) throw new Error(d.error || tr("public.invalid"))
-        return d
-      })
-      .then(setData)
-      .catch((e) => setError(String((e as Error).message || e)))
-  }, [token])
+  async function load(passwordValue?: string) {
+    setBusy(true)
+    setError("")
+    try {
+      const options: RequestInit = passwordValue === undefined ? {} : {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: passwordValue }),
+      }
+      const r = await fetch(`/api/public/${token}`, options)
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) {
+        if (r.status === 401) {
+          setNeedsPassword(true)
+          throw new Error(passwordValue === undefined
+            ? trOr("public.password_required", "Для просмотра нужен пароль")
+            : trOr("public.password_invalid", "Неверный пароль"))
+        }
+        if (r.status === 429) throw new Error(trOr("public.too_many_attempts", "Слишком много попыток — попробуйте позже"))
+        throw new Error(d.error || tr("public.invalid"))
+      }
+      setData(d)
+      setNeedsPassword(false)
+      setPassword("")
+    } catch (e) {
+      setError(String((e as Error).message || e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  useEffect(() => { load() }, [token])
 
   return (
     <div className="center-page" style={{ alignItems: "flex-start", paddingTop: 40 }}>
@@ -419,7 +444,19 @@ export function PublicListPage({ token }: { token: string }) {
           <h2 style={{ margin: 0 }}>{data ? data.list.name : "Todorio"}</h2>
         </div>
         <p style={{ opacity: 0.6, fontSize: 13 }}>{tr("public.readonly")}</p>
-        {error && <p>{error}</p>}
+        {error && <p style={{ color: "var(--due-overdue)" }}>{error}</p>}
+        {needsPassword && !data && (
+          <form className="row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}
+            onSubmit={(e) => { e.preventDefault(); if (password) load(password) }}>
+            <input className="input" type="password" value={password} disabled={busy}
+              autoComplete="current-password" style={{ maxWidth: 300 }}
+              placeholder={trOr("public.password_placeholder", "Пароль ссылки")}
+              onChange={(e) => setPassword(e.target.value)} autoFocus />
+            <button className="btn" type="submit" disabled={busy || !password}>
+              {busy ? trOr("common.loading", "Загрузка…") : trOr("public.open", "Открыть")}
+            </button>
+          </form>
+        )}
         {data &&
           data.tasks.map((t: any) => (
             <div
@@ -451,20 +488,32 @@ export function NoteModal({ note, spaceId, onClose, onChanged }: {
   const [title, setTitle] = useState(note.title)
   const [body, setBody] = useState(note.body || "")
   const [saved, setSaved] = useState(true)
+  const [saveError, setSaveError] = useState("")
   // Notes are Markdown pages (spec section 12), but until now the body was only ever shown in a
   // textarea — the markup was never rendered. Opens in preview when there's already content to
   // read, and in edit mode for an empty note where there is nothing to preview.
   const [preview, setPreview] = useState(!!(note.body && note.body.trim()))
 
   async function save() {
-    await api.patch(`/api/notes/${note.id}`, { title, body }).catch(() => {})
-    setSaved(true)
-    onChanged()
+    setSaveError("")
+    try {
+      await api.patch(`/api/notes/${note.id}`, { title, body })
+      setSaved(true)
+      onChanged()
+    } catch (e) {
+      setSaved(false)
+      setSaveError((e as Error).message)
+    }
   }
   async function remove() {
-    await api.del(`/api/notes/${note.id}`).catch(() => {})
-    onChanged()
-    onClose()
+    setSaveError("")
+    try {
+      await api.del(`/api/notes/${note.id}`)
+      onChanged()
+      onClose()
+    } catch (e) {
+      setSaveError((e as Error).message)
+    }
   }
 
   return (
@@ -492,6 +541,7 @@ export function NoteModal({ note, spaceId, onClose, onChanged }: {
             value={body} onChange={(e) => { setBody(e.target.value); setSaved(false) }} />
         )}
         <NoteTasksBlock note={note} spaceId={spaceId} />
+        {saveError && <div style={{ color: "var(--due-overdue)", marginTop: 8 }}>{saveError}</div>}
         <div className="row" style={{ marginTop: 12, justifyContent: "space-between" }}>
           <button className="nav-btn" style={{ color: "var(--due-overdue)" }}
             onClick={() => confirm({
@@ -509,38 +559,38 @@ export function NoteModal({ note, spaceId, onClose, onChanged }: {
   )
 }
 
-export function NotesPanel({ spaceId }: { spaceId: number }) {
+export function NotesPanel({ spaceId, onOpenNote }: { spaceId: number; onOpenNote: (note: Note) => void }) {
   const [notes, setNotes] = useState<Note[]>([])
-  const [open, setOpen] = useState<Note | null>(null)
   const [title, setTitle] = useState("")
+  const [error, setError] = useState("")
   const load = () => api.get(`/api/spaces/${spaceId}/notes`).then((r) => setNotes(r.notes)).catch(() => {})
   useEffect(() => { load() }, [spaceId])
 
   async function create() {
     if (!title.trim()) return
-    await api.post(`/api/spaces/${spaceId}/notes`, { title }).catch(() => {})
-    setTitle("")
-    load()
+    setError("")
+    try {
+      await api.post(`/api/spaces/${spaceId}/notes`, { title })
+      setTitle("")
+      load()
+    } catch (e) {
+      setError((e as Error).message)
+    }
   }
-  async function openNote(n: Note) {
-    const r = await api.get(`/api/notes/${n.id}`).catch(() => null)
-    if (r) setOpen(r.note)
-  }
-
   return (
     <div>
       {notes.map((n) => (
-        <div key={n.id} className="task-row" onClick={() => openNote(n)}>
+        <div key={n.id} className="task-row" onClick={() => onOpenNote(n)}>
           <span className="task-title row" style={{ gap: 6 }}><IconFileText size={14} /> {n.title}</span>
           <span className="muted">{new Date(n.updated_at).toLocaleDateString(getFormattingLocale())}</span>
         </div>
       ))}
       {notes.length === 0 && <p className="muted">{tr("notes.empty")}</p>}
+      {error && <p style={{ color: "var(--due-overdue)" }}>{error}</p>}
       <form className="row" style={{ marginTop: 12 }} onSubmit={(e) => { e.preventDefault(); create() }}>
         <input className="input grow" placeholder={tr("notes.new_placeholder")} value={title} onChange={(e) => setTitle(e.target.value)} />
         <button className="btn" type="submit">{tr("common.create")}</button>
       </form>
-      {open && <NoteModal note={open} spaceId={spaceId} onClose={() => setOpen(null)} onChanged={load} />}
     </div>
   )
 }
@@ -591,6 +641,7 @@ export function ArchivePanel({ me, spaceId }: { me: Me; spaceId: number }) {
   const [lists, setLists] = useState<ArchivedList[]>([])
   const [tasks, setTasks] = useState<ArchivedTask[]>([])
   const [retentionDays, setRetentionDays] = useState("30")
+  const [error, setError] = useState("")
 
   const { confirm, confirmElement } = useConfirm()
   const load = () => api.get(`/api/spaces/${spaceId}/archive`).then((r) => {
@@ -598,22 +649,28 @@ export function ArchivePanel({ me, spaceId }: { me: Me; spaceId: number }) {
   }).catch(() => {})
   useEffect(() => { load() }, [spaceId])
 
-  async function restoreList(id: number) { await api.post(`/api/lists/${id}/restore`).catch(() => {}); load() }
-  async function restoreTask(id: number) { await api.post(`/api/tasks/${id}/restore`).catch(() => {}); load() }
+  async function restoreList(id: number) {
+    setError("")
+    try { await api.post(`/api/lists/${id}/restore`); load() } catch (err) { setError((err as Error).message) }
+  }
+  async function restoreTask(id: number) {
+    setError("")
+    try { await api.post(`/api/tasks/${id}/restore`); load() } catch (err) { setError((err as Error).message) }
+  }
   // Permanent deletion has no undo, so it asks the user to type the name rather than accepting a
   // single click (spec section 10 requires confirmation for exactly these actions).
   function deleteListForever(id: number, name: string) {
     confirm({
       title: tr("confirm.delete_forever_title"), body: tr("confirm.delete_forever_body"),
       confirmLabel: tr("archive.delete_forever"), requireText: name, danger: true,
-      action: async () => { await api.del(`/api/lists/${id}/permanent`).catch(() => {}); load() },
+      action: async () => { await api.del(`/api/lists/${id}/permanent`); load() },
     })
   }
   function deleteTaskForever(id: number, title: string) {
     confirm({
       title: tr("confirm.delete_forever_title"), body: tr("confirm.delete_forever_body"),
       confirmLabel: tr("archive.delete_forever"), requireText: title, danger: true,
-      action: async () => { await api.del(`/api/tasks/${id}/permanent`).catch(() => {}); load() },
+      action: async () => { await api.del(`/api/tasks/${id}/permanent`); load() },
     })
   }
 
@@ -623,6 +680,7 @@ export function ArchivePanel({ me, spaceId }: { me: Me; spaceId: number }) {
   return (
     <div>
       {confirmElement}
+      {error && <p className="error-text">{error}</p>}
       <p className="muted" style={{ marginTop: 0, fontSize: 12 }}>{tr("archive.hint").replace("{days}", retentionDays)}</p>
       {lists.map((l) => (
         <div key={"list-" + l.id} className="task-row" style={{ cursor: "default" }}>
@@ -659,6 +717,7 @@ type ArchivedSpace = { id: number; name: string; archived_at: string; archived_b
 export function ArchivedSpacesPanel({ me }: { me: Me }) {
   const [spaces, setSpaces] = useState<ArchivedSpace[]>([])
   const [retentionDays, setRetentionDays] = useState("30")
+  const [error, setError] = useState("")
   const { confirm, confirmElement } = useConfirm()
 
   const load = () => api.get("/api/archive/spaces").then((r) => {
@@ -666,12 +725,15 @@ export function ArchivedSpacesPanel({ me }: { me: Me }) {
   }).catch(() => {})
   useEffect(() => { load() }, [])
 
-  async function restore(id: number) { await api.post(`/api/spaces/${id}/restore`).catch(() => {}); load() }
+  async function restore(id: number) {
+    setError("")
+    try { await api.post(`/api/spaces/${id}/restore`); load() } catch (err) { setError((err as Error).message) }
+  }
   function deleteForever(id: number, name: string) {
     confirm({
       title: tr("confirm.delete_forever_title"), body: tr("confirm.delete_space_body"),
       confirmLabel: tr("archive.delete_forever"), requireText: name, danger: true,
-      action: async () => { await api.del(`/api/spaces/${id}/permanent`).catch(() => {}); load() },
+      action: async () => { await api.del(`/api/spaces/${id}/permanent`); load() },
     })
   }
 
@@ -679,6 +741,7 @@ export function ArchivedSpacesPanel({ me }: { me: Me }) {
   return (
     <div>
       {confirmElement}
+      {error && <p className="error-text">{error}</p>}
       {spaces.map((s) => (
         <div key={s.id} className="task-row" style={{ cursor: "default" }}>
           <span className="task-title row" style={{ gap: 6 }}><IconArchive size={14} /> {s.name}</span>

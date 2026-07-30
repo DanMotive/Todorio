@@ -141,7 +141,14 @@ func (a *API) handleRemoveSpaceMember(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, http.StatusConflict, "the last owner of a space cannot be removed — promote someone else first")
 		return
 	}
-	tag, err := a.DB.Pool.Exec(r.Context(),
+	tx, err := a.DB.Pool.Begin(r.Context())
+	if err != nil {
+		dbFail(r, "begin remove space member", err)
+		errJSON(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	defer func() { _ = tx.Rollback(r.Context()) }()
+	tag, err := tx.Exec(r.Context(),
 		`DELETE FROM space_members WHERE space_id=$1 AND user_id=$2`, spaceID, userID)
 	if err != nil {
 		dbFail(r, "remove space member", err)
@@ -155,15 +162,28 @@ func (a *API) handleRemoveSpaceMember(w http.ResponseWriter, r *http.Request) {
 	// Losing the space also means losing the lists inside it. Leaving list_members rows behind
 	// would keep handing the removed user access to individual lists (listPermission never looks
 	// at space membership), so revoking a space grant has to cascade or it isn't a revocation.
-	_, _ = a.DB.Pool.Exec(r.Context(), `
+	if _, err = tx.Exec(r.Context(), `
 		DELETE FROM list_members WHERE user_id=$2
-			AND list_id IN (SELECT id FROM lists WHERE space_id=$1)`, spaceID, userID)
+			AND list_id IN (SELECT id FROM lists WHERE space_id=$1)`, spaceID, userID); err != nil {
+		dbFail(r, "remove list grants with space member", err)
+		errJSON(w, http.StatusInternalServerError, "database error")
+		return
+	}
 	// Their open tasks in the space are unassigned, the same way blocking a user does — an
 	// assignee who can no longer open the task would otherwise silently stall it.
-	_, _ = a.DB.Pool.Exec(r.Context(), `
+	if _, err = tx.Exec(r.Context(), `
 		UPDATE tasks SET assignee_id=NULL
 		WHERE assignee_id=$2 AND completed_at IS NULL
-			AND list_id IN (SELECT id FROM lists WHERE space_id=$1)`, spaceID, userID)
+			AND list_id IN (SELECT id FROM lists WHERE space_id=$1)`, spaceID, userID); err != nil {
+		dbFail(r, "unassign removed space member", err)
+		errJSON(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	if err = tx.Commit(r.Context()); err != nil {
+		dbFail(r, "commit remove space member", err)
+		errJSON(w, http.StatusInternalServerError, "database error")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -261,7 +281,14 @@ func (a *API) handleRemoveListMember(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, http.StatusConflict, "the last owner of a list cannot be removed — promote someone else first")
 		return
 	}
-	tag, err := a.DB.Pool.Exec(r.Context(),
+	tx, err := a.DB.Pool.Begin(r.Context())
+	if err != nil {
+		dbFail(r, "begin remove list member", err)
+		errJSON(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	defer func() { _ = tx.Rollback(r.Context()) }()
+	tag, err := tx.Exec(r.Context(),
 		`DELETE FROM list_members WHERE list_id=$1 AND user_id=$2`, listID, userID)
 	if err != nil {
 		dbFail(r, "remove list member", err)
@@ -272,9 +299,18 @@ func (a *API) handleRemoveListMember(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, http.StatusNotFound, "this user is not a member of the list")
 		return
 	}
-	_, _ = a.DB.Pool.Exec(r.Context(), `
+	if _, err = tx.Exec(r.Context(), `
 		UPDATE tasks SET assignee_id=NULL
-		WHERE list_id=$1 AND assignee_id=$2 AND completed_at IS NULL`, listID, userID)
+		WHERE list_id=$1 AND assignee_id=$2 AND completed_at IS NULL`, listID, userID); err != nil {
+		dbFail(r, "unassign removed list member", err)
+		errJSON(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	if err = tx.Commit(r.Context()); err != nil {
+		dbFail(r, "commit remove list member", err)
+		errJSON(w, http.StatusInternalServerError, "database error")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 

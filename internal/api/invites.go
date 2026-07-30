@@ -40,12 +40,6 @@ func (a *API) lookupInvite(ctx context.Context, code string) (*inviteRow, error)
 	return &iv, nil
 }
 
-// consumeInvite records one use. Best-effort: the registration itself already succeeded by the
-// time this runs, so a failure here should not fail the request.
-func (a *API) consumeInvite(ctx context.Context, id int64) {
-	_, _ = a.DB.Pool.Exec(ctx, `UPDATE invites SET used_count = used_count + 1 WHERE id=$1`, id)
-}
-
 // generateInviteCode returns a 12-character hex code — short enough to read aloud or paste in chat.
 func generateInviteCode() (string, error) {
 	b := make([]byte, 6)

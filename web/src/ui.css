@@ -2,10 +2,11 @@
   width: 100%;
   padding: 10px 12px;
   border-radius: 10px;
-  border: 1px solid var(--border, #2a3245);
+  border: 1px solid var(--glass-control-border, var(--border, #2a3245));
   background: var(--glass-control, var(--surface, #171e2e));
   -webkit-backdrop-filter: var(--blur, none);
   backdrop-filter: var(--blur, none);
+  box-shadow: var(--glass-control-highlight, none);
   color: var(--text, #e8e7ff);
   font: inherit;
 }

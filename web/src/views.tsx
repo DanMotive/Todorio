@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { api, type List, type Me, type Pulse, type Space, type Task } from "./api"
+import { api, type List, type Me, type Pulse, type Space } from "./api"
 import { useConfirm, ArchivedSpacesPanel, StatsCard, NotesPanel, ActivityPanel, ArchivePanel, FieldsPanel } from "./extras"
 import { ImportCard, WorkloadPanel } from "./functional"
 import { tr } from "./i18n"
@@ -9,24 +9,40 @@ import { WorkflowEditor } from "./workflow"
 import { IconGrid, IconArchive, IconEdit, IconCopy, IconArrowLeft, IconList, IconFileText, IconActivity, IconColumns, IconLock, IconSliders, IconBarChart } from "./icons"
 import { ListView } from "./viewsPageC"
 import { PulseCard } from "./viewsPageB"
-import { TaskModal } from "./viewsPageA"
+import { pushRoute, type AppRoute } from "./router"
 
 export { AuthPage, PendingPage, TaskModal, TaskContextMenu, TaskHistorySection } from "./viewsPageA"
 export { MyTasksPage } from "./viewsPageB"
-export { KanbanBoard, TableView, CalendarView, FiltersBar, ListView, NotificationsPage, AdminPage } from "./viewsPageC"
+export { KanbanBoard, TableView, CalendarView, FiltersBar, ListView, NotificationsPage } from "./viewsPageC"
 
-export function SpacesPage({ me }: { me: Me }) {
+export function SpacesPage({ me, route, onOpenTask, onOpenNote }: {
+  me: Me
+  route?: AppRoute
+  onOpenTask: (taskId: number) => void
+  onOpenNote: (noteId: number) => void
+}) {
   const [spaces, setSpaces] = useState<Space[]>([])
   const [current, setCurrent] = useState<Space | null>(null)
   const [name, setName] = useState("")
   const [showArchived, setShowArchived] = useState(false)
+  const [error, setError] = useState("")
   const [renamingId, setRenamingId] = useState<number | null>(null)
   const [renameValue, setRenameValue] = useState("")
   const { confirm, confirmElement } = useConfirm()
-  const load = () => api.get("/api/spaces").then((r) => setSpaces(r.spaces)).catch(() => {})
-  useEffect(() => { load() }, [])
+  const load = () => {
+    setError("")
+    return api.get("/api/spaces").then((r) => {
+      const next: Space[] = r.spaces
+      setSpaces(next)
+      const routeSpaceId = route?.kind === "space" || route?.kind === "list" ? route.spaceId : null
+      setCurrent(routeSpaceId ? next.find((s) => s.id === routeSpaceId) || null : null)
+      if (routeSpaceId && !next.some((s) => s.id === routeSpaceId)) setError(tr("search.empty"))
+    }).catch((err) => setError((err as Error).message))
+  }
+  useEffect(() => { load() }, [route?.kind, route?.kind === "space" || route?.kind === "list" ? route.spaceId : 0])
 
-  if (current) return <SpaceView me={me} space={current} onBack={() => { setCurrent(null); load() }} />
+  if (current) return <SpaceView me={me} space={current} route={route} onOpenTask={onOpenTask} onOpenNote={onOpenNote}
+    onBack={() => { pushRoute({ kind: "view", view: "spaces" }); setCurrent(null); load() }} />
 
   const canManage = (s: Space) => s.my_role === "owner" || me.role === "root" || me.role === "admin"
 
@@ -34,24 +50,37 @@ export function SpacesPage({ me }: { me: Me }) {
     const val = renameValue.trim()
     setRenamingId(null)
     if (!val) return
-    await api.patch(`/api/spaces/${id}`, { name: val }).catch(() => {})
-    load()
+    setError("")
+    try {
+      await api.patch(`/api/spaces/${id}`, { name: val })
+      load()
+    } catch (err) {
+      setError((err as Error).message)
+    }
   }
 
   async function duplicateSpace(id: number) {
-    await api.post(`/api/spaces/${id}/duplicate`, {}).catch(() => {})
-    load()
+    setError("")
+    try {
+      await api.post(`/api/spaces/${id}/duplicate`, {})
+      load()
+    } catch (err) {
+      setError((err as Error).message)
+    }
   }
 
   return (
     <div className="card">
       {confirmElement}
       <h2>{tr("spaces.title")}</h2>
-      {spaces.length === 0 && <p className="muted">{tr("spaces.empty")}</p>}
+      {error && <p className="error-text">{error}</p>}
+      {spaces.length === 0 && !error && <p className="muted">{tr("spaces.empty")}</p>}
       {spaces.map((s) => {
         const editing = renamingId === s.id
         return (
-          <div key={s.id} className="task-row" onClick={() => !editing && setCurrent(s)}>
+          <div key={s.id} className="task-row" onClick={() => {
+            if (!editing) { setCurrent(s); pushRoute({ kind: "space", spaceId: s.id }) }
+          }}>
             {editing ? (
               <form className="row grow" style={{ gap: 6 }} onClick={(e) => e.stopPropagation()}
                 onSubmit={(e) => { e.preventDefault(); renameSpace(s.id) }}>
@@ -85,7 +114,7 @@ export function SpacesPage({ me }: { me: Me }) {
                       confirmLabel: tr("task.archive"),
                       danger: true,
                       action: async () => {
-                        await api.del(`/api/spaces/${s.id}`).catch(() => {})
+                        await api.del(`/api/spaces/${s.id}`)
                         load()
                       },
                     })
@@ -101,8 +130,14 @@ export function SpacesPage({ me }: { me: Me }) {
       <form className="row" style={{ marginTop: 12 }} onSubmit={async (e) => {
         e.preventDefault()
         if (!name.trim()) return
-        await api.post("/api/spaces", { name }).catch(() => {})
-        setName(""); load()
+        setError("")
+        try {
+          await api.post("/api/spaces", { name })
+          setName("")
+          load()
+        } catch (err) {
+          setError((err as Error).message)
+        }
       }}>
         <input className="input grow" placeholder={tr("spaces.new_placeholder")} value={name} onChange={(e) => setName(e.target.value)} />
         <button className="btn" type="submit">{tr("common.create")}</button>
@@ -116,17 +151,30 @@ export function SpacesPage({ me }: { me: Me }) {
   )
 }
 
-function SpaceView({ me, space, onBack }: { me: Me; space: Space; onBack: () => void }) {
+function SpaceView({ me, space, route, onBack, onOpenTask, onOpenNote }: {
+  me: Me
+  space: Space
+  route?: AppRoute
+  onBack: () => void
+  onOpenTask: (taskId: number) => void
+  onOpenNote: (noteId: number) => void
+}) {
   const [lists, setLists] = useState<List[]>([])
   const [pulse, setPulse] = useState<Pulse | null>(null)
+  const [error, setError] = useState("")
   const [currentList, setCurrentList] = useState<List | null>(null)
+  useEffect(() => {
+    if (route?.kind !== "list") { setCurrentList(null); return }
+    const next = lists.find((l) => l.id === route.listId) || null
+    setCurrentList(next)
+    if (lists.length > 0 && !next) setError(tr("search.empty"))
+  }, [route?.kind, route?.kind === "list" ? route.listId : 0, lists])
   const [name, setName] = useState("")
   const [newIsPrivate, setNewIsPrivate] = useState(false)
   const [tab, setTab] = useState<"lists" | "dashboard" | "timeline" | "workload" | "notes" | "activity" | "archive" | "fields" | "workflow">("lists")
   const [templates, setTemplates] = useState<Array<{ id: number; name: string }>>([])
   const [progressMode, setProgressMode] = useState<"count" | "weight">(
     () => (localStorage.getItem("todorio.progress_mode") === "weight" ? "weight" : "count"))
-  const [open, setOpen] = useState<Task | null>(null)
   const [allSpaces, setAllSpaces] = useState<Space[]>([])
   const [renamingListId, setRenamingListId] = useState<number | null>(null)
   const [renameValue, setRenameValue] = useState("")
@@ -137,24 +185,25 @@ function SpaceView({ me, space, onBack }: { me: Me; space: Space; onBack: () => 
   const { confirm, confirmElement } = useConfirm()
 
   const load = () => {
-    api.get(`/api/spaces/${space.id}/lists`).then((r) => setLists(r.lists)).catch(() => {})
+    setError("")
+    api.get(`/api/spaces/${space.id}/lists`).then((r) => setLists(r.lists)).catch((err) => setError((err as Error).message))
     api.get(`/api/spaces/${space.id}/pulse`).then(setPulse).catch(() => {})
   }
   useEffect(() => { load() }, [space.id])
   useEffect(() => { api.get("/api/templates").then((r) => setTemplates(r.templates)).catch(() => {}) }, [])
   useEffect(() => { api.get("/api/spaces").then((r) => setAllSpaces(r.spaces)).catch(() => {}) }, [])
 
-  async function openTaskById(id: number) {
-    const r = await api.get(`/api/tasks/${id}`).catch(() => null)
-    if (r?.task) setOpen(r.task)
-  }
-
   async function renameList(id: number) {
     const val = renameValue.trim()
     setRenamingListId(null)
     if (!val) return
-    await api.patch(`/api/lists/${id}`, { name: val }).catch(() => {})
-    load()
+    setError("")
+    try {
+      await api.patch(`/api/lists/${id}`, { name: val })
+      load()
+    } catch (err) {
+      setError((err as Error).message)
+    }
   }
 
   function startDuplicate(l: List) {
@@ -164,12 +213,17 @@ function SpaceView({ me, space, onBack }: { me: Me; space: Space; onBack: () => 
   }
 
   async function confirmDuplicate(id: number) {
-    await api.post(`/api/lists/${id}/duplicate`, {
-      space_id: dupTargetSpace,
-      name: dupName.trim() || undefined,
-    }).catch(() => {})
-    setDuplicatingListId(null)
-    load()
+    setError("")
+    try {
+      await api.post(`/api/lists/${id}/duplicate`, {
+        space_id: dupTargetSpace,
+        name: dupName.trim() || undefined,
+      })
+      setDuplicatingListId(null)
+      load()
+    } catch (err) {
+      setError((err as Error).message)
+    }
   }
 
   // Drag-and-drop reordering of lists within the space. Position updates are sent for every
@@ -186,16 +240,28 @@ function SpaceView({ me, space, onBack }: { me: Me; space: Space; onBack: () => 
     const [moved] = next.splice(draggedIdx, 1)
     next.splice(targetIdx, 0, moved)
     setLists(next)
-    await Promise.all(next.map((l, i) => api.patch(`/api/lists/${l.id}`, { position: i }).catch(() => {})))
+    setError("")
+    try {
+      await Promise.all(next.map((l, i) => api.patch(`/api/lists/${l.id}`, { position: i })))
+    } catch (err) {
+      setError((err as Error).message)
+    }
     load()
   }
 
-  if (currentList) return <ListView me={me} list={currentList} spaceId={space.id} onBack={() => { setCurrentList(null); load() }} />
+  if (currentList) return <ListView me={me} list={currentList} spaceId={space.id} onOpenTask={(task) => onOpenTask(task.id)} onBack={() => {
+    pushRoute({ kind: "space", spaceId: space.id }); setCurrentList(null); load()
+  }} />
 
   async function applyTemplate(templateId: number) {
     if (!templateId) return
-    await api.post(`/api/templates/${templateId}/apply`, { space_id: space.id }).catch(() => {})
-    load()
+    setError("")
+    try {
+      await api.post(`/api/templates/${templateId}/apply`, { space_id: space.id })
+      load()
+    } catch (err) {
+      setError((err as Error).message)
+    }
   }
 
   return (
@@ -206,6 +272,7 @@ function SpaceView({ me, space, onBack }: { me: Me; space: Space; onBack: () => 
         <h2 style={{ margin: 0 }}>{space.name}</h2>
       </div>
 
+      {error && <p className="error-text">{error}</p>}
       <StatsCard spaceId={space.id} canEdit={space.my_role === "owner" || me.role === "root" || me.role === "admin"} />
       {pulse && pulse.enabled !== false && (
         <PulseCard pulse={pulse} spaceId={space.id} canEdit={space.my_role === "owner" || me.role === "root" || me.role === "admin"}
@@ -256,7 +323,12 @@ function SpaceView({ me, space, onBack }: { me: Me; space: Space; onBack: () => 
                   opacity: draggedListId === l.id ? 0.4 : 1,
                   cursor: editing || duplicating ? undefined : "grab",
                 }}
-                onClick={() => !editing && !duplicating && setCurrentList(l)}
+                onClick={() => {
+                  if (!editing && !duplicating) {
+                    setCurrentList(l)
+                    pushRoute({ kind: "list", spaceId: space.id, listId: l.id })
+                  }
+                }}
                 onDragStart={(e) => { e.stopPropagation(); setDraggedListId(l.id); e.dataTransfer.effectAllowed = "move" }}
                 onDragOver={(e) => { if (draggedListId !== null) e.preventDefault() }}
                 onDrop={(e) => {
@@ -300,7 +372,7 @@ function SpaceView({ me, space, onBack }: { me: Me; space: Space; onBack: () => 
                             title: tr("lists.archive_confirm").replace("{name}", l.name),
                             body: tr("confirm.archive_body"),
                             confirmLabel: tr("task.archive"), danger: true,
-                            action: async () => { await api.del(`/api/lists/${l.id}`).catch(() => {}); load() },
+                            action: async () => { await api.del(`/api/lists/${l.id}`); load() },
                           })
                         }}>
                         <IconArchive size={14} />
@@ -327,8 +399,12 @@ function SpaceView({ me, space, onBack }: { me: Me; space: Space; onBack: () => 
           <form className="row" style={{ marginTop: 12, flexWrap: "wrap" }} onSubmit={async (e) => {
             e.preventDefault()
             if (!name.trim()) return
-            await api.post(`/api/spaces/${space.id}/lists`, { name, is_private: newIsPrivate }).catch(() => {})
-            setName(""); setNewIsPrivate(false); load()
+            try {
+              await api.post(`/api/spaces/${space.id}/lists`, { name, is_private: newIsPrivate })
+              setName(""); setNewIsPrivate(false); load()
+            } catch (err) {
+              setError((err as Error).message)
+            }
           }}>
             <input className="input grow" placeholder={tr("lists.new_placeholder")} value={name} onChange={(e) => setName(e.target.value)} />
             <label className="row muted" style={{ gap: 4, fontSize: 12 }}>
@@ -347,15 +423,14 @@ function SpaceView({ me, space, onBack }: { me: Me; space: Space; onBack: () => 
           )}
         </div>
       )}
-      {tab === "dashboard" && <div className="card"><DashboardPanel spaceId={space.id} onOpenTask={openTaskById} /></div>}
-      {tab === "timeline" && <div className="card"><TimelineView spaceId={space.id} onOpenTask={openTaskById} /></div>}
+      {tab === "dashboard" && <div className="card"><DashboardPanel spaceId={space.id} onOpenTask={onOpenTask} /></div>}
+      {tab === "timeline" && <div className="card"><TimelineView spaceId={space.id} onOpenTask={onOpenTask} /></div>}
       {tab === "workload" && <div className="card"><WorkloadPanel spaceId={space.id} /></div>}
-      {tab === "notes" && <div className="card"><NotesPanel spaceId={space.id} /></div>}
+      {tab === "notes" && <div className="card"><NotesPanel spaceId={space.id} onOpenNote={(note) => onOpenNote(note.id)} /></div>}
       {tab === "activity" && <div className="card"><ActivityPanel spaceId={space.id} /></div>}
       {tab === "archive" && <div className="card"><ArchivePanel me={me} spaceId={space.id} /></div>}
       {tab === "fields" && <div className="card"><FieldsPanel spaceId={space.id} isOwner={space.my_role === "owner"} /></div>}
       {tab === "workflow" && <div className="card"><WorkflowEditor spaceId={space.id} isOwner={space.my_role === "owner"} /></div>}
-      {open && <TaskModal task={open} me={me} spaceId={space.id} onClose={() => setOpen(null)} onChanged={load} />}
     </div>
   )
 }

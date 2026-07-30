@@ -1,0 +1,80 @@
+{
+  "overwrite": false,
+  "keys": {
+    "public.open": {
+      "be-BY": "Адкрыць",
+      "bn-BD": "খুলুন",
+      "en-US": "Open",
+      "es-ES": "Abrir",
+      "hi-IN": "खोलें",
+      "ja-JP": "開く",
+      "kk-KZ": "Ашу",
+      "ko-KR": "열기",
+      "pt-BR": "Abrir",
+      "ru-RU": "Открыть",
+      "tr-TR": "Aç",
+      "uk-UA": "Відкрити",
+      "zh-CN": "打开"
+    },
+    "public.password_invalid": {
+      "be-BY": "Няправільны пароль",
+      "bn-BD": "ভুল পাসওয়ার্ড",
+      "en-US": "Incorrect password",
+      "es-ES": "Contraseña incorrecta",
+      "hi-IN": "गलत पासवर्ड",
+      "ja-JP": "パスワードが正しくありません",
+      "kk-KZ": "Құпиясөз қате",
+      "ko-KR": "비밀번호가 올바르지 않습니다",
+      "pt-BR": "Senha incorreta",
+      "ru-RU": "Неверный пароль",
+      "tr-TR": "Parola yanlış",
+      "uk-UA": "Неправильний пароль",
+      "zh-CN": "密码错误"
+    },
+    "public.password_placeholder": {
+      "be-BY": "Пароль спасылкі",
+      "bn-BD": "লিংকের পাসওয়ার্ড",
+      "en-US": "Link password",
+      "es-ES": "Contraseña del enlace",
+      "hi-IN": "लिंक पासवर्ड",
+      "ja-JP": "リンクのパスワード",
+      "kk-KZ": "Сілтеме құпиясөзі",
+      "ko-KR": "링크 비밀번호",
+      "pt-BR": "Senha do link",
+      "ru-RU": "Пароль ссылки",
+      "tr-TR": "Bağlantı parolası",
+      "uk-UA": "Пароль посилання",
+      "zh-CN": "链接密码"
+    },
+    "public.password_required": {
+      "be-BY": "Для прагляду патрэбны пароль",
+      "bn-BD": "দেখতে পাসওয়ার্ড প্রয়োজন",
+      "en-US": "A password is required to view this link",
+      "es-ES": "Se requiere una contraseña para ver este enlace",
+      "hi-IN": "इस लिंक को देखने के लिए पासवर्ड आवश्यक है",
+      "ja-JP": "このリンクを表示するにはパスワードが必要です",
+      "kk-KZ": "Бұл сілтемені көру үшін құпиясөз қажет",
+      "ko-KR": "이 링크를 보려면 비밀번호가 필요합니다",
+      "pt-BR": "Uma senha é necessária para visualizar este link",
+      "ru-RU": "Для просмотра нужен пароль",
+      "tr-TR": "Bu bağlantıyı görüntülemek için parola gerekir",
+      "uk-UA": "Для перегляду потрібен пароль",
+      "zh-CN": "查看此链接需要密码"
+    },
+    "public.too_many_attempts": {
+      "be-BY": "Занадта шмат спроб. Паспрабуйце пазней",
+      "bn-BD": "অনেক বেশি চেষ্টা হয়েছে। পরে আবার চেষ্টা করুন",
+      "en-US": "Too many attempts. Try again later",
+      "es-ES": "Demasiados intentos. Inténtalo de nuevo más tarde",
+      "hi-IN": "बहुत अधिक प्रयास। बाद में फिर कोशिश करें",
+      "ja-JP": "試行回数が多すぎます。後でもう一度お試しください",
+      "kk-KZ": "Әрекет тым көп. Кейінірек қайталап көріңіз",
+      "ko-KR": "시도 횟수가 너무 많습니다. 나중에 다시 시도하세요",
+      "pt-BR": "Muitas tentativas. Tente novamente mais tarde",
+      "ru-RU": "Слишком много попыток. Попробуйте позже",
+      "tr-TR": "Çok fazla deneme. Daha sonra tekrar deneyin",
+      "uk-UA": "Забагато спроб. Спробуйте пізніше",
+      "zh-CN": "尝试次数过多，请稍后重试"
+    }
+  }
+}

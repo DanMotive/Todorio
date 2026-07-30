@@ -197,11 +197,11 @@ def main():
             )
 
     # Name the file. A key that exists in no locale is usually a typo at one call site,
-    # and "en-US: tr('task.dne') used in TSX but no such key" left the reader grepping.
+    # and an error with no source location leaves the reader grepping the whole tree.
     for key in sorted(used):
         if key not in base_keys:
             problems.append(
-                f"{BASE}: tr({key!r}) used at {where.get(key, 'TSX')} but no such key"
+                f"{BASE}: i18n helper for {key!r} used at {where.get(key, 'TSX')} but no such key"
             )
     for pref in sorted(prefixes):
         if not any(k.startswith(pref) for k in base_keys):

@@ -46,10 +46,14 @@
      denser than cards so fields and modal content stay readable over detailed wallpapers. */
   --glass: color-mix(in srgb, var(--surface) 50%, transparent);
   --glass-dense: color-mix(in srgb, var(--surface) 68%, transparent);
-  --glass-control: color-mix(in srgb, var(--surface) 58%, transparent);
-  --glass-button: color-mix(in srgb, var(--surface) 24%, transparent);
-  --glass-hover: color-mix(in srgb, var(--hover-bg) 58%, transparent);
-  --glass-accent: color-mix(in srgb, var(--accent) 82%, transparent);
+  /* Controls need enough transparency for the wallpaper to be visibly refracted. They used to
+     be 58%/82% opaque, which read as a flat solid fill even though backdrop-filter was present. */
+  --glass-control: color-mix(in srgb, var(--surface) 36%, transparent);
+  --glass-button: color-mix(in srgb, var(--surface) 18%, transparent);
+  --glass-hover: color-mix(in srgb, var(--hover-bg) 42%, transparent);
+  --glass-accent: color-mix(in srgb, var(--accent) 62%, transparent);
+  --glass-control-border: color-mix(in srgb, var(--text) 16%, var(--border));
+  --glass-control-highlight: inset 0 1px 0 color-mix(in srgb, white 10%, transparent);
   --glass-accent-soft: color-mix(in srgb, var(--accent) 18%, transparent);
   --glass-subtle: color-mix(in srgb, var(--surface) 16%, transparent);
   --glass-nav: color-mix(in srgb, var(--bg) 68%, transparent);
@@ -67,6 +71,8 @@
   --glass-accent-soft: var(--accent-soft);
   --glass-subtle: transparent;
   --glass-nav: var(--bg);
+  --glass-control-border: var(--border);
+  --glass-control-highlight: none;
   --blur: none;
   --transition: 0ms;
   --shadow: none;
@@ -90,8 +96,9 @@ button {
   background: var(--glass-control);
   -webkit-backdrop-filter: var(--blur);
   backdrop-filter: var(--blur);
-  border: 1px solid var(--border);
+  border: 1px solid var(--glass-control-border, var(--border));
   border-radius: var(--radius);
+  box-shadow: var(--glass-control-highlight, none);
   color: var(--text);
   padding: 8px 12px;
   font: inherit;
@@ -195,8 +202,9 @@ button:disabled { opacity: 0.55; cursor: default; }
   background: var(--glass-control);
   -webkit-backdrop-filter: var(--blur);
   backdrop-filter: var(--blur);
-  border: 1px solid var(--border);
+  border: 1px solid var(--glass-control-border, var(--border));
   border-radius: var(--radius);
+  box-shadow: var(--glass-control-highlight, none);
   color: var(--text);
   cursor: pointer;
   display: flex;

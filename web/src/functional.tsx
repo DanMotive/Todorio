@@ -351,9 +351,15 @@ export function PersonalBotCard() {
   }
 
   async function remove() {
-    await api.del("/api/me/telegram/bot").catch(() => {})
-    setLink(null)
-    refresh()
+    setBusy(true); setErr("")
+    try {
+      await api.del("/api/me/telegram/bot")
+      setLink(null)
+      refresh()
+    } catch (e) {
+      setErr((e as Error).message)
+    }
+    setBusy(false)
   }
 
   const has = !!status?.personal_bot

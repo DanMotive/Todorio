@@ -2,10 +2,11 @@ import { useEffect, useRef, useState } from "react"
 import { api, DEVELOPER_NAME, type Me, type Profile, type Task, type Note } from "./api"
 import "./theme.css"
 import "./ui.css"
-import { AdminPage, AuthPage, MyTasksPage, NotificationsPage, PendingPage, SpacesPage, TaskModal } from "./views"
+import { AuthPage, MyTasksPage, NotificationsPage, PendingPage, SpacesPage, TaskModal } from "./views"
 import { AboutPage, AnnouncementsBanner, GlobalFocusTimer, InboxPage, ModalShell, DigestModal, InvitesCard, SearchPage, NoteModal, ServerSettingsCard, TemplatesAdminCard, AnnouncementsAdminCard } from "./extras"
 import { MembersPage } from "./members"
 import { AuditLogCard, FocusStatsCard } from "./insights"
+import { parseRoute, pushRoute, replaceRoute, routeView, type AppRoute, type MainView } from "./router"
 import { Avatar, SettingsPage, ForcedPasswordChange } from "./settings"
 import { detectLocale, setLocale, tr, trOr } from "./i18n"
 import { IconInbox, IconKeyboard, IconMenu, IconSliders } from "./icons"
@@ -46,7 +47,7 @@ function applyTheme(color: string, visual: string) {
 // mechanism, so that's what this is: zero external services, works the moment HTTPS + permission
 // are granted, and stops the moment the tab is closed — which is an honest trade-off to state,
 // not a hidden one.
-function notifyBrowser(raw: string) {
+function notifyBrowser(raw: string, onOpenTask?: (taskId: number) => void) {
   if (typeof Notification === "undefined") return
   if (Notification.permission !== "granted") return
   // Only when the tab genuinely isn't the one the user is looking at — a notification while
@@ -58,7 +59,12 @@ function notifyBrowser(raw: string) {
   const body = payload.title || payload.task_title || (payload.by ? "@" + payload.by : "")
   try {
     const n = new Notification(title, { body, tag: "todorio-" + kind, icon: "/icons/icon-192.png" })
-    n.onclick = () => { window.focus(); n.close() }
+    n.onclick = () => {
+      window.focus()
+      const taskId = Number(payload.task_id)
+      if (Number.isSafeInteger(taskId) && taskId > 0) onOpenTask?.(taskId)
+      n.close()
+    }
   } catch { /* some browsers reject Notification() outside a user gesture context; ignore */ }
 }
 
@@ -82,7 +88,16 @@ export default function App() {
   const [me, setMe] = useState<Me | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [loaded, setLoaded] = useState(false)
-  const [view, setView] = useState<"my" | "inbox" | "spaces" | "members" | "search" | "notifications" | "admin" | "settings" | "about">("my")
+  const [route, setRoute] = useState<AppRoute>(() => parseRoute())
+  const view = routeView(route)
+  function setView(next: MainView) { pushRoute({ kind: "view", view: next }) }
+  useEffect(() => {
+    const onPop = () => setRoute(parseRoute())
+    window.addEventListener("popstate", onPop)
+    // Canonicalise the old root URL without adding a useless history entry.
+    if (!window.location.pathname.startsWith("/app/")) replaceRoute(route)
+    return () => window.removeEventListener("popstate", onPop)
+  }, [])
   const [unread, setUnread] = useState(0)
   const [soundOn, setSoundOn] = useState(localStorage.getItem("todorio.sound") === "1")
   const soundOnRef = useRef(soundOn)
@@ -111,22 +126,67 @@ export default function App() {
   // rendering the same modals every other page uses.
   const [searchTask, setSearchTask] = useState<Task | null>(null)
   const [searchNote, setSearchNote] = useState<Note | null>(null)
-  async function openSearchTask(taskId: number) {
-    const r = await api.get(`/api/tasks/${taskId}`).catch(() => null)
-    if (r?.task) setSearchTask(r.task)
+  const [routeError, setRouteError] = useState("")
+  function openSearchTask(taskId: number) {
+    const background = route.kind === "task" || route.kind === "note" ? route.background : route
+    pushRoute({ kind: "task", taskId, background })
   }
-  async function openSearchNote(noteId: number) {
-    const r = await api.get(`/api/notes/${noteId}`).catch(() => null)
-    if (r?.note) setSearchNote(r.note)
+  function openSearchNote(noteId: number) {
+    const background = route.kind === "task" || route.kind === "note" ? route.background : route
+    pushRoute({ kind: "note", noteId, background })
+  }
+  useEffect(() => {
+    function onOpenRef(e: Event) {
+      const detail = (e as CustomEvent).detail as { kind?: string; id?: number } | undefined
+      if (!detail || !Number.isSafeInteger(detail.id) || (detail.id ?? 0) <= 0) return
+      if (detail.kind === "task") openSearchTask(detail.id!)
+      if (detail.kind === "note") openSearchNote(detail.id!)
+    }
+    window.addEventListener("todorio:open-ref", onOpenRef as EventListener)
+    return () => window.removeEventListener("todorio:open-ref", onOpenRef as EventListener)
+  }, [route])
+  useEffect(() => {
+    let alive = true
+    setRouteError("")
+    setSearchTask(null)
+    setSearchNote(null)
+    if (route.kind === "task") {
+      api.get(`/api/tasks/${route.taskId}`).then((r) => {
+        if (alive && r?.task) setSearchTask(r.task)
+      }).catch((err) => { if (alive) setRouteError((err as Error).message) })
+    } else if (route.kind === "note") {
+      api.get(`/api/notes/${route.noteId}`).then((r) => {
+        if (alive && r?.note) setSearchNote(r.note)
+      }).catch((err) => { if (alive) setRouteError((err as Error).message) })
+    }
+    return () => { alive = false }
+  }, [route.kind, route.kind === "task" ? route.taskId : 0, route.kind === "note" ? route.noteId : 0])
+  function closeRouteModal() {
+    if (route.kind !== "task" && route.kind !== "note") return
+    if (route.background) {
+      window.history.back()
+      return
+    }
+    replaceRoute({ kind: "view", view: "my" })
   }
 
   // theme: server default <- personal override (localStorage + profile)
   // A theme cached by an older build still carries a `scheme` key. Strip it on read rather
   // than spreading it back into state and re-persisting a field the product no longer has.
   const savedTheme = (() => {
-    const raw = JSON.parse(localStorage.getItem("todorio.theme") || "null")
-    if (!raw) return null
-    return { color: raw.color || "blue", visual: raw.visual || "rich" }
+    try {
+      const raw = JSON.parse(localStorage.getItem("todorio.theme") || "null")
+      if (!raw || typeof raw !== "object") return null
+      const colors = new Set(["red", "blue", "green", "yellow", "gray"])
+      const visuals = new Set(["rich", "lite"])
+      return {
+        color: colors.has(raw.color) ? raw.color : "blue",
+        visual: visuals.has(raw.visual) ? raw.visual : "rich",
+      }
+    } catch {
+      localStorage.removeItem("todorio.theme")
+      return null
+    }
   })()
   const [theme, setTheme] = useState<{ color: string; visual: string }>(
     savedTheme || { color: "blue", visual: "rich" },
@@ -184,9 +244,9 @@ export default function App() {
     if (!me || me.status !== "active") return
     const es = new EventSource("/api/events")
     es.addEventListener("notification", (e) => {
-      setUnread((n) => n + 1)
+      if (routeView(parseRoute()) !== "notifications") setUnread((n) => n + 1)
       if (soundOnRef.current) beep()
-      notifyBrowser(e.data)
+      notifyBrowser(e.data, openSearchTask)
     })
     esRef.current = es
     return () => es.close()
@@ -237,7 +297,7 @@ export default function App() {
   if (!loaded) return null
   const siteName = boot?.site_name || "Todorio"
 
-  if (!me) return <AuthPage siteName={siteName} locales={boot?.locales_enabled} onLogin={(u) => { setMe(u); setView("my") }} />
+  if (!me) return <AuthPage siteName={siteName} locales={boot?.locales_enabled} onLogin={setMe} />
   if (me.status !== "active") return <PendingPage onLogout={logout} />
   if (me.must_change_password) {
     return <ForcedPasswordChange me={me} onDone={() => setMe((m) => (m ? { ...m, must_change_password: false } : m))} />
@@ -368,21 +428,28 @@ export default function App() {
       <main className="main-content">
         <AnnouncementsBanner />
         <DigestModal />
-        {view === "my" && <MyTasksPage me={me} />}
+        {view === "my" && <MyTasksPage me={me} onOpenTask={(task) => openSearchTask(task.id)} />}
         {/* Own focused time, under the task list: the sidebar timer could start and stop
             sessions but the totals were never shown anywhere. Hides itself when nothing has
             been tracked. */}
         {view === "my" && <FocusStatsCard />}
-        {view === "inbox" && <InboxPage />}
-        {view === "spaces" && <SpacesPage me={me} />}
+        {view === "inbox" && <InboxPage onOpenTask={(item) => openSearchTask(item.id)} />}
+        {view === "spaces" && <SpacesPage me={me} route={route} onOpenTask={openSearchTask} onOpenNote={openSearchNote} />}
         {view === "members" && <MembersPage me={me} />}
         {view === "search" && <SearchPage onOpenTask={openSearchTask} onOpenNote={openSearchNote} />}
+        {routeError && (route.kind === "task" || route.kind === "note") && (
+          <ModalShell onClose={closeRouteModal} maxWidth={520}>
+            <p className="error-text">{routeError}</p>
+            <button className="nav-btn" onClick={closeRouteModal}>{tr("common.back")}</button>
+          </ModalShell>
+        )}
         {searchTask && me && (
-          <TaskModal task={searchTask} me={me} onClose={() => setSearchTask(null)} onChanged={() => openSearchTask(searchTask.id)} />
+          <TaskModal task={searchTask} me={me} onClose={closeRouteModal}
+            onChanged={() => api.get(`/api/tasks/${searchTask.id}`).then((r) => { if (r?.task) setSearchTask(r.task) })} />
         )}
         {searchNote && (
-          <NoteModal note={searchNote} spaceId={searchNote.space_id} onClose={() => setSearchNote(null)}
-            onChanged={() => openSearchNote(searchNote.id)} />
+          <NoteModal note={searchNote} spaceId={searchNote.space_id} onClose={closeRouteModal}
+            onChanged={() => api.get(`/api/notes/${searchNote.id}`).then((r) => { if (r?.note) setSearchNote(r.note) })} />
         )}
         {view === "notifications" && <NotificationsPage onNavigateTask={openSearchTask} />}
         {view === "settings" && <SettingsPage me={me} theme={theme} onUpdateTheme={updateTheme} onProfileSaved={setProfile} />}
@@ -393,7 +460,6 @@ export default function App() {
         )}
         {view === "admin" && (
           <>
-            <AdminPage me={me} />
             <InvitesCard me={me} />
             <TemplatesAdminCard me={me} />
             <AnnouncementsAdminCard me={me} />

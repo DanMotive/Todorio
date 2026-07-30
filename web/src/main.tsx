@@ -2,7 +2,6 @@ import React from "react"
 import ReactDOM from "react-dom/client"
 import App from "./App"
 import { PublicListPage } from "./extras"
-import { RefOpener } from "./refs"
 import { initWallpaper } from "./wallpaper"
 import "./theme.css"
 import "./wallpaper.css"
@@ -25,12 +24,10 @@ initWallpaper()
 // Public read-only links /s/{token} render without authentication.
 const share = window.location.pathname.match(/^\/s\/([A-Za-z0-9]+)\/?$/)
 
-// RefOpener listens for clicks on #task / %note references from anywhere in the app and opens
-// the corresponding modal. It sits beside <App/> rather than inside it because references are
-// rendered on every screen; it is deliberately absent on the public share page, where there is
-// no session to resolve them with.
+// Authenticated references are routed by App so task/note URLs participate in browser history.
+// Public share pages do not mount App and therefore keep references as plain read-only content.
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    {share ? <PublicListPage token={share[1]} /> : <><App /><RefOpener /></>}
+    {share ? <PublicListPage token={share[1]} /> : <App />}
   </React.StrictMode>,
 )
